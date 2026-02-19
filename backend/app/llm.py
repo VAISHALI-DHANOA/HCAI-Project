@@ -15,7 +15,7 @@ from app.models import Agent, PublicTurn, State
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 200
+MAX_TOKENS = 100
 TEMPERATURE = 0.85
 TIMEOUT_SECONDS = 15.0
 
@@ -57,7 +57,7 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int) -> s
         f"- Occasionally ask for input from those who haven't spoken\n"
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 40-80 words maximum\n"
+        f"- Respond in 15-30 words maximum\n"
         f"- Stay neutral; do not advocate for a specific position\n"
         f"- Address participants by name when referencing their points\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
@@ -83,7 +83,7 @@ def _build_librarian_system_prompt(agent: Agent, topic: str, round_number: int) 
         f"- Challenge the group to think differently\n"
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 40-80 words maximum\n"
+        f"- Respond in 15-30 words maximum\n"
         f'- Always include exactly one sentence starting with "Emergent pattern:" somewhere in your response\n'
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- Be playful and provocative but never hostile\n"
@@ -112,7 +112,7 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> st
         f'- Use your active trait for this round: "{active_quirk}"\n'
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 40-80 words maximum\n"
+        f"- Respond in 15-30 words maximum\n"
         f"- Do not break character or reference the simulation\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- End with an invitation for others to respond (a question or challenge)\n"
