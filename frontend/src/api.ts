@@ -1,0 +1,55 @@
+import type { State } from "./types";
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function getState(): Promise<State> {
+  return request<State>("/state");
+}
+
+export async function setTopic(topic: string): Promise<{ state: State }> {
+  return request<{ state: State }>("/topic", {
+    method: "POST",
+    body: JSON.stringify({ topic })
+  });
+}
+
+export async function addAgent(name: string, persona_text: string, energy: number): Promise<{ state: State }> {
+  return request<{ state: State }>("/agents", {
+    method: "POST",
+    body: JSON.stringify({
+      user_agents: [{ name, persona_text, energy }]
+    })
+  });
+}
+
+export async function runRounds(rounds: number): Promise<{ state: State }> {
+  return request<{ state: State }>("/run", {
+    method: "POST",
+    body: JSON.stringify({ rounds })
+  });
+}
+
+export async function reset(topic?: string): Promise<{ state: State }> {
+  return request<{ state: State }>("/reset", {
+    method: "POST",
+    body: JSON.stringify({ topic })
+  });
+}
+
+export function getWebSocketUrl(): string {
+  const explicit = import.meta.env.VITE_WS_URL;
+  if (explicit) return explicit;
+  return API_BASE.replace(/^http/, "ws") + "/ws";
+}
