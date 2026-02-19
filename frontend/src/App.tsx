@@ -156,7 +156,7 @@ export default function App() {
         return;
       }
       setActiveTurnIdx(turnIndex);
-    }, 2500);
+    }, 30000);
 
     return () => clearInterval(timer);
   }, [feed]);
