@@ -48,6 +48,10 @@ export async function reset(topic?: string): Promise<{ state: State }> {
   });
 }
 
+export async function loadDemo(): Promise<{ state: State }> {
+  return request<{ state: State }>("/demo", { method: "POST" });
+}
+
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
   if (explicit) return explicit;
