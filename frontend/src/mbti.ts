@@ -2,6 +2,7 @@ export const MBTI_DIMENSIONS = [
   {
     label: "Energy",
     options: ["E", "I"] as const,
+    fullLabels: ["Extraversion", "Introversion"] as const,
     descriptions: [
       "Extraversion: energized by interaction",
       "Introversion: energized by reflection",
@@ -10,6 +11,7 @@ export const MBTI_DIMENSIONS = [
   {
     label: "Information",
     options: ["S", "N"] as const,
+    fullLabels: ["Sensing", "Intuition"] as const,
     descriptions: [
       "Sensing: focuses on facts and details",
       "Intuition: focuses on patterns and possibilities",
@@ -18,6 +20,7 @@ export const MBTI_DIMENSIONS = [
   {
     label: "Decisions",
     options: ["T", "F"] as const,
+    fullLabels: ["Thinking", "Feeling"] as const,
     descriptions: [
       "Thinking: decides by logic and consistency",
       "Feeling: decides by values and impact on people",
@@ -26,6 +29,7 @@ export const MBTI_DIMENSIONS = [
   {
     label: "Structure",
     options: ["J", "P"] as const,
+    fullLabels: ["Judging", "Perceiving"] as const,
     descriptions: [
       "Judging: prefers planning and closure",
       "Perceiving: prefers flexibility and openness",

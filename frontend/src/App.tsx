@@ -442,7 +442,7 @@ export default function App() {
                               onClick={() => setMbtiPicks((prev) => { const next = [...prev]; next[di] = opt; return next; })}
                               title={dim.descriptions[oi]}
                             >
-                              {opt}
+                              {dim.fullLabels[oi]}
                             </button>
                           ))}
                         </div>

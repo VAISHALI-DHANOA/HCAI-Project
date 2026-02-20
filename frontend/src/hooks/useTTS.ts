@@ -45,7 +45,10 @@ export function useTTS() {
     const voices = voicesRef.current;
 
     if (voices.length > 0) {
-      utterance.voice = voices[params.voiceIndex % voices.length];
+      // Prefer standard American English voices
+      const enUSVoices = voices.filter((v) => v.lang === "en-US");
+      const pool = enUSVoices.length > 0 ? enUSVoices : voices;
+      utterance.voice = pool[params.voiceIndex % pool.length];
     }
     utterance.rate = params.rate;
     utterance.pitch = params.pitch;
