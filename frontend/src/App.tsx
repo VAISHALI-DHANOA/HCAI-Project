@@ -54,6 +54,11 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
   const { speak, stop: stopTTS } = useTTS();
 
+  const voiceEnabledRef = useRef(voiceEnabled);
+  voiceEnabledRef.current = voiceEnabled;
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
   const feedLenRef = useRef(0);
   const chatLogRef = useRef<HTMLDivElement>(null);
 
@@ -159,10 +164,14 @@ export default function App() {
     const turns = feed[feed.length - 1].round_result.turns;
     if (turns.length === 0) return;
 
-    let turnIndex = 0;
     setShowReactions(false);
     setActiveTurnIdx(0);
 
+    // When voice is on, speech-end callbacks drive turn advancement
+    if (voiceEnabledRef.current) return;
+
+    // Timer-based advancement when voice is off
+    let turnIndex = 0;
     const timer = setInterval(() => {
       turnIndex++;
       if (turnIndex >= turns.length) {
@@ -176,7 +185,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, [feed]);
 
-  // Speak current turn aloud when voice is enabled
+  // Speak current turn aloud; advance to next turn when speech finishes
   useEffect(() => {
     if (!voiceEnabled || !currentTurn) {
       stopTTS();
@@ -184,8 +193,17 @@ export default function App() {
     }
     const speaker = agentMap.get(currentTurn.speaker_id);
     if (!speaker) return;
-    speak(currentTurn.message, agentVoiceParams(speaker));
-  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
+    speak(currentTurn.message, agentVoiceParams(speaker), () => {
+      setActiveTurnIdx((prev) => {
+        const next = prev + 1;
+        if (next >= latestTurns.length) {
+          setShowReactions(true);
+          return prev;
+        }
+        return next;
+      });
+    });
+  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS, latestTurns.length]);
 
   // Auto-scroll chat log when feed updates
   useEffect(() => {
@@ -253,14 +271,17 @@ export default function App() {
   }
 
   function closeTestChat() {
+    stopListening();
+    stopTTS();
     setTestChatAgent(null);
     setChatMessages([]);
     setChatInput("");
   }
 
-  const sendTestMessage = useCallback(async () => {
-    if (!testChatAgent || !chatInput.trim() || chatLoading) return;
-    const userMsg = chatInput.trim();
+  const sendTestMessage = useCallback(async (overrideMessage?: string) => {
+    const msg = overrideMessage ?? chatInput;
+    if (!testChatAgent || !msg.trim() || chatLoading) return;
+    const userMsg = msg.trim();
     setChatInput("");
     setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setChatLoading(true);
@@ -274,6 +295,11 @@ export default function App() {
         userMsg
       );
       setChatMessages((prev) => [...prev, { role: "agent", content: result.reply }]);
+      // Speak the agent's reply aloud when input was via voice
+      if (overrideMessage) {
+        const agentSeed = testChatAgent.name.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+        speak(result.reply, { rate: 1.0, pitch: 1.0, voiceIndex: agentSeed });
+      }
     } catch (e: unknown) {
       setChatMessages((prev) => [
         ...prev,
@@ -282,7 +308,36 @@ export default function App() {
     } finally {
       setChatLoading(false);
     }
-  }, [testChatAgent, chatInput, chatLoading, chatMessages]);
+  }, [testChatAgent, chatInput, chatLoading, chatMessages, speak]);
+
+  const sendTestMessageRef = useRef(sendTestMessage);
+  sendTestMessageRef.current = sendTestMessage;
+
+  function startListening() {
+    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionAPI || chatLoading) return;
+    const recognition = new SpeechRecognitionAPI();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event: any) => {
+      const transcript: string = event.results[0][0].transcript;
+      sendTestMessageRef.current(transcript);
+    };
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }
+
+  function stopListening() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setListening(false);
+  }
 
   async function launchArena() {
     if (!topicInput.trim() || draftAgents.length === 0) return;
@@ -876,10 +931,19 @@ export default function App() {
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTestMessage(); } }}
-                placeholder="Type a message..."
-                disabled={chatLoading}
+                placeholder={listening ? "Listening..." : "Type or speak a message..."}
+                disabled={chatLoading || listening}
               />
-              <button onClick={sendTestMessage} disabled={chatLoading || !chatInput.trim()}>Send</button>
+              <button
+                className={`btn-mic${listening ? " btn-mic--active" : ""}`}
+                onClick={listening ? stopListening : startListening}
+                disabled={chatLoading}
+                type="button"
+                title={listening ? "Stop listening" : "Speak"}
+              >
+                {listening ? "\u23F9" : "\uD83C\uDFA4"}
+              </button>
+              <button onClick={() => sendTestMessage()} disabled={chatLoading || !chatInput.trim()}>Send</button>
             </div>
           </div>
         </div>

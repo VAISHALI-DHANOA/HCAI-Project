@@ -11,8 +11,9 @@ export function agentVoiceParams(agent: Agent): VoiceParams {
   const energy = agent.energy;
   const isMediator = agent.role === "mediator";
 
-  const rate = isMediator ? 0.9 : 0.7 + energy * 0.6;
-  const pitch = isMediator ? 1.0 : 0.8 + energy * 0.5;
+  // Natural-sounding ranges close to normal speech
+  const rate = isMediator ? 1.0 : 0.9 + energy * 0.15;
+  const pitch = isMediator ? 1.0 : 0.95 + energy * 0.1;
 
   const seed = Array.from(agent.id).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
   return { rate, pitch, voiceIndex: seed };
@@ -21,12 +22,22 @@ export function agentVoiceParams(agent: Agent): VoiceParams {
 export function useTTS() {
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
 
-  // Load voices (they may load asynchronously in some browsers)
+  // Load and pre-filter voices (prefer en-US, sort by quality)
   useEffect(() => {
     if (!("speechSynthesis" in window)) return;
 
     function loadVoices() {
-      voicesRef.current = window.speechSynthesis.getVoices();
+      const all = window.speechSynthesis.getVoices();
+      // Prefer standard American English voices
+      const enUS = all.filter((v) => v.lang === "en-US");
+      const pool = enUS.length > 0 ? enUS : all;
+      // Sort: local/high-quality first, compact/low-quality last
+      pool.sort((a, b) => {
+        const score = (v: SpeechSynthesisVoice) =>
+          (v.localService ? 2 : 0) + (v.name.toLowerCase().includes("compact") ? -1 : 0);
+        return score(b) - score(a);
+      });
+      voicesRef.current = pool;
     }
 
     loadVoices();
@@ -36,8 +47,11 @@ export function useTTS() {
     };
   }, []);
 
-  const speak = useCallback((text: string, params: VoiceParams) => {
-    if (!("speechSynthesis" in window)) return;
+  const speak = useCallback((text: string, params: VoiceParams, onEnd?: () => void) => {
+    if (!("speechSynthesis" in window)) {
+      onEnd?.();
+      return;
+    }
 
     window.speechSynthesis.cancel();
 
@@ -45,14 +59,16 @@ export function useTTS() {
     const voices = voicesRef.current;
 
     if (voices.length > 0) {
-      // Prefer standard American English voices
-      const enUSVoices = voices.filter((v) => v.lang === "en-US");
-      const pool = enUSVoices.length > 0 ? enUSVoices : voices;
-      utterance.voice = pool[params.voiceIndex % pool.length];
+      utterance.voice = voices[params.voiceIndex % voices.length];
     }
     utterance.rate = params.rate;
     utterance.pitch = params.pitch;
     utterance.volume = 0.8;
+
+    if (onEnd) {
+      utterance.onend = () => onEnd();
+      utterance.onerror = () => onEnd();
+    }
 
     window.speechSynthesis.speak(utterance);
   }, []);
