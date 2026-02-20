@@ -108,3 +108,8 @@ class ChatRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     topic: str | None = None
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    voice: str = Field(default="alloy")

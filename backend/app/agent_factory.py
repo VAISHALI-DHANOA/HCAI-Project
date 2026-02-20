@@ -61,25 +61,7 @@ def create_mediators() -> list[Agent]:
         energy=0.7,
         role="mediator",
     )
-    librarian = Agent(
-        id=deterministic_agent_id(
-            "mediator",
-            "The Chaos Librarian",
-            "unusual ideas pattern detection emergent observations",
-            1,
-        ),
-        name="The Chaos Librarian",
-        persona_text="Encourages unusual ideas, detects dynamics, reports emergent patterns.",
-        quirks=[
-            "proposes unexpected analogies",
-            "spots repeating social motifs",
-            "frames one-sentence emergent patterns",
-        ],
-        stance="I push creative divergence while tracking patterns that help the group learn.",
-        energy=0.8,
-        role="mediator",
-    )
-    return [chair, librarian]
+    return [chair]
 
 
 def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]) -> list[Agent]:

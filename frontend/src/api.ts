@@ -74,6 +74,16 @@ export async function testChat(
   });
 }
 
+export async function getTTSAudio(text: string, voice: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE}/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice }),
+  });
+  if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
+  return response.blob();
+}
+
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
   if (explicit) return explicit;

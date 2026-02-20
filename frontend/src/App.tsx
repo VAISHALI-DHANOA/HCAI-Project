@@ -205,6 +205,15 @@ export default function App() {
     });
   }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS, latestTurns.length]);
 
+  // Auto-advance: when voice is on and round playback finishes, start the next round
+  useEffect(() => {
+    if (!voiceEnabled || !showReactions || running) return;
+    const timer = setTimeout(() => {
+      onRun(1);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [voiceEnabled, showReactions, running]);
+
   // Auto-scroll chat log when feed updates
   useEffect(() => {
     if (sidebarCollapsed && chatLogRef.current) {
@@ -298,7 +307,7 @@ export default function App() {
       // Speak the agent's reply aloud when input was via voice
       if (overrideMessage) {
         const agentSeed = testChatAgent.name.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-        speak(result.reply, { rate: 1.0, pitch: 1.0, voiceIndex: agentSeed });
+        speak(result.reply, { voiceIndex: agentSeed });
       }
     } catch (e: unknown) {
       setChatMessages((prev) => [

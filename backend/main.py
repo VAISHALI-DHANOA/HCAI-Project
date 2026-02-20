@@ -5,11 +5,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from app.agent_factory import create_agents_from_user
-from app.models import AddAgentsRequest, ChatRequest, ResetRequest, RunRequest, TopicRequest
+from app.models import AddAgentsRequest, ChatRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
 from app.simulation import run_round
 from app.state import STORE
 
@@ -169,6 +173,27 @@ async def test_chat(payload: ChatRequest) -> dict:
         user_message=payload.user_message,
     )
     return {"reply": reply}
+
+
+@app.post("/tts")
+async def text_to_speech(payload: TTSRequest) -> Response:
+    import os
+
+    from openai import AsyncOpenAI
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
+    client = AsyncOpenAI(api_key=api_key)
+    try:
+        response = await client.audio.speech.create(
+            model="tts-1",
+            voice=payload.voice,
+            input=payload.text,
+        )
+        return Response(content=response.content, media_type="audio/mpeg")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/state")

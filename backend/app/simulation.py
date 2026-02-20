@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.llm import generate_agent_message
+from app.llm import generate_agent_message, generate_chair_summary
 from app.metrics import compute_emergent_metrics
 from app.models import Agent, PublicTurn, Reaction, RoundResult, State
 from app.safety import enforce_civility, truncate_to_words
@@ -28,12 +28,9 @@ def _reaction_for(agent: Agent, round_number: int) -> Reaction:
 
 
 def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> str:
-    librarian_lines = [t.message for t in turns if "emergent pattern" in t.message.lower()]
-    if librarian_lines:
-        return librarian_lines[-1]
-    librarian_ids = {a.id for a in agents if a.role == "mediator" and a.name == "The Chaos Librarian"}
+    chair_ids = {a.id for a in agents if a.role == "mediator"}
     for turn in reversed(turns):
-        if turn.speaker_id in librarian_ids:
+        if turn.speaker_id in chair_ids:
             return turn.message
     return "The group explored diverse angles while maintaining constructive energy."
 
@@ -68,6 +65,12 @@ async def run_round(state: State) -> RoundResult:
     for agent in state.agents:
         if agent.role == "user":
             _drift_stance(agent, state.topic, state.round_number)
+
+    chair = next((a for a in state.agents if a.role == "mediator"), None)
+    if chair:
+        summary_text = await generate_chair_summary(chair, state, turns)
+        summary_turn = PublicTurn(speaker_id=chair.id, message=summary_text)
+        turns.append(summary_turn)
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

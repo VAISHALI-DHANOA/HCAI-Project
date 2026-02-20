@@ -1,81 +1,64 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import type { Agent } from "../types";
+import { getTTSAudio } from "../api";
+
+const OPENAI_VOICES = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"];
 
 export interface VoiceParams {
-  rate: number;
-  pitch: number;
   voiceIndex: number;
 }
 
 export function agentVoiceParams(agent: Agent): VoiceParams {
-  const energy = agent.energy;
-  const isMediator = agent.role === "mediator";
-
-  // Natural-sounding ranges close to normal speech
-  const rate = isMediator ? 1.0 : 0.9 + energy * 0.15;
-  const pitch = isMediator ? 1.0 : 0.95 + energy * 0.1;
-
   const seed = Array.from(agent.id).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-  return { rate, pitch, voiceIndex: seed };
+  return { voiceIndex: seed };
 }
 
 export function useTTS() {
-  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const generationRef = useRef(0);
 
-  // Load and pre-filter voices (prefer en-US, sort by quality)
-  useEffect(() => {
-    if (!("speechSynthesis" in window)) return;
-
-    function loadVoices() {
-      const all = window.speechSynthesis.getVoices();
-      // Prefer standard American English voices
-      const enUS = all.filter((v) => v.lang === "en-US");
-      const pool = enUS.length > 0 ? enUS : all;
-      // Sort: local/high-quality first, compact/low-quality last
-      pool.sort((a, b) => {
-        const score = (v: SpeechSynthesisVoice) =>
-          (v.localService ? 2 : 0) + (v.name.toLowerCase().includes("compact") ? -1 : 0);
-        return score(b) - score(a);
-      });
-      voicesRef.current = pool;
+  const speak = useCallback(async (text: string, params: VoiceParams, onEnd?: () => void) => {
+    // Stop any currently playing audio
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
 
-    loadVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
-    return () => {
-      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
-    };
-  }, []);
+    const gen = ++generationRef.current;
 
-  const speak = useCallback((text: string, params: VoiceParams, onEnd?: () => void) => {
-    if (!("speechSynthesis" in window)) {
-      onEnd?.();
-      return;
+    try {
+      const voice = OPENAI_VOICES[params.voiceIndex % OPENAI_VOICES.length];
+      const blob = await getTTSAudio(text, voice);
+
+      // If a newer speak() call was made while fetching, discard this result
+      if (gen !== generationRef.current) return;
+
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      audioRef.current = audio;
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        onEnd?.();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(url);
+        audioRef.current = null;
+        onEnd?.();
+      };
+
+      await audio.play();
+    } catch {
+      if (gen === generationRef.current) onEnd?.();
     }
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    const voices = voicesRef.current;
-
-    if (voices.length > 0) {
-      utterance.voice = voices[params.voiceIndex % voices.length];
-    }
-    utterance.rate = params.rate;
-    utterance.pitch = params.pitch;
-    utterance.volume = 0.8;
-
-    if (onEnd) {
-      utterance.onend = () => onEnd();
-      utterance.onerror = () => onEnd();
-    }
-
-    window.speechSynthesis.speak(utterance);
   }, []);
 
   const stop = useCallback(() => {
-    if ("speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
+    generationRef.current++;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
     }
   }, []);
 

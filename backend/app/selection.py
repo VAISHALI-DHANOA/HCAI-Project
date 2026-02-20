@@ -36,8 +36,8 @@ def _pick_most_distant(pool: list[Agent], anchors: list[Agent]) -> Agent:
 def select_speakers(agents: list[Agent]) -> list[Agent]:
     mediators = [a for a in agents if a.role == "mediator"]
     users = [a for a in agents if a.role == "user"]
-    if len(mediators) != 2:
-        raise ValueError("Exactly 2 mediators are required")
+    if len(mediators) != 1:
+        raise ValueError("Exactly 1 mediator (The Chair) is required")
     if len(users) < 4:
         raise ValueError("At least 4 user agents are required to run a round")
 
