@@ -61,6 +61,47 @@ export default function App() {
   const chatLogRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
 
+  // Turn queue: incoming turns are queued and revealed one at a time
+  // with 20s display + 3s gap between each message.
+  const turnQueueRef = useRef<PublicTurn[]>([]);
+  const pendingRoundRef = useRef<WsRoundEvent | null>(null);
+  const displayTimerRef = useRef<number | null>(null);
+
+  const processQueue = useCallback(() => {
+    if (displayTimerRef.current !== null) return; // timer already active
+
+    const next = turnQueueRef.current.shift();
+    if (next) {
+      setShowReactions(false);
+      setLiveTurns((prev) => [...prev, next]);
+      displayTimerRef.current = window.setTimeout(() => {
+        displayTimerRef.current = null;
+        processQueue();
+      }, 18000); // 15s display + 3s gap
+    } else if (pendingRoundRef.current) {
+      // All turns displayed — finalize round after 15s for last turn
+      const ev = pendingRoundRef.current;
+      displayTimerRef.current = window.setTimeout(() => {
+        displayTimerRef.current = null;
+        pendingRoundRef.current = null;
+        setLiveTurns([]);
+        setActiveTurnIdx(ev.round_result.turns.length - 1);
+        setShowReactions(true);
+        setFeed((prev) => [...prev, ev]);
+        setStateValue(ev.state_snapshot);
+      }, 15000); // 15s display for last turn
+    }
+  }, []);
+
+  function clearTurnQueue() {
+    turnQueueRef.current = [];
+    pendingRoundRef.current = null;
+    if (displayTimerRef.current !== null) {
+      clearTimeout(displayTimerRef.current);
+      displayTimerRef.current = null;
+    }
+  }
+
   const metrics: Metrics | null = useMemo(() => {
     const roundMetric = feed[feed.length - 1]?.metrics;
     if (roundMetric) return roundMetric;
@@ -130,21 +171,23 @@ export default function App() {
           return;
         }
         if (event.type === "turn") {
-          // Stream turns one by one as the backend generates them
-          setLiveTurns((prev) => [...prev, event.turn]);
+          // Queue turn for timed reveal (20s display + 3s gap)
+          setShowReactions(false);
+          turnQueueRef.current.push(event.turn);
+          processQueue();
           return;
         }
-        // event.type === "round" — round complete
-        setLiveTurns([]);
-        setActiveTurnIdx(event.round_result.turns.length - 1);
-        setShowReactions(true);
-        setFeed((prev) => [...prev, event]);
-        setStateValue(event.state_snapshot);
+        // event.type === "round" — save for finalization after queue drains
+        pendingRoundRef.current = event;
+        processQueue();
       },
       (status) => setConnection(status)
     );
 
-    return () => close();
+    return () => {
+      close();
+      clearTurnQueue();
+    };
   }, []);
 
   // Auto-run timer
@@ -181,7 +224,7 @@ export default function App() {
     if (!showReactions || running) return;
     const timer = setTimeout(() => {
       onRun(1);
-    }, 3000);
+    }, 15000);
     return () => clearTimeout(timer);
   }, [showReactions, running]);
 
@@ -366,6 +409,7 @@ export default function App() {
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
+      clearTurnQueue();
       setAppPhase("setup");
       setDraftAgents([]);
     } catch (e: unknown) {
@@ -383,6 +427,7 @@ export default function App() {
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
+      clearTurnQueue();
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load demo");
