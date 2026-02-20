@@ -19,6 +19,26 @@ MAX_TOKENS = 100
 TEMPERATURE = 0.85
 TIMEOUT_SECONDS = 15.0
 
+MBTI_DESCRIPTIONS = {
+    "E": "extraverted, energized by interaction",
+    "I": "introverted, energized by reflection",
+    "S": "sensing, focused on concrete facts",
+    "N": "intuitive, focused on patterns and possibilities",
+    "T": "thinking, logic-driven decisions",
+    "F": "feeling, values-driven decisions",
+    "J": "judging, prefers structure and planning",
+    "P": "perceiving, prefers flexibility and openness",
+}
+
+
+def _mbti_line(mbti_type: str | None) -> str:
+    if not mbti_type:
+        return ""
+    traits = [MBTI_DESCRIPTIONS.get(c, "") for c in mbti_type if c in MBTI_DESCRIPTIONS]
+    if not traits:
+        return ""
+    return f"\nYour MBTI type: {mbti_type} ({', '.join(traits)})\n"
+
 _client: Optional[anthropic.AsyncAnthropic] = None
 
 
@@ -93,10 +113,12 @@ def _build_librarian_system_prompt(agent: Agent, topic: str, round_number: int) 
 
 def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> str:
     active_quirk = agent.quirks[round_number % 3]
+    mbti = _mbti_line(agent.mbti_type)
     return (
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
         f"\n"
         f"Your persona: {agent.persona_text}\n"
+        f"{mbti}"
         f"Your traits: {', '.join(agent.quirks)}\n"
         f"Your current stance: {agent.stance}\n"
         f"Your energy level: {agent.energy}/1.0 (higher = more assertive and action-oriented; "
@@ -219,3 +241,53 @@ async def generate_agent_message(
         logger.warning("Unexpected LLM error for %s: %s", agent.name, exc)
 
     return _fallback_message(agent, state.topic)
+
+
+def _build_test_chat_system_prompt(
+    agent_name: str, agent_persona: str, mbti_type: str,
+) -> str:
+    mbti = _mbti_line(mbti_type) if mbti_type else ""
+    return (
+        f'You are "{agent_name}", having a casual one-on-one conversation.\n'
+        f"\nYour persona: {agent_persona}"
+        f"{mbti}\n"
+        f"\nCONSTRAINTS:\n"
+        f"- Stay in character at all times\n"
+        f"- Respond in 2-3 sentences maximum\n"
+        f"- Be conversational and natural\n"
+        f"- Show your personality through your tone and perspective\n"
+        f"- Do not use markdown formatting"
+    )
+
+
+async def generate_test_chat_message(
+    agent_name: str,
+    agent_persona: str,
+    mbti_type: str,
+    messages: list,
+    user_message: str,
+) -> str:
+    try:
+        client = get_client()
+        system_prompt = _build_test_chat_system_prompt(agent_name, agent_persona, mbti_type)
+
+        formatted_messages = []
+        for msg in messages:
+            role = "user" if msg.role == "user" else "assistant"
+            formatted_messages.append({"role": role, "content": msg.content})
+        formatted_messages.append({"role": "user", "content": user_message})
+
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=200,
+            temperature=TEMPERATURE,
+            system=system_prompt,
+            messages=formatted_messages,
+        )
+
+        text = response.content[0].text.strip()
+        return text if text else "I'm still gathering my thoughts on that."
+
+    except Exception as exc:
+        logger.warning("Test chat error for %s: %s", agent_name, exc)
+        return f"Hmm, let me think about that from my perspective as {agent_name}."

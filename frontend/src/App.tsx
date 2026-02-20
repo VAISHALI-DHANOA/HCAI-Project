@@ -1,8 +1,10 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { addAgent, getState, loadDemo, reset, runRounds, setTopic } from "./api";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addAgentsWithMBTI, getState, loadDemo, reset, runRounds, setTopic, testChat } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, Metrics, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, State, WsEvent, WsRoundEvent } from "./types";
+import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
+import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
 
 const AGENT_COLORS = [
@@ -35,12 +37,25 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [autoRun, setAutoRun] = useState(false);
   const [intervalMs, setIntervalMs] = useState(1800);
-  const [showCreator, setShowCreator] = useState(false);
   const [activeTurnIdx, setActiveTurnIdx] = useState<number>(-1);
   const [showReactions, setShowReactions] = useState(false);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [appPhase, setAppPhase] = useState<AppPhase>("setup");
+  const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
+  const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [mbtiMode, setMbtiMode] = useState<"pick" | "quiz">("pick");
+  const [mbtiPicks, setMbtiPicks] = useState<string[]>(["E", "S", "T", "J"]);
+  const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
+  const { speak, stop: stopTTS } = useTTS();
 
   const feedLenRef = useRef(0);
+  const chatLogRef = useRef<HTMLDivElement>(null);
 
   const metrics: Metrics | null = useMemo(() => {
     const roundMetric = feed[feed.length - 1]?.metrics;
@@ -156,10 +171,44 @@ export default function App() {
         return;
       }
       setActiveTurnIdx(turnIndex);
-    }, 30000);
+    }, 10000);
 
     return () => clearInterval(timer);
   }, [feed]);
+
+  // Speak current turn aloud when voice is enabled
+  useEffect(() => {
+    if (!voiceEnabled || !currentTurn) {
+      stopTTS();
+      return;
+    }
+    const speaker = agentMap.get(currentTurn.speaker_id);
+    if (!speaker) return;
+    speak(currentTurn.message, agentVoiceParams(speaker));
+  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
+
+  // Auto-scroll chat log when feed updates
+  useEffect(() => {
+    if (sidebarCollapsed && chatLogRef.current) {
+      chatLogRef.current.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" });
+    }
+  }, [feed, sidebarCollapsed]);
+
+  const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
+
+  const currentMbtiType = useMemo(() => {
+    if (mbtiMode === "pick") return mbtiPicks.join("");
+    const allAnswered = quizAnswers.every((a) => a !== null);
+    if (!allAnswered) return "";
+    return scoreQuestionnaire(quizAnswers as number[]);
+  }, [mbtiMode, mbtiPicks, quizAnswers]);
+
+  const chatLogEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll test chat to bottom when messages change
+  useEffect(() => {
+    chatLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
 
   async function onTopicSubmit(event: FormEvent) {
     event.preventDefault();
@@ -173,18 +222,83 @@ export default function App() {
     }
   }
 
-  async function onAddAgent(event: FormEvent) {
+  function onAddDraftAgent(event: FormEvent) {
     event.preventDefault();
-    setError("");
-    if (!nameInput.trim() || !personaInput.trim()) return;
+    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
+    setDraftAgents((prev) => [
+      ...prev,
+      {
+        name: nameInput.trim(),
+        persona_text: personaInput.trim(),
+        energy: energyInput,
+        mbti_type: currentMbtiType,
+      },
+    ]);
+    setNameInput("");
+    setPersonaInput("");
+    setEnergyInput(0.6);
+    setMbtiPicks(["E", "S", "T", "J"]);
+    setQuizAnswers(Array(8).fill(null));
+    setMbtiMode("pick");
+  }
+
+  function removeDraftAgent(idx: number) {
+    setDraftAgents((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function openTestChat(agent: DraftAgent) {
+    setTestChatAgent(agent);
+    setChatMessages([]);
+    setChatInput("");
+  }
+
+  function closeTestChat() {
+    setTestChatAgent(null);
+    setChatMessages([]);
+    setChatInput("");
+  }
+
+  const sendTestMessage = useCallback(async () => {
+    if (!testChatAgent || !chatInput.trim() || chatLoading) return;
+    const userMsg = chatInput.trim();
+    setChatInput("");
+    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    setChatLoading(true);
     try {
-      const result = await addAgent(nameInput.trim(), personaInput.trim(), energyInput);
-      setStateValue(result.state);
-      setNameInput("");
-      setPersonaInput("");
-      setEnergyInput(0.6);
+      const enrichedPersona = enrichPersonaWithMBTI(testChatAgent.persona_text, testChatAgent.mbti_type);
+      const result = await testChat(
+        testChatAgent.name,
+        enrichedPersona,
+        testChatAgent.mbti_type,
+        chatMessages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content })),
+        userMsg
+      );
+      setChatMessages((prev) => [...prev, { role: "agent", content: result.reply }]);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to add agent");
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "agent", content: "(Error: could not reach agent)" },
+      ]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [testChatAgent, chatInput, chatLoading, chatMessages]);
+
+  async function launchArena() {
+    if (!topicInput.trim() || draftAgents.length === 0) return;
+    setError("");
+    try {
+      await setTopic(topicInput.trim());
+      const enrichedAgents = draftAgents.map((a) => ({
+        ...a,
+        persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
+      }));
+      const result = await addAgentsWithMBTI(enrichedAgents);
+      setStateValue(result.state);
+      setFeed([]);
+      setAppPhase("arena");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to launch arena");
     }
   }
 
@@ -210,6 +324,8 @@ export default function App() {
       setActiveTurnIdx(-1);
       setShowReactions(false);
       feedLenRef.current = 0;
+      setAppPhase("setup");
+      setDraftAgents([]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
     }
@@ -225,6 +341,7 @@ export default function App() {
       setActiveTurnIdx(-1);
       setShowReactions(false);
       feedLenRef.current = 0;
+      setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load demo");
     }
@@ -234,8 +351,17 @@ export default function App() {
     <div className="app-shell">
       {/* ---- HUD HEADER ---- */}
       <header className="topbar">
-        <h1 className="topbar__title">The Arena</h1>
+        <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
         <div className="topbar__right">
+          {appPhase === "arena" && (
+            <button
+              className={`voice-toggle${voiceEnabled ? " voice-toggle--active" : ""}`}
+              onClick={() => { setVoiceEnabled(v => !v); if (voiceEnabled) stopTTS(); }}
+              title={voiceEnabled ? "Disable voice" : "Enable voice"}
+            >
+              {voiceEnabled ? "\uD83D\uDD0A" : "\uD83D\uDD07"}
+            </button>
+          )}
           <div className="round-counter">
             <span className="round-counter__label">Round</span>
             <span className="round-counter__value">{state?.round_number ?? 0}</span>
@@ -249,240 +375,38 @@ export default function App() {
 
       {error && <div className="error-banner">{error}</div>}
 
-      <main className="arena-layout">
-        {/* ---- ARENA VIEWPORT ---- */}
-        <section className="arena-viewport">
-          {/* Agent nodes in circular positions */}
-          <div className="arena-ring">
-            {agentPositions.map(({ agent, x, y }) => {
-              const isSpeaking = currentSpeakerId === agent.id;
-              const hasSomeoneActive = currentSpeakerId !== null;
-              const color = agentColor(agent);
-
-              const speakingTransform = isSpeaking
-                ? `translate(-50%, -50%) scale(1.35) translate(${(50 - x) * 0.3}%, ${(50 - y) * 0.3}%)`
-                : "translate(-50%, -50%)";
-
-              return (
-                <div
-                  className={`arena-node${isSpeaking ? " arena-node--speaking" : ""}${hasSomeoneActive && !isSpeaking ? " arena-node--dimmed" : ""}`}
-                  key={agent.id}
-                  style={{
-                    left: `${x}%`,
-                    top: `${y}%`,
-                    transform: speakingTransform,
-                    "--agent-color": color,
-                  } as React.CSSProperties}
-                >
-                  <div className="arena-node__avatar-wrap">
-                    <img
-                      className="arena-node__avatar"
-                      src={agentAvatarUrl(agent)}
-                      alt={agent.name}
-                      width={64}
-                      height={64}
-                    />
-                    {agent.role === "mediator" && (
-                      <span className="arena-node__role-badge">MOD</span>
-                    )}
-                  </div>
-                  <div className="arena-node__name">{agent.name}</div>
-                  <div className="arena-node__energy-bar">
-                    <div
-                      className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
-                      style={{ width: `${agent.energy * 100}%` }}
-                    />
-                  </div>
-                  <div className="arena-node__quirks">
-                    {agent.quirks.map((q, i) => (
-                      <span className="arena-node__quirk" key={i}>{q}</span>
-                    ))}
-                  </div>
-
-                  {/* Reaction bubble */}
-                  {showReactions && latestRound?.round_result.reactions
-                    .filter(r => r.agent_id === agent.id)
-                    .map((reaction, ri) => (
-                      <div className="arena-reaction-bubble" key={ri}>
-                        <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
-                        <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
-                      </div>
-                    ))
-                  }
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Center Stage */}
-          <div className="center-stage">
-            {currentTurn && latestRound ? (
-              <div className="center-stage__content">
-                <div className="center-stage__speaker">
-                  {agentMap.get(currentTurn.speaker_id) && (
-                    <img
-                      className="center-stage__speaker-avatar"
-                      src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
-                      alt=""
-                      width={40}
-                      height={40}
-                    />
-                  )}
-                  <span className="center-stage__speaker-name">
-                    {agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id}
-                  </span>
-                </div>
-                <p className="center-stage__message" key={`${latestRound.round_result.round_number}-${activeTurnIdx}`}>
-                  {currentTurn.message}
-                </p>
-                {activeTurnIdx > 0 && (
-                  <div className="center-stage__history">
-                    {latestTurns.slice(0, activeTurnIdx).map((turn, i) => (
-                      <p className="center-stage__past-turn" key={i}>
-                        <strong>{agentMap.get(turn.speaker_id)?.name ?? "?"}: </strong>
-                        {turn.message}
-                      </p>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="center-stage__empty">
-                <div className="center-stage__empty-icon">{"\u2694\uFE0F"}</div>
-                <div className="center-stage__empty-text">Awaiting combatants...</div>
-                <div className="center-stage__empty-sub">Set a topic and run a round to begin.</div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* ---- SIDE PANEL ---- */}
-        <aside className="side-panel">
-          {/* Mission Briefing */}
-          <div className="section-block">
-            <h2 className="section-title">Mission Briefing</h2>
-            <form onSubmit={onTopicSubmit} className="stacked-form">
-              <label className="form-label">Topic</label>
-              <textarea
-                value={topicInput}
-                onChange={(e) => setTopicInput(e.target.value)}
-                rows={2}
-                placeholder="Define the arena topic..."
-              />
-              <button type="submit">Set Topic</button>
-            </form>
-          </div>
-
-          {/* Command Center */}
-          <div className="section-block">
-            <h2 className="section-title">Command Center</h2>
-            <div className="button-row">
-              <button className="btn-demo" onClick={onLoadDemo}>Load Demo</button>
-            </div>
-            <div className="button-row">
-              <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-              <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-              <button className="btn-danger" onClick={onReset}>Reset</button>
-            </div>
-            <div className="control-row">
-              <label className="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={autoRun}
-                  onChange={(e) => setAutoRun(e.target.checked)}
-                  className="toggle-input"
+      {/* ================================================================
+          SETUP PHASE
+          ================================================================ */}
+      {appPhase === "setup" ? (
+        <main className="setup-phase">
+          {/* ---- LEFT COLUMN: Topic + Agent Creator ---- */}
+          <section className="setup-left">
+            {/* Topic */}
+            <div className="section-block">
+              <h2 className="section-title">Mission Briefing</h2>
+              <form onSubmit={onTopicSubmit} className="stacked-form">
+                <label className="form-label">Discussion Topic</label>
+                <textarea
+                  value={topicInput}
+                  onChange={(e) => setTopicInput(e.target.value)}
+                  rows={2}
+                  placeholder="What should the agents debate about?"
                 />
-                <span className="toggle-switch" />
-                <span className="toggle-label">Auto-Run</span>
-              </label>
+                <button type="submit">Set Topic</button>
+              </form>
             </div>
-            <div className="control-row">
-              <label className="form-label">Interval (ms)</label>
-              <input
-                type="number"
-                min={200}
-                step={100}
-                value={intervalMs}
-                onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)}
-              />
-            </div>
-          </div>
 
-          {/* Battle Metrics */}
-          <div className="section-block">
-            <h2 className="section-title">Battle Metrics</h2>
-            {metrics ? (
-              <div className="metrics">
-                <div className="metric-row">
-                  <span className="metric-label">Consensus</span>
-                  <div className="metric-bar-track">
-                    <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
-                  </div>
-                  <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
-                </div>
-                <div className="metric-row">
-                  <span className="metric-label">Polarization</span>
-                  <div className="metric-bar-track">
-                    <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
-                  </div>
-                  <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
-                </div>
-                <div className="metric-row">
-                  <span className="metric-label">Civility</span>
-                  <div className="metric-bar-track">
-                    <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
-                  </div>
-                  <span className="metric-value">{metricValue(metrics.civility_score)}</span>
-                </div>
-                <div className="coalitions-row">
-                  <span className="metric-label">Coalitions</span>
-                  <div className="coalitions-list">
-                    {metrics.detected_coalitions.length
-                      ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
-                      : <span className="metric-value">None detected</span>
-                    }
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="metrics-empty">No metrics yet</div>
-            )}
-          </div>
-
-          {/* Simulation Info */}
-          <div className="section-block">
-            <h2 className="section-title">Simulation Info</h2>
-            <div className="info-grid">
-              <div className="info-item">
-                <span className="info-label">Round</span>
-                <span className="info-value">{state?.round_number ?? 0}</span>
-              </div>
-              <div className="info-item">
-                <span className="info-label">Agents</span>
-                <span className="info-value">{state?.agents.length ?? 0}</span>
-              </div>
-              <div className="info-item info-item--full">
-                <span className="info-label">Topic</span>
-                <span className="info-value">{state?.topic ?? "-"}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Recruit Agent */}
-          <div className="section-block">
-            <button
-              className="recruit-toggle"
-              type="button"
-              onClick={() => setShowCreator((prev) => !prev)}
-            >
-              {showCreator ? "Close Recruitment" : "Recruit New Agent"}
-            </button>
-            <div className={`recruit-section${showCreator ? " recruit-section--open" : ""}`}>
-              <form onSubmit={onAddAgent} className="stacked-form">
+            {/* Agent Creator */}
+            <div className="section-block">
+              <h2 className="section-title">Create Agent</h2>
+              <form onSubmit={onAddDraftAgent} className="stacked-form">
                 <label className="form-label">Agent Name</label>
                 <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
+
                 <label className="form-label">Persona (1-2 lines)</label>
-                <textarea value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality..." />
+                <textarea value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality and perspective..." />
+
                 <label className="form-label">Energy: {energyInput.toFixed(2)}</label>
                 <input
                   type="range"
@@ -492,67 +416,474 @@ export default function App() {
                   value={energyInput}
                   onChange={(e) => setEnergyInput(Number(e.target.value))}
                 />
-                <button type="submit">Deploy Agent</button>
+
+                {/* MBTI Mode Tabs */}
+                <label className="form-label">Personality Type (MBTI)</label>
+                <div className="mbti-tabs">
+                  <button type="button" className={`mbti-tab${mbtiMode === "pick" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("pick")}>
+                    Pick MBTI
+                  </button>
+                  <button type="button" className={`mbti-tab${mbtiMode === "quiz" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("quiz")}>
+                    Questionnaire
+                  </button>
+                </div>
+
+                {mbtiMode === "pick" ? (
+                  <div className="mbti-picker">
+                    {MBTI_DIMENSIONS.map((dim, di) => (
+                      <div className="mbti-dimension" key={di}>
+                        <span className="mbti-dimension__label">{dim.label}</span>
+                        <div className="mbti-toggle-pair">
+                          {dim.options.map((opt, oi) => (
+                            <button
+                              key={opt}
+                              type="button"
+                              className={`mbti-toggle__option${mbtiPicks[di] === opt ? " mbti-toggle__option--active" : ""}`}
+                              onClick={() => setMbtiPicks((prev) => { const next = [...prev]; next[di] = opt; return next; })}
+                              title={dim.descriptions[oi]}
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mbti-questionnaire">
+                    {MBTI_QUESTIONS.map((q, qi) => (
+                      <div className="mbti-question" key={qi}>
+                        <p className="mbti-question__text">{q.question}</p>
+                        <div className="mbti-question__choices">
+                          <button
+                            type="button"
+                            className={`mbti-choice${quizAnswers[qi] === 0 ? " mbti-choice--selected" : ""}`}
+                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 0; return next; })}
+                          >
+                            {q.choiceA}
+                          </button>
+                          <button
+                            type="button"
+                            className={`mbti-choice${quizAnswers[qi] === 1 ? " mbti-choice--selected" : ""}`}
+                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 1; return next; })}
+                          >
+                            {q.choiceB}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {currentMbtiType && <div className="mbti-badge">{currentMbtiType}</div>}
+
+                <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim() || !currentMbtiType}>
+                  Add to Roster
+                </button>
               </form>
             </div>
-          </div>
+          </section>
 
-          {/* Round History */}
-          <div className="section-block">
-            <h2 className="section-title">
-              Round History
-              <span className="section-title__count">{feed.length}</span>
-            </h2>
-            <div className="history-log">
-              {[...feed].reverse().map((roundEvent) => {
-                const rn = roundEvent.round_result.round_number;
-                const isExpanded = expandedRounds.has(rn);
+          {/* ---- RIGHT COLUMN: Draft Roster ---- */}
+          <section className="setup-right">
+            <div className="section-block">
+              <h2 className="section-title">
+                Agent Roster
+                <span className="section-title__count">{draftAgents.length}</span>
+              </h2>
+
+              {draftAgents.length === 0 ? (
+                <div className="roster-empty">No agents yet. Create one to get started.</div>
+              ) : (
+                <div className="draft-roster">
+                  {draftAgents.map((agent, idx) => (
+                    <div className="draft-agent-card" key={idx}>
+                      <img
+                        className="draft-agent-card__avatar"
+                        src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`}
+                        alt={agent.name}
+                        width={48}
+                        height={48}
+                      />
+                      <div className="draft-agent-card__info">
+                        <div className="draft-agent-card__header">
+                          <span className="draft-agent-card__name">{agent.name}</span>
+                          <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>
+                        </div>
+                        <p className="draft-agent-card__persona">{agent.persona_text}</p>
+                        <div className="draft-agent-card__energy-bar">
+                          <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
+                        </div>
+                      </div>
+                      <div className="draft-agent-card__actions">
+                        <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
+                        <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons */}
+            <div className="setup-actions">
+              <button className="btn-demo" onClick={onLoadDemo}>Load Demo</button>
+              <button
+                className="launch-button"
+                onClick={launchArena}
+                disabled={!topicInput.trim() || draftAgents.length === 0}
+              >
+                Launch into Arena
+              </button>
+            </div>
+          </section>
+        </main>
+      ) : (
+        /* ================================================================
+           ARENA PHASE
+           ================================================================ */
+        <main className="arena-layout">
+          {/* ---- ARENA VIEWPORT ---- */}
+          <section className="arena-viewport">
+            <div className="arena-ring">
+              {agentPositions.map(({ agent, x, y }) => {
+                const isSpeaking = currentSpeakerId === agent.id;
+                const hasSomeoneActive = currentSpeakerId !== null;
+                const color = agentColor(agent);
+                const isHovered = hoveredAgentId === agent.id;
+                const lastMsg = latestTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
+                const speakingTransform = isSpeaking
+                  ? `translate(-50%, -50%) scale(1.35) translate(${(50 - x) * 0.3}%, ${(50 - y) * 0.3}%)`
+                  : "translate(-50%, -50%)";
+
                 return (
-                  <div className="history-entry" key={rn}>
-                    <button
-                      className="history-entry__header"
-                      onClick={() => {
-                        setExpandedRounds(prev => {
-                          const next = new Set(prev);
-                          if (next.has(rn)) next.delete(rn);
-                          else next.add(rn);
-                          return next;
-                        });
-                      }}
-                    >
-                      <span>Round {rn}</span>
-                      <span className="history-entry__speakers">
-                        {roundEvent.round_result.turns.length} turns
-                      </span>
-                      <span className="history-entry__chevron">{isExpanded ? "\u25B2" : "\u25BC"}</span>
-                    </button>
-                    {isExpanded && (
-                      <div className="history-entry__body">
-                        {roundEvent.round_result.turns.map((turn, ti) => {
-                          const sp = agentMap.get(turn.speaker_id);
-                          return (
-                            <div className="history-turn" key={ti}>
-                              <img
-                                className="history-turn__avatar"
-                                src={sp ? agentAvatarUrl(sp) : ""}
-                                alt=""
-                                width={20}
-                                height={20}
-                              />
-                              <strong className="history-turn__name">{sp?.name ?? "?"}</strong>
-                              <span className="history-turn__msg">{turn.message}</span>
-                            </div>
-                          );
-                        })}
+                  <div
+                    className={`arena-node${isSpeaking ? " arena-node--speaking" : ""}${hasSomeoneActive && !isSpeaking ? " arena-node--dimmed" : ""}`}
+                    key={agent.id}
+                    style={{
+                      left: `${x}%`,
+                      top: `${y}%`,
+                      transform: speakingTransform,
+                      "--agent-color": color,
+                    } as React.CSSProperties}
+                    onMouseEnter={() => setHoveredAgentId(agent.id)}
+                    onMouseLeave={() => setHoveredAgentId(null)}
+                  >
+                    <div className="arena-node__avatar-wrap">
+                      <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
+                      {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
+                      {agent.mbti_type && <span className="arena-node__mbti-badge">{agent.mbti_type}</span>}
+                    </div>
+                    <div className="arena-node__name">{agent.name}</div>
+                    <div className="arena-node__energy-bar">
+                      <div
+                        className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
+                        style={{ width: `${agent.energy * 100}%` }}
+                      />
+                    </div>
+                    <div className="arena-node__quirks">
+                      {agent.quirks.map((q, i) => (
+                        <span className="arena-node__quirk" key={i}>{q}</span>
+                      ))}
+                    </div>
+
+                    {showReactions && latestRound?.round_result.reactions
+                      .filter(r => r.agent_id === agent.id)
+                      .map((reaction, ri) => (
+                        <div className="arena-reaction-bubble" key={ri}>
+                          <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
+                          <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
+                        </div>
+                      ))
+                    }
+
+                    {isHovered && lastMsg && !isSpeaking && (
+                      <div className="agent-tooltip">
+                        <p className="agent-tooltip__message">{lastMsg}</p>
                       </div>
                     )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Center Stage */}
+            <div className="center-stage">
+              {currentTurn && latestRound ? (
+                <div className="center-stage__content">
+                  <div className="center-stage__speaker">
+                    {agentMap.get(currentTurn.speaker_id) && (
+                      <img
+                        className="center-stage__speaker-avatar"
+                        src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
+                        alt=""
+                        width={40}
+                        height={40}
+                      />
+                    )}
+                    <span className="center-stage__speaker-name">
+                      {agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id}
+                    </span>
+                  </div>
+                  <p className="center-stage__message" key={`${latestRound.round_result.round_number}-${activeTurnIdx}`}>
+                    {currentTurn.message}
+                  </p>
+                  {activeTurnIdx > 0 && (
+                    <div className="center-stage__history">
+                      {latestTurns.slice(0, activeTurnIdx).map((turn, i) => (
+                        <p className="center-stage__past-turn" key={i}>
+                          <strong>{agentMap.get(turn.speaker_id)?.name ?? "?"}: </strong>
+                          {turn.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="center-stage__empty">
+                  <div className="center-stage__empty-icon">{"\u2694\uFE0F"}</div>
+                  <div className="center-stage__empty-text">Awaiting combatants...</div>
+                  <div className="center-stage__empty-sub">Run a round to begin the debate.</div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}
+          {hasAgents && sidebarCollapsed ? (
+            <aside className="chat-log-panel">
+              <div className="chat-log-panel__header">
+                <h2 className="section-title">Conversation Log</h2>
+                <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
+              </div>
+              <div className="chat-log" ref={chatLogRef}>
+                {feed.length === 0 && (
+                  <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
+                )}
+                {feed.map((roundEvent) => (
+                  <div key={roundEvent.round_result.round_number}>
+                    <div className="chat-log__round-divider">
+                      <span className="chat-log__round-divider-line" />
+                      <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
+                      <span className="chat-log__round-divider-line" />
+                    </div>
+                    {roundEvent.round_result.turns.map((turn, ti) => {
+                      const agent = agentMap.get(turn.speaker_id);
+                      const color = agent ? agentColor(agent) : "#38bdf8";
+                      return (
+                        <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
+                          <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                          <div className="chat-log__body">
+                            <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                            <p className="chat-log__message">{turn.message}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              <div className="chat-log-panel__controls">
+                <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                <button className="btn-danger" onClick={onReset}>Reset</button>
+              </div>
+            </aside>
+          ) : (
+            <aside className="side-panel">
+              {hasAgents && (
+                <button className="sidebar-toggle sidebar-toggle--expand" onClick={() => setSidebarCollapsed(true)} title="Show chat log">
+                  {"\u2192"} Chat Log
+                </button>
+              )}
+
+              {/* Command Center */}
+              <div className="section-block">
+                <h2 className="section-title">Command Center</h2>
+                <div className="button-row">
+                  <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                  <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                  <button className="btn-danger" onClick={onReset}>Reset</button>
+                </div>
+                <div className="control-row">
+                  <label className="toggle-row">
+                    <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
+                    <span className="toggle-switch" />
+                    <span className="toggle-label">Auto-Run</span>
+                  </label>
+                </div>
+                <div className="control-row">
+                  <label className="form-label">Interval (ms)</label>
+                  <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
+                </div>
+              </div>
+
+              {/* Battle Metrics */}
+              <div className="section-block">
+                <h2 className="section-title">Battle Metrics</h2>
+                {metrics ? (
+                  <div className="metrics">
+                    <div className="metric-row">
+                      <span className="metric-label">Consensus</span>
+                      <div className="metric-bar-track">
+                        <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
+                      </div>
+                      <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
+                    </div>
+                    <div className="metric-row">
+                      <span className="metric-label">Polarization</span>
+                      <div className="metric-bar-track">
+                        <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
+                      </div>
+                      <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
+                    </div>
+                    <div className="metric-row">
+                      <span className="metric-label">Civility</span>
+                      <div className="metric-bar-track">
+                        <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
+                      </div>
+                      <span className="metric-value">{metricValue(metrics.civility_score)}</span>
+                    </div>
+                    <div className="coalitions-row">
+                      <span className="metric-label">Coalitions</span>
+                      <div className="coalitions-list">
+                        {metrics.detected_coalitions.length
+                          ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
+                          : <span className="metric-value">None detected</span>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="metrics-empty">No metrics yet</div>
+                )}
+              </div>
+
+              {/* Simulation Info */}
+              <div className="section-block">
+                <h2 className="section-title">Simulation Info</h2>
+                <div className="info-grid">
+                  <div className="info-item">
+                    <span className="info-label">Round</span>
+                    <span className="info-value">{state?.round_number ?? 0}</span>
+                  </div>
+                  <div className="info-item">
+                    <span className="info-label">Agents</span>
+                    <span className="info-value">{state?.agents.length ?? 0}</span>
+                  </div>
+                  <div className="info-item info-item--full">
+                    <span className="info-label">Topic</span>
+                    <span className="info-value">{state?.topic ?? "-"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Round History */}
+              <div className="section-block">
+                <h2 className="section-title">
+                  Round History
+                  <span className="section-title__count">{feed.length}</span>
+                </h2>
+                <div className="history-log">
+                  {[...feed].reverse().map((roundEvent) => {
+                    const rn = roundEvent.round_result.round_number;
+                    const isExpanded = expandedRounds.has(rn);
+                    return (
+                      <div className="history-entry" key={rn}>
+                        <button
+                          className="history-entry__header"
+                          onClick={() => {
+                            setExpandedRounds(prev => {
+                              const next = new Set(prev);
+                              if (next.has(rn)) next.delete(rn);
+                              else next.add(rn);
+                              return next;
+                            });
+                          }}
+                        >
+                          <span>Round {rn}</span>
+                          <span className="history-entry__speakers">{roundEvent.round_result.turns.length} turns</span>
+                          <span className="history-entry__chevron">{isExpanded ? "\u25B2" : "\u25BC"}</span>
+                        </button>
+                        {isExpanded && (
+                          <div className="history-entry__body">
+                            {roundEvent.round_result.turns.map((turn, ti) => {
+                              const sp = agentMap.get(turn.speaker_id);
+                              return (
+                                <div className="history-turn" key={ti}>
+                                  <img className="history-turn__avatar" src={sp ? agentAvatarUrl(sp) : ""} alt="" width={20} height={20} />
+                                  <strong className="history-turn__name">{sp?.name ?? "?"}</strong>
+                                  <span className="history-turn__msg">{turn.message}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </aside>
+          )}
+        </main>
+      )}
+
+      {/* ================================================================
+         TEST CHAT MODAL
+         ================================================================ */}
+      {testChatAgent && (
+        <div className="test-chat-overlay" onClick={closeTestChat}>
+          <div className="test-chat-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="test-chat-modal__header">
+              <div className="test-chat-modal__agent-info">
+                <img
+                  className="test-chat-modal__avatar"
+                  src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(testChatAgent.name)}`}
+                  alt={testChatAgent.name}
+                  width={40}
+                  height={40}
+                />
+                <div>
+                  <div className="test-chat-modal__name">{testChatAgent.name}</div>
+                  <span className="mbti-badge mbti-badge--small">{testChatAgent.mbti_type}</span>
+                </div>
+              </div>
+              <button className="test-chat-modal__close" onClick={closeTestChat}>X</button>
+            </div>
+
+            <div className="test-chat-modal__messages">
+              {chatMessages.length === 0 && (
+                <div className="test-chat-modal__empty">
+                  Say hello to {testChatAgent.name} to test their personality.
+                </div>
+              )}
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`test-chat__bubble test-chat__bubble--${msg.role}`}>
+                  {msg.content}
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="test-chat__bubble test-chat__bubble--agent test-chat__bubble--loading">
+                  Thinking...
+                </div>
+              )}
+              <div ref={chatLogEndRef} />
+            </div>
+
+            <div className="test-chat-modal__input-bar">
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTestMessage(); } }}
+                placeholder="Type a message..."
+                disabled={chatLoading}
+              />
+              <button onClick={sendTestMessage} disabled={chatLoading || !chatInput.trim()}>Send</button>
+            </div>
           </div>
-        </aside>
-      </main>
+        </div>
+      )}
     </div>
   );
 }

@@ -99,6 +99,7 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
                 stance=build_initial_stance(topic, quirks, payload.name.strip()),
                 energy=payload.energy,
                 role="user",
+                mbti_type=payload.mbti_type,
             )
         )
     return created

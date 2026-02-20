@@ -8,7 +8,22 @@ export interface Agent {
   stance: string;
   energy: number;
   role: Role;
+  mbti_type?: string;
 }
+
+export interface DraftAgent {
+  name: string;
+  persona_text: string;
+  energy: number;
+  mbti_type: string;
+}
+
+export interface ChatMessage {
+  role: "user" | "agent";
+  content: string;
+}
+
+export type AppPhase = "setup" | "arena";
 
 export interface PublicTurn {
   speaker_id: string;

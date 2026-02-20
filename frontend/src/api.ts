@@ -52,6 +52,28 @@ export async function loadDemo(): Promise<{ state: State }> {
   return request<{ state: State }>("/demo", { method: "POST" });
 }
 
+export async function addAgentsWithMBTI(
+  agents: Array<{ name: string; persona_text: string; energy: number; mbti_type: string }>
+): Promise<{ state: State }> {
+  return request<{ state: State }>("/agents", {
+    method: "POST",
+    body: JSON.stringify({ user_agents: agents }),
+  });
+}
+
+export async function testChat(
+  agent_name: string,
+  agent_persona: string,
+  mbti_type: string,
+  messages: Array<{ role: string; content: string }>,
+  user_message: string,
+): Promise<{ reply: string }> {
+  return request<{ reply: string }>("/chat", {
+    method: "POST",
+    body: JSON.stringify({ agent_name, agent_persona, mbti_type, messages, user_message }),
+  });
+}
+
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
   if (explicit) return explicit;

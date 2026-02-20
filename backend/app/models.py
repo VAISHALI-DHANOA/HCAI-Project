@@ -15,6 +15,7 @@ class Agent(BaseModel):
     stance: str
     energy: float = Field(ge=0.0, le=1.0)
     role: Role
+    mbti_type: str | None = None
 
     @field_validator("stance")
     @classmethod
@@ -77,6 +78,7 @@ class UserAgentInput(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     persona_text: str = Field(min_length=1, max_length=500)
     energy: float = Field(default=0.6, ge=0.0, le=1.0)
+    mbti_type: str | None = None
 
 
 class TopicRequest(BaseModel):
@@ -89,6 +91,19 @@ class AddAgentsRequest(BaseModel):
 
 class RunRequest(BaseModel):
     rounds: int = Field(default=1, ge=1, le=50)
+
+
+class ChatMessageInput(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    agent_name: str = Field(min_length=1, max_length=80)
+    agent_persona: str = Field(min_length=1, max_length=500)
+    mbti_type: str = Field(default="", max_length=4)
+    messages: list[ChatMessageInput] = Field(default_factory=list)
+    user_message: str = Field(min_length=1, max_length=500)
 
 
 class ResetRequest(BaseModel):

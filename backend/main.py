@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.agent_factory import create_agents_from_user
-from app.models import AddAgentsRequest, ResetRequest, RunRequest, TopicRequest
+from app.models import AddAgentsRequest, ChatRequest, ResetRequest, RunRequest, TopicRequest
 from app.simulation import run_round
 from app.state import STORE
 
@@ -155,6 +155,20 @@ async def load_demo() -> dict:
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
     }
+
+
+@app.post("/chat")
+async def test_chat(payload: ChatRequest) -> dict:
+    from app.llm import generate_test_chat_message
+
+    reply = await generate_test_chat_message(
+        agent_name=payload.agent_name,
+        agent_persona=payload.agent_persona,
+        mbti_type=payload.mbti_type,
+        messages=payload.messages,
+        user_message=payload.user_message,
+    )
+    return {"reply": reply}
 
 
 @app.get("/state")
