@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { addAgentsWithMBTI, getState, loadDemo, reset, runRounds, setTopic, testChat } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -39,6 +39,7 @@ export default function App() {
   const [intervalMs, setIntervalMs] = useState(1800);
   const [activeTurnIdx, setActiveTurnIdx] = useState<number>(-1);
   const [showReactions, setShowReactions] = useState(false);
+  const [liveTurns, setLiveTurns] = useState<PublicTurn[]>([]);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -54,13 +55,11 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
   const { speak, stop: stopTTS } = useTTS();
 
-  const voiceEnabledRef = useRef(voiceEnabled);
-  voiceEnabledRef.current = voiceEnabled;
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  const feedLenRef = useRef(0);
   const chatLogRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
 
   const metrics: Metrics | null = useMemo(() => {
     const roundMetric = feed[feed.length - 1]?.metrics;
@@ -85,9 +84,17 @@ export default function App() {
   }, [latestRound]);
 
   const currentTurn = useMemo(() => {
-    if (activeTurnIdx < 0 || !latestTurns.length) return null;
-    return latestTurns[Math.min(activeTurnIdx, latestTurns.length - 1)] ?? null;
-  }, [latestTurns, activeTurnIdx]);
+    if (liveTurns.length > 0) return liveTurns[liveTurns.length - 1];
+    if (activeTurnIdx < 0 || activeTurnIdx >= latestTurns.length) return null;
+    return latestTurns[activeTurnIdx] ?? null;
+  }, [liveTurns, latestTurns, activeTurnIdx]);
+
+  const pastTurns = useMemo(() => {
+    if (liveTurns.length > 1) return liveTurns.slice(0, -1);
+    if (liveTurns.length > 0) return [];
+    if (activeTurnIdx > 0) return latestTurns.slice(0, activeTurnIdx);
+    return [];
+  }, [liveTurns, latestTurns, activeTurnIdx]);
 
   const currentSpeakerId = currentTurn?.speaker_id ?? null;
 
@@ -122,6 +129,15 @@ export default function App() {
           setStateValue(event.state_snapshot);
           return;
         }
+        if (event.type === "turn") {
+          // Stream turns one by one as the backend generates them
+          setLiveTurns((prev) => [...prev, event.turn]);
+          return;
+        }
+        // event.type === "round" — round complete
+        setLiveTurns([]);
+        setActiveTurnIdx(event.round_result.turns.length - 1);
+        setShowReactions(true);
         setFeed((prev) => [...prev, event]);
         setStateValue(event.state_snapshot);
       },
@@ -149,43 +165,7 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [autoRun, intervalMs, running]);
 
-  // Sequential speaker animation when a new round arrives
-  useEffect(() => {
-    if (feed.length === 0) {
-      setActiveTurnIdx(-1);
-      setShowReactions(false);
-      return;
-    }
-
-    // Only animate when feed grows (new round)
-    if (feed.length === feedLenRef.current) return;
-    feedLenRef.current = feed.length;
-
-    const turns = feed[feed.length - 1].round_result.turns;
-    if (turns.length === 0) return;
-
-    setShowReactions(false);
-    setActiveTurnIdx(0);
-
-    // When voice is on, speech-end callbacks drive turn advancement
-    if (voiceEnabledRef.current) return;
-
-    // Timer-based advancement when voice is off
-    let turnIndex = 0;
-    const timer = setInterval(() => {
-      turnIndex++;
-      if (turnIndex >= turns.length) {
-        clearInterval(timer);
-        setShowReactions(true);
-        return;
-      }
-      setActiveTurnIdx(turnIndex);
-    }, 10000);
-
-    return () => clearInterval(timer);
-  }, [feed]);
-
-  // Speak current turn aloud; advance to next turn when speech finishes
+  // Speak current turn aloud when voice is enabled
   useEffect(() => {
     if (!voiceEnabled || !currentTurn) {
       stopTTS();
@@ -193,26 +173,24 @@ export default function App() {
     }
     const speaker = agentMap.get(currentTurn.speaker_id);
     if (!speaker) return;
-    speak(currentTurn.message, agentVoiceParams(speaker), () => {
-      setActiveTurnIdx((prev) => {
-        const next = prev + 1;
-        if (next >= latestTurns.length) {
-          setShowReactions(true);
-          return prev;
-        }
-        return next;
-      });
-    });
-  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS, latestTurns.length]);
+    speak(currentTurn.message, agentVoiceParams(speaker));
+  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
 
-  // Auto-advance: when voice is on and round playback finishes, start the next round
+  // Auto-advance: after the round finishes (summary shown), start the next round
   useEffect(() => {
-    if (!voiceEnabled || !showReactions || running) return;
+    if (!showReactions || running) return;
     const timer = setTimeout(() => {
       onRun(1);
-    }, 2000);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [voiceEnabled, showReactions, running]);
+  }, [showReactions, running]);
+
+  // Auto-scroll center stage history to bottom so recent turns are visible
+  useEffect(() => {
+    if (historyRef.current) {
+      historyRef.current.scrollTop = historyRef.current.scrollHeight;
+    }
+  }, [liveTurns.length, activeTurnIdx]);
 
   // Auto-scroll chat log when feed updates
   useEffect(() => {
@@ -387,7 +365,7 @@ export default function App() {
       setAutoRun(false);
       setActiveTurnIdx(-1);
       setShowReactions(false);
-      feedLenRef.current = 0;
+      setLiveTurns([]);
       setAppPhase("setup");
       setDraftAgents([]);
     } catch (e: unknown) {
@@ -404,7 +382,7 @@ export default function App() {
       setFeed([]);
       setActiveTurnIdx(-1);
       setShowReactions(false);
-      feedLenRef.current = 0;
+      setLiveTurns([]);
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load demo");
@@ -615,7 +593,8 @@ export default function App() {
                 const hasSomeoneActive = currentSpeakerId !== null;
                 const color = agentColor(agent);
                 const isHovered = hoveredAgentId === agent.id;
-                const lastMsg = latestTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
+                const visibleTurns = liveTurns.length > 0 ? liveTurns : latestTurns;
+                const lastMsg = visibleTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
                 const speakingTransform = isSpeaking
                   ? `translate(-50%, -50%) scale(1.35) translate(${(50 - x) * 0.3}%, ${(50 - y) * 0.3}%)`
                   : "translate(-50%, -50%)";
@@ -673,8 +652,18 @@ export default function App() {
 
             {/* Center Stage */}
             <div className="center-stage">
-              {currentTurn && latestRound ? (
+              {currentTurn ? (
                 <div className="center-stage__content">
+                  {pastTurns.length > 0 && (
+                    <div className="center-stage__history" ref={historyRef}>
+                      {pastTurns.map((turn, i) => (
+                        <p className="center-stage__past-turn" key={i}>
+                          <strong>{agentMap.get(turn.speaker_id)?.name ?? "?"}: </strong>
+                          {turn.message}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                   <div className="center-stage__speaker">
                     {agentMap.get(currentTurn.speaker_id) && (
                       <img
@@ -689,19 +678,9 @@ export default function App() {
                       {agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id}
                     </span>
                   </div>
-                  <p className="center-stage__message" key={`${latestRound.round_result.round_number}-${activeTurnIdx}`}>
+                  <p className="center-stage__message" key={`turn-${currentTurn.speaker_id}-${pastTurns.length}`}>
                     {currentTurn.message}
                   </p>
-                  {activeTurnIdx > 0 && (
-                    <div className="center-stage__history">
-                      {latestTurns.slice(0, activeTurnIdx).map((turn, i) => (
-                        <p className="center-stage__past-turn" key={i}>
-                          <strong>{agentMap.get(turn.speaker_id)?.name ?? "?"}: </strong>
-                          {turn.message}
-                        </p>
-                      ))}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="center-stage__empty">

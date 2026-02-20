@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Awaitable, Callable
+
 from app.llm import generate_agent_message, generate_chair_summary
 from app.metrics import compute_emergent_metrics
 from app.models import Agent, PublicTurn, Reaction, RoundResult, State
@@ -43,7 +45,10 @@ def _drift_stance(agent: Agent, topic: str, round_number: int) -> None:
     )
 
 
-async def run_round(state: State) -> RoundResult:
+async def run_round(
+    state: State,
+    on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
+) -> RoundResult:
     speakers = select_speakers(state.agents)
     state.round_number += 1
 
@@ -56,7 +61,10 @@ async def run_round(state: State) -> RoundResult:
         )
         message = enforce_civility(raw_message)
         message = truncate_to_words(message, 100)
-        turns.append(PublicTurn(speaker_id=speaker.id, message=message))
+        turn = PublicTurn(speaker_id=speaker.id, message=message)
+        turns.append(turn)
+        if on_turn:
+            await on_turn(turn, state.round_number)
 
     speaker_ids = {speaker.id for speaker in speakers}
     non_speaking_users = [a for a in state.agents if a.role == "user" and a.id not in speaker_ids]
@@ -71,6 +79,8 @@ async def run_round(state: State) -> RoundResult:
         summary_text = await generate_chair_summary(chair, state, turns)
         summary_turn = PublicTurn(speaker_id=chair.id, message=summary_text)
         turns.append(summary_turn)
+        if on_turn:
+            await on_turn(summary_turn, state.round_number)
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

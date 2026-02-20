@@ -68,9 +68,15 @@ export interface WsRoundEvent {
   state_snapshot: State;
 }
 
+export interface WsTurnEvent {
+  type: "turn";
+  turn: PublicTurn;
+  round_number: number;
+}
+
 export interface WsStateEvent {
   type: "state";
   state_snapshot: State;
 }
 
-export type WsEvent = WsRoundEvent | WsStateEvent;
+export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;

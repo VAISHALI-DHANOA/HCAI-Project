@@ -530,9 +530,11 @@ body {
 }
 
 .center-stage__history {
-  margin-top: 10px;
-  max-height: 100px;
+  margin-bottom: 10px;
+  max-height: 120px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .center-stage__past-turn {

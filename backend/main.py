@@ -108,9 +108,17 @@ async def add_agents(payload: AddAgentsRequest) -> dict:
 async def run(payload: RunRequest) -> dict:
     state = STORE.get_state()
     results = []
+
+    async def broadcast_turn(turn: Any, round_number: int) -> None:
+        await manager.broadcast({
+            "type": "turn",
+            "turn": turn.model_dump(),
+            "round_number": round_number,
+        })
+
     for _ in range(payload.rounds):
         try:
-            result = await run_round(state)
+            result = await run_round(state, on_turn=broadcast_turn)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
