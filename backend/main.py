@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -52,9 +53,14 @@ class ConnectionManager:
 app = FastAPI(title="Creative Multi-Agent Playground API", version="2.0.0")
 manager = ConnectionManager()
 
+_cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_extra_origin = os.environ.get("CORS_ORIGIN")
+if _extra_origin:
+    _cors_origins.append(_extra_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
