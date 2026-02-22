@@ -25,7 +25,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_BASE
-        value: https://hcai-backend.onrender.com
+        value: https://hcai-backend-h2rf.onrender.com
     routes:
       - type: rewrite
         source: /*
