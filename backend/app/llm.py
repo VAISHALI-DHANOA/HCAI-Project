@@ -248,12 +248,11 @@ async def generate_chair_summary(
         f"Topic: {state.topic}\n"
         f"This was round {state.round_number}.\n\n"
         f"YOUR TASK:\n"
-        f"Write exactly 2 sentences:\n"
-        f"1. State the specific positions participants took, referencing them by name\n"
-        f"2. Identify the core tension or point of agreement that emerged\n\n"
+        f"Summarize the main themes discussed and suggest next steps moving forward.\n\n"
         f"CONSTRAINTS:\n"
-        f"- Exactly 2 sentences, no more\n"
-        f"- Be specific: mention actual arguments made, not vague descriptions\n"
+        f"- 18 words maximum\n"
+        f"- Focus on themes and next steps, not listing who said what\n"
+        f"- Do not list participant names\n"
         f"- Do not use generic phrases like 'good discussion' or 'diverse perspectives'\n"
         f"- Do not use markdown formatting\n"
         f"- Write in a natural conversational tone"
@@ -264,7 +263,7 @@ async def generate_chair_summary(
             "role": "user",
             "content": (
                 f"Here is what was said this round:\n\n{transcript}\n\n"
-                f"Now summarize in exactly 2 specific sentences."
+                f"Now summarize the key themes and next steps in 18 words or fewer."
             ),
         }
     ]
