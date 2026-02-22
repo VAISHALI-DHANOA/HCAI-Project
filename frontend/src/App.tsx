@@ -84,7 +84,7 @@ export default function App() {
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
         processQueue();
-      }, 18000); // 15s display + 3s gap
+      }, 8000); // 15s display + 3s gap
     } else if (pendingRoundRef.current) {
       // All turns displayed — finalize round after 15s for last turn
       const ev = pendingRoundRef.current;
@@ -96,7 +96,7 @@ export default function App() {
         setShowReactions(true);
         setFeed((prev) => [...prev, ev]);
         setStateValue(ev.state_snapshot);
-      }, 15000); // 15s display for last turn
+      }, 12000); // 15s display for last turn
     }
   }, []);
 
