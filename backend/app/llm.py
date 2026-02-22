@@ -222,12 +222,13 @@ async def generate_chair_summary(
         f"Topic: {state.topic}\n"
         f"This was round {state.round_number}.\n\n"
         f"YOUR TASK:\n"
-        f"- Give a brief summary of what the group discussed this round\n"
-        f"- Note any agreements, disagreements, or emerging themes\n"
-        f"- Transition the group into the next round\n\n"
+        f"Write exactly 2 sentences:\n"
+        f"1. State the specific positions participants took, referencing them by name\n"
+        f"2. Identify the core tension or point of agreement that emerged\n\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 20 words maximum\n"
-        f"- Be neutral and concise\n"
+        f"- Exactly 2 sentences, no more\n"
+        f"- Be specific: mention actual arguments made, not vague descriptions\n"
+        f"- Do not use generic phrases like 'good discussion' or 'diverse perspectives'\n"
         f"- Do not use markdown formatting\n"
         f"- Write in a natural conversational tone"
     )
@@ -237,7 +238,7 @@ async def generate_chair_summary(
             "role": "user",
             "content": (
                 f"Here is what was said this round:\n\n{transcript}\n\n"
-                f"Now give a brief summary and transition to the next round."
+                f"Now summarize in exactly 2 specific sentences."
             ),
         }
     ]
