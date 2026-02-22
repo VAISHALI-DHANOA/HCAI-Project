@@ -2,9 +2,18 @@ import type { State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
+let _adminKey: string | null = null;
+export function setAdminKey(key: string | null) {
+  _adminKey = key;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (_adminKey) {
+    headers["X-Admin-Key"] = _adminKey;
+  }
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...init
   });
   if (!response.ok) {

@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, getState, loadDemo, reset, runRounds, setTopic, testChat } from "./api";
+import { addAgentsWithMBTI, getState, loadDemo, reset, runRounds, setAdminKey, setTopic, testChat } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
@@ -55,11 +55,19 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
   const { speak, stop: stopTTS } = useTTS();
 
+  const [isAdmin] = useState<boolean>(() => {
+    const key = new URLSearchParams(window.location.search).get("admin");
+    if (key) { setAdminKey(key); return true; }
+    return false;
+  });
+
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const chatLogRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const appPhaseRef = useRef(appPhase);
+  appPhaseRef.current = appPhase;
 
   // Turn queue: incoming turns are queued and revealed one at a time
   // with 20s display + 3s gap between each message.
@@ -171,6 +179,10 @@ export default function App() {
           return;
         }
         if (event.type === "turn") {
+          // Auto-transition students to arena when debate starts
+          if (!isAdmin && appPhaseRef.current === "setup") {
+            setAppPhase("arena");
+          }
           // Queue turn for timed reveal (20s display + 3s gap)
           setShowReactions(false);
           turnQueueRef.current.push(event.turn);
@@ -288,6 +300,24 @@ export default function App() {
     setMbtiPicks(["E", "S", "T", "J"]);
     setQuizAnswers(Array(8).fill(null));
     setMbtiMode("pick");
+  }
+
+  async function onSubmitAgent(event: FormEvent) {
+    event.preventDefault();
+    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
+    setError("");
+    try {
+      const enriched = enrichPersonaWithMBTI(personaInput.trim(), currentMbtiType);
+      await addAgentsWithMBTI([{ name: nameInput.trim(), persona_text: enriched, energy: energyInput, mbti_type: currentMbtiType }]);
+      setNameInput("");
+      setPersonaInput("");
+      setEnergyInput(0.6);
+      setMbtiPicks(["E", "S", "T", "J"]);
+      setQuizAnswers(Array(8).fill(null));
+      setMbtiMode("pick");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to submit agent");
+    }
   }
 
   function removeDraftAgent(idx: number) {
@@ -469,25 +499,34 @@ export default function App() {
         <main className="setup-phase">
           {/* ---- LEFT COLUMN: Topic + Agent Creator ---- */}
           <section className="setup-left">
-            {/* Topic */}
-            <div className="section-block">
-              <h2 className="section-title">Mission Briefing</h2>
-              <form onSubmit={onTopicSubmit} className="stacked-form">
-                <label className="form-label">Discussion Topic</label>
-                <textarea
-                  value={topicInput}
-                  onChange={(e) => setTopicInput(e.target.value)}
-                  rows={2}
-                  placeholder="What should the agents debate about?"
-                />
-                <button type="submit">Set Topic</button>
-              </form>
-            </div>
+            {/* Topic (admin only) */}
+            {isAdmin && (
+              <div className="section-block">
+                <h2 className="section-title">Mission Briefing</h2>
+                <form onSubmit={onTopicSubmit} className="stacked-form">
+                  <label className="form-label">Discussion Topic</label>
+                  <textarea
+                    value={topicInput}
+                    onChange={(e) => setTopicInput(e.target.value)}
+                    rows={2}
+                    placeholder="What should the agents debate about?"
+                  />
+                  <button type="submit">Set Topic</button>
+                </form>
+              </div>
+            )}
+            {/* Show current topic for students */}
+            {!isAdmin && state?.topic && (
+              <div className="section-block">
+                <h2 className="section-title">Discussion Topic</h2>
+                <p style={{ color: "#94a3b8", margin: "0.5rem 0" }}>{state.topic}</p>
+              </div>
+            )}
 
             {/* Agent Creator */}
             <div className="section-block">
               <h2 className="section-title">Create Agent</h2>
-              <form onSubmit={onAddDraftAgent} className="stacked-form">
+              <form onSubmit={isAdmin ? onAddDraftAgent : onSubmitAgent} className="stacked-form">
                 <label className="form-label">Agent Name</label>
                 <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
 
@@ -565,54 +604,96 @@ export default function App() {
                 {currentMbtiType && <div className="mbti-badge">{currentMbtiType}</div>}
 
                 <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim() || !currentMbtiType}>
-                  Add to Roster
+                  {isAdmin ? "Add to Roster" : "Submit Agent"}
                 </button>
               </form>
             </div>
           </section>
 
-          {/* ---- RIGHT COLUMN: Draft Roster ---- */}
+          {/* ---- RIGHT COLUMN: Roster ---- */}
           <section className="setup-right">
-            <div className="section-block">
-              <h2 className="section-title">
-                Agent Roster
-                <span className="section-title__count">{draftAgents.length}</span>
-              </h2>
+            {isAdmin ? (
+              /* Admin: draft roster (local agents before launch) */
+              <div className="section-block">
+                <h2 className="section-title">
+                  Agent Roster
+                  <span className="section-title__count">{draftAgents.length}</span>
+                </h2>
 
-              {draftAgents.length === 0 ? (
-                <div className="roster-empty">No agents yet. Create one to get started.</div>
-              ) : (
-                <div className="draft-roster">
-                  {draftAgents.map((agent, idx) => (
-                    <div className="draft-agent-card" key={idx}>
-                      <img
-                        className="draft-agent-card__avatar"
-                        src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`}
-                        alt={agent.name}
-                        width={48}
-                        height={48}
-                      />
-                      <div className="draft-agent-card__info">
-                        <div className="draft-agent-card__header">
-                          <span className="draft-agent-card__name">{agent.name}</span>
-                          <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>
+                {draftAgents.length === 0 ? (
+                  <div className="roster-empty">No agents yet. Create one to get started.</div>
+                ) : (
+                  <div className="draft-roster">
+                    {draftAgents.map((agent, idx) => (
+                      <div className="draft-agent-card" key={idx}>
+                        <img
+                          className="draft-agent-card__avatar"
+                          src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`}
+                          alt={agent.name}
+                          width={48}
+                          height={48}
+                        />
+                        <div className="draft-agent-card__info">
+                          <div className="draft-agent-card__header">
+                            <span className="draft-agent-card__name">{agent.name}</span>
+                            <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>
+                          </div>
+                          <p className="draft-agent-card__persona">{agent.persona_text}</p>
+                          <div className="draft-agent-card__energy-bar">
+                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
+                          </div>
                         </div>
-                        <p className="draft-agent-card__persona">{agent.persona_text}</p>
-                        <div className="draft-agent-card__energy-bar">
-                          <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
+                        <div className="draft-agent-card__actions">
+                          <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
+                          <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
                         </div>
                       </div>
-                      <div className="draft-agent-card__actions">
-                        <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
-                        <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Student: show agents already on the server */
+              <div className="section-block">
+                <h2 className="section-title">
+                  Agents in Arena
+                  <span className="section-title__count">{(state?.agents ?? []).filter(a => a.role === "user").length}</span>
+                </h2>
 
-            {/* Action Buttons */}
+                {(state?.agents ?? []).filter(a => a.role === "user").length === 0 ? (
+                  <div className="roster-empty">No agents submitted yet. Add yours!</div>
+                ) : (
+                  <div className="draft-roster">
+                    {(state?.agents ?? []).filter(a => a.role === "user").map((agent) => (
+                      <div className="draft-agent-card" key={agent.id}>
+                        <img
+                          className="draft-agent-card__avatar"
+                          src={agentAvatarUrl(agent)}
+                          alt={agent.name}
+                          width={48}
+                          height={48}
+                        />
+                        <div className="draft-agent-card__info">
+                          <div className="draft-agent-card__header">
+                            <span className="draft-agent-card__name">{agent.name}</span>
+                            {agent.mbti_type && <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>}
+                          </div>
+                          <div className="draft-agent-card__energy-bar">
+                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "1rem", textAlign: "center" }}>
+                  Waiting for the debate to begin...
+                </p>
+              </div>
+            )}
+
+            {/* Action Buttons (admin only) */}
+            {isAdmin && (
             <div className="setup-actions">
               <button className="btn-demo" onClick={onLoadDemo}>Load Demo</button>
               <button
@@ -623,6 +704,7 @@ export default function App() {
                 Launch into Arena
               </button>
             </div>
+            )}
           </section>
         </main>
       ) : (
@@ -771,11 +853,13 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="chat-log-panel__controls">
-                <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                <button className="btn-danger" onClick={onReset}>Reset</button>
-              </div>
+              {isAdmin && (
+                <div className="chat-log-panel__controls">
+                  <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                  <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                  <button className="btn-danger" onClick={onReset}>Reset</button>
+                </div>
+              )}
             </aside>
           ) : (
             <aside className="side-panel">
@@ -785,26 +869,28 @@ export default function App() {
                 </button>
               )}
 
-              {/* Command Center */}
-              <div className="section-block">
-                <h2 className="section-title">Command Center</h2>
-                <div className="button-row">
-                  <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                  <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                  <button className="btn-danger" onClick={onReset}>Reset</button>
+              {/* Command Center (admin only) */}
+              {isAdmin && (
+                <div className="section-block">
+                  <h2 className="section-title">Command Center</h2>
+                  <div className="button-row">
+                    <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                    <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                    <button className="btn-danger" onClick={onReset}>Reset</button>
+                  </div>
+                  <div className="control-row">
+                    <label className="toggle-row">
+                      <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
+                      <span className="toggle-switch" />
+                      <span className="toggle-label">Auto-Run</span>
+                    </label>
+                  </div>
+                  <div className="control-row">
+                    <label className="form-label">Interval (ms)</label>
+                    <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
+                  </div>
                 </div>
-                <div className="control-row">
-                  <label className="toggle-row">
-                    <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
-                    <span className="toggle-switch" />
-                    <span className="toggle-label">Auto-Run</span>
-                  </label>
-                </div>
-                <div className="control-row">
-                  <label className="form-label">Interval (ms)</label>
-                  <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
-                </div>
-              </div>
+              )}
 
               {/* Battle Metrics */}
               <div className="section-block">

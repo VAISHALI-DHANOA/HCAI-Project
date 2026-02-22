@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -19,6 +19,14 @@ from app.simulation import run_round
 from app.state import STORE
 
 DEMO_FILE = Path(__file__).resolve().parent / "demo_agents.json"
+ADMIN_KEY = os.environ.get("ADMIN_KEY")
+
+
+async def verify_admin(request: Request) -> None:
+    if ADMIN_KEY is None:
+        return  # no key configured = no protection (local dev)
+    if request.headers.get("X-Admin-Key") != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Admin access required")
 
 
 class ConnectionManager:
@@ -85,7 +93,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         await manager.disconnect(websocket)
 
 
-@app.post("/topic")
+@app.post("/topic", dependencies=[Depends(verify_admin)])
 async def set_topic(payload: TopicRequest) -> dict:
     state = STORE.set_topic(payload.topic.strip())
     snapshot = state.model_dump()
@@ -110,7 +118,7 @@ async def add_agents(payload: AddAgentsRequest) -> dict:
     }
 
 
-@app.post("/run")
+@app.post("/run", dependencies=[Depends(verify_admin)])
 async def run(payload: RunRequest) -> dict:
     state = STORE.get_state()
     results = []
@@ -145,7 +153,7 @@ async def run(payload: RunRequest) -> dict:
     }
 
 
-@app.post("/reset")
+@app.post("/reset", dependencies=[Depends(verify_admin)])
 async def reset(payload: ResetRequest) -> dict:
     state = STORE.reset(payload.topic)
     snapshot = state.model_dump()
@@ -153,7 +161,7 @@ async def reset(payload: ResetRequest) -> dict:
     return {"state": snapshot}
 
 
-@app.post("/demo")
+@app.post("/demo", dependencies=[Depends(verify_admin)])
 async def load_demo() -> dict:
     if not DEMO_FILE.exists():
         raise HTTPException(status_code=404, detail="demo_agents.json not found")

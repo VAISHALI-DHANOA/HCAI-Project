@@ -13,6 +13,8 @@ services:
         sync: false
       - key: CORS_ORIGIN
         value: https://hcai-frontend.onrender.com
+      - key: ADMIN_KEY
+        sync: false          # set your secret admin key in the Render dashboard
       - key: PYTHON_VERSION
         value: "3.11.11"
 
