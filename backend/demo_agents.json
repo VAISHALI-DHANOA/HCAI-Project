@@ -4,32 +4,38 @@
     {
       "name": "Dr. Priya Sharma",
       "persona_text": "Computer science professor who builds AI prototypes for her courses. Believes in learning by doing and rapid experimentation. Pushes students to test ideas rather than just theorize.",
-      "energy": 0.85
+      "energy": 0.85,
+      "mbti_type": "ENTJ"
     },
     {
       "name": "Marcus Chen",
       "persona_text": "Graduate student in education policy. Data-driven researcher who insists on evidence before adoption. Skeptical of tech hype and always asks for measurable outcomes.",
-      "energy": 0.45
+      "energy": 0.45,
+      "mbti_type": "ISTJ"
     },
     {
       "name": "Lena Okafor",
       "persona_text": "Creative writing instructor who uses storytelling and metaphor to teach. Worries AI will flatten creative thinking but is curious about using it as a brainstorming partner.",
-      "energy": 0.65
+      "energy": 0.65,
+      "mbti_type": "INFP"
     },
     {
       "name": "James Whitfield",
       "persona_text": "University risk and ethics officer. Cautious about privacy, plagiarism, and equity gaps. Wants guardrails and clear policies before any AI rollout in classrooms.",
-      "energy": 0.3
+      "energy": 0.3,
+      "mbti_type": "ISFJ"
     },
     {
       "name": "Aisha Patel",
       "persona_text": "Undergraduate student representative. Questions whether AI tools truly help students learn or just help them get grades. Challenges professors to see the student perspective.",
-      "energy": 0.7
+      "energy": 0.7,
+      "mbti_type": "ENFP"
     },
     {
       "name": "Tom Reeves",
       "persona_text": "Instructional designer with 20 years of experience. Pragmatic problem-solver who focuses on what can actually ship this semester. Merges competing ideas into workable plans.",
-      "energy": 0.55
+      "energy": 0.55,
+      "mbti_type": "ESTP"
     }
   ]
 }

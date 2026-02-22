@@ -826,7 +826,7 @@ export default function App() {
                 <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
               </div>
               <div className="chat-log" ref={chatLogRef}>
-                {feed.length === 0 && (
+                {feed.length === 0 && liveTurns.length === 0 && (
                   <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                 )}
                 {feed.map((roundEvent) => (
@@ -851,6 +851,28 @@ export default function App() {
                     })}
                   </div>
                 ))}
+                {liveTurns.length > 0 && (
+                  <div>
+                    <div className="chat-log__round-divider">
+                      <span className="chat-log__round-divider-line" />
+                      <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
+                      <span className="chat-log__round-divider-line" />
+                    </div>
+                    {liveTurns.map((turn, ti) => {
+                      const agent = agentMap.get(turn.speaker_id);
+                      const color = agent ? agentColor(agent) : "#38bdf8";
+                      return (
+                        <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                          <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                          <div className="chat-log__body">
+                            <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                            <p className="chat-log__message">{turn.message}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               {isAdmin && (
                 <div className="chat-log-panel__controls">
@@ -954,7 +976,7 @@ export default function App() {
                   <span className="section-title__count">{feed.length}</span>
                 </h2>
                 <div className="chat-log" ref={chatLogRef}>
-                  {feed.length === 0 && (
+                  {feed.length === 0 && liveTurns.length === 0 && (
                     <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                   )}
                   {feed.map((roundEvent) => (
@@ -979,6 +1001,28 @@ export default function App() {
                       })}
                     </div>
                   ))}
+                  {liveTurns.length > 0 && (
+                    <div>
+                      <div className="chat-log__round-divider">
+                        <span className="chat-log__round-divider-line" />
+                        <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
+                        <span className="chat-log__round-divider-line" />
+                      </div>
+                      {liveTurns.map((turn, ti) => {
+                        const agent = agentMap.get(turn.speaker_id);
+                        const color = agent ? agentColor(agent) : "#38bdf8";
+                        return (
+                          <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            <div className="chat-log__body">
+                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <p className="chat-log__message">{turn.message}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             </aside>

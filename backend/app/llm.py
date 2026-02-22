@@ -83,9 +83,33 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int) -> s
     )
 
 
+def _mbti_behavior(mbti_type: str | None) -> str:
+    if not mbti_type or len(mbti_type) != 4:
+        return ""
+    behaviors = []
+    if mbti_type[0] == "E":
+        behaviors.append("You speak up eagerly, react to others directly, and think out loud")
+    else:
+        behaviors.append("You pause before responding, choose words carefully, and reflect internally before sharing")
+    if mbti_type[1] == "S":
+        behaviors.append("You ground arguments in concrete examples, data, and real-world evidence")
+    else:
+        behaviors.append("You explore abstract possibilities, analogies, and big-picture implications")
+    if mbti_type[2] == "T":
+        behaviors.append("You prioritize logical consistency and point out flaws in reasoning")
+    else:
+        behaviors.append("You prioritize how ideas affect people and appeal to shared values")
+    if mbti_type[3] == "J":
+        behaviors.append("You push for decisions, closure, and clear action items")
+    else:
+        behaviors.append("You keep options open, explore alternatives, and resist premature conclusions")
+    return "\n".join(f"- {b}" for b in behaviors)
+
+
 def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> str:
     active_quirk = agent.quirks[round_number % 3]
     mbti = _mbti_line(agent.mbti_type)
+    mbti_behavior = _mbti_behavior(agent.mbti_type)
     return (
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
         f"\n"
@@ -97,10 +121,12 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> st
         f"lower = more cautious and deliberate)\n"
         f"This is round {round_number} of the discussion.\n"
         f"\n"
+        f"YOUR COMMUNICATION STYLE (follow these closely):\n"
+        f"{mbti_behavior}\n"
+        f"\n"
         f"YOUR ROLE:\n"
-        f"- Contribute your unique perspective shaped by your persona and traits\n"
+        f"- Stay true to your communication style above — it defines HOW you speak\n"
         f"- Respond to what others have said; build on, challenge, or refine their ideas\n"
-        f"- Propose concrete next steps or ask probing questions\n"
         f"- Your energy level should influence your tone: high energy = decisive and "
         f"action-oriented; low energy = reflective and cautious\n"
         f'- Use your active trait for this round: "{active_quirk}"\n'
