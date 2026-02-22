@@ -78,6 +78,7 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int) -> s
         f"- Respond in 18 words maximum\n"
         f"- Stay neutral; do not advocate for a specific position\n"
         f"- Address participants by name when referencing their points\n"
+        f"- Start your message with a single relevant emoji\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- Write in a natural conversational tone as if speaking aloud in a meeting"
     )
@@ -133,6 +134,7 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> st
         f"\n"
         f"CONSTRAINTS:\n"
         f"- Respond in 18 words maximum\n"
+        f"- Start your message with a single relevant emoji\n"
         f"- Do not break character or reference the simulation\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- End with an invitation for others to respond (a question or challenge)\n"
@@ -251,6 +253,7 @@ async def generate_chair_summary(
         f"Summarize the main themes discussed and suggest next steps moving forward.\n\n"
         f"CONSTRAINTS:\n"
         f"- 18 words maximum\n"
+        f"- Start your message with a single relevant emoji\n"
         f"- Focus on themes and next steps, not listing who said what\n"
         f"- Do not list participant names\n"
         f"- Do not use generic phrases like 'good discussion' or 'diverse perspectives'\n"
