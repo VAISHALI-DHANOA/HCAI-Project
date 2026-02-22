@@ -14,7 +14,7 @@ services:
       - key: CORS_ORIGIN
         value: https://hcai-frontend.onrender.com
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.11"
 
   # ---- Frontend: Static Site ----
   - type: web
