@@ -48,9 +48,9 @@ def select_speakers(agents: list[Agent]) -> list[Agent]:
     selected.extend([high, low] if high.id != low.id else [high])
 
     remaining = [u for u in users if u.id not in {a.id for a in selected}]
-    while len(selected) < 4:
+    while remaining:
         pick = _pick_most_distant(remaining, selected)
         selected.append(pick)
         remaining = [u for u in remaining if u.id != pick.id]
 
-    return mediators + selected[:4]
+    return mediators + selected

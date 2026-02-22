@@ -93,6 +93,29 @@ export async function getTTSAudio(text: string, voice: string): Promise<Blob> {
   return response.blob();
 }
 
+export async function downloadLogs(): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (_adminKey) {
+    headers["X-Admin-Key"] = _adminKey;
+  }
+  const response = await fetch(`${API_BASE}/logs/download`, { headers });
+  if (!response.ok) {
+    throw new Error(`Download failed: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition");
+  const match = disposition?.match(/filename="(.+)"/);
+  const filename = match?.[1] ?? "conversation_log.json";
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
   if (explicit) return explicit;

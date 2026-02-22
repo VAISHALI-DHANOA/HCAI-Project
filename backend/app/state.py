@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+from pathlib import Path
 from threading import RLock
 
 from app.agent_factory import create_mediators
-from app.models import Agent, State
+from app.models import Agent, RoundResult, State
+
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
 
 
 class InMemoryStateStore:
@@ -14,6 +20,8 @@ class InMemoryStateStore:
             agents=create_mediators(),
             world_state={"round": 0},
         )
+        self._session_id: str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        self._round_log: list[dict] = []
 
     def get_state(self) -> State:
         with self._lock:
@@ -39,6 +47,8 @@ class InMemoryStateStore:
                 agents=create_mediators(),
                 world_state={"round": 0},
             )
+            self._session_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            self._round_log = []
             return self._state
 
     def add_agents(self, new_agents: list[Agent]) -> State:
@@ -48,6 +58,33 @@ class InMemoryStateStore:
                 if agent.id not in existing_ids:
                     self._state.agents.append(agent)
             return self._state
+
+    def save_round(self, result: RoundResult) -> None:
+        """Persist a round result to the session log and write to disk."""
+        with self._lock:
+            self._round_log.append(result.model_dump())
+            self._write_log_file()
+
+    def get_full_log(self) -> dict:
+        """Return the full conversation log for the current session."""
+        with self._lock:
+            return {
+                "session_id": self._session_id,
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "topic": self._state.topic,
+                "agents": [a.model_dump() for a in self._state.agents],
+                "rounds": list(self._round_log),
+            }
+
+    def _write_log_file(self) -> None:
+        log_path = LOGS_DIR / f"session_{self._session_id}.json"
+        data = {
+            "session_id": self._session_id,
+            "topic": self._state.topic,
+            "agents": [a.model_dump() for a in self._state.agents],
+            "rounds": list(self._round_log),
+        }
+        log_path.write_text(json.dumps(data, indent=2, default=str))
 
 
 STORE = InMemoryStateStore()

@@ -34,3 +34,6 @@ dist/
 build/
 coverage/
 
+# Conversation logs
+backend/logs/
+

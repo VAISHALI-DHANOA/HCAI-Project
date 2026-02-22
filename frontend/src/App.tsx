@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, getState, loadDemo, reset, runRounds, setAdminKey, setTopic, testChat } from "./api";
+import { addAgentsWithMBTI, downloadLogs, getState, loadDemo, reset, runRounds, setAdminKey, setTopic, testChat } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
@@ -40,7 +40,6 @@ export default function App() {
   const [activeTurnIdx, setActiveTurnIdx] = useState<number>(-1);
   const [showReactions, setShowReactions] = useState(false);
   const [liveTurns, setLiveTurns] = useState<PublicTurn[]>([]);
-  const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set());
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -857,18 +856,13 @@ export default function App() {
                 <div className="chat-log-panel__controls">
                   <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
                   <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                  <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
                   <button className="btn-danger" onClick={onReset}>Reset</button>
                 </div>
               )}
             </aside>
           ) : (
             <aside className="side-panel">
-              {hasAgents && (
-                <button className="sidebar-toggle sidebar-toggle--expand" onClick={() => setSidebarCollapsed(true)} title="Show chat log">
-                  {"\u2192"} Chat Log
-                </button>
-              )}
-
               {/* Command Center (admin only) */}
               {isAdmin && (
                 <div className="section-block">
@@ -876,6 +870,7 @@ export default function App() {
                   <div className="button-row">
                     <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
                     <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                    <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
                     <button className="btn-danger" onClick={onReset}>Reset</button>
                   </div>
                   <div className="control-row">
@@ -952,50 +947,38 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Round History */}
-              <div className="section-block">
+              {/* Conversation Log */}
+              <div className="section-block section-block--log">
                 <h2 className="section-title">
-                  Round History
+                  Conversation Log
                   <span className="section-title__count">{feed.length}</span>
                 </h2>
-                <div className="history-log">
-                  {[...feed].reverse().map((roundEvent) => {
-                    const rn = roundEvent.round_result.round_number;
-                    const isExpanded = expandedRounds.has(rn);
-                    return (
-                      <div className="history-entry" key={rn}>
-                        <button
-                          className="history-entry__header"
-                          onClick={() => {
-                            setExpandedRounds(prev => {
-                              const next = new Set(prev);
-                              if (next.has(rn)) next.delete(rn);
-                              else next.add(rn);
-                              return next;
-                            });
-                          }}
-                        >
-                          <span>Round {rn}</span>
-                          <span className="history-entry__speakers">{roundEvent.round_result.turns.length} turns</span>
-                          <span className="history-entry__chevron">{isExpanded ? "\u25B2" : "\u25BC"}</span>
-                        </button>
-                        {isExpanded && (
-                          <div className="history-entry__body">
-                            {roundEvent.round_result.turns.map((turn, ti) => {
-                              const sp = agentMap.get(turn.speaker_id);
-                              return (
-                                <div className="history-turn" key={ti}>
-                                  <img className="history-turn__avatar" src={sp ? agentAvatarUrl(sp) : ""} alt="" width={20} height={20} />
-                                  <strong className="history-turn__name">{sp?.name ?? "?"}</strong>
-                                  <span className="history-turn__msg">{turn.message}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
+                <div className="chat-log" ref={chatLogRef}>
+                  {feed.length === 0 && (
+                    <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
+                  )}
+                  {feed.map((roundEvent) => (
+                    <div key={roundEvent.round_result.round_number}>
+                      <div className="chat-log__round-divider">
+                        <span className="chat-log__round-divider-line" />
+                        <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
+                        <span className="chat-log__round-divider-line" />
                       </div>
-                    );
-                  })}
+                      {roundEvent.round_result.turns.map((turn, ti) => {
+                        const agent = agentMap.get(turn.speaker_id);
+                        const color = agent ? agentColor(agent) : "#38bdf8";
+                        return (
+                          <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
+                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            <div className="chat-log__body">
+                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <p className="chat-log__message">{turn.message}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
             </aside>

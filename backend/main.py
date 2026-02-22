@@ -9,7 +9,7 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -138,6 +138,8 @@ async def run(payload: RunRequest) -> dict:
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
+        STORE.save_round(result)
+
         event = {
             "type": "round",
             "round_result": result.model_dump(),
@@ -216,6 +218,17 @@ async def text_to_speech(payload: TTSRequest) -> Response:
         return Response(content=response.content, media_type="audio/mpeg")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/logs/download", dependencies=[Depends(verify_admin)])
+async def download_logs() -> JSONResponse:
+    log = STORE.get_full_log()
+    return JSONResponse(
+        content=log,
+        headers={
+            "Content-Disposition": f'attachment; filename="session_{log["session_id"]}.json"',
+        },
+    )
 
 
 @app.get("/state")
