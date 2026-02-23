@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -19,6 +19,7 @@ from app.simulation import run_round
 from app.state import STORE
 
 DEMO_FILE = Path(__file__).resolve().parent / "demo_agents.json"
+DEMO_DATA_FILE = Path(__file__).resolve().parent / "demo_data_analysts.json"
 ADMIN_KEY = os.environ.get("ADMIN_KEY")
 
 
@@ -175,6 +176,68 @@ async def load_demo() -> dict:
         raise HTTPException(status_code=400, detail="No agents defined in demo file")
 
     state = STORE.reset(topic)
+    created = create_agents_from_user(topic, agents_raw)
+    state = STORE.add_agents(created)
+    snapshot = state.model_dump()
+    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    return {
+        "added": [agent.model_dump() for agent in created],
+        "state": snapshot,
+    }
+
+
+@app.post("/upload-dataset", dependencies=[Depends(verify_admin)])
+async def upload_dataset(file: UploadFile = File(...)) -> dict:
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("csv", "xlsx", "xls"):
+        raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
+
+    contents = await file.read()
+    if len(contents) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 10MB)")
+
+    from app.dataset import parse_dataset, build_dataset_summary_text
+
+    try:
+        parsed = parse_dataset(contents, file.filename)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {exc}") from exc
+
+    summary_text = build_dataset_summary_text(parsed)
+    state = STORE.set_dataset_summary(summary_text, file.filename)
+
+    snapshot = state.model_dump()
+    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+
+    return {
+        "parsed": {
+            "filename": parsed["filename"],
+            "shape": parsed["shape"],
+            "columns": parsed["columns"],
+            "sample_rows": parsed["sample_rows"][:3],
+        },
+        "state": snapshot,
+    }
+
+
+@app.post("/demo-data", dependencies=[Depends(verify_admin)])
+async def load_data_demo() -> dict:
+    if not DEMO_DATA_FILE.exists():
+        raise HTTPException(status_code=404, detail="demo_data_analysts.json not found")
+
+    data = json.loads(DEMO_DATA_FILE.read_text())
+    topic = data.get("topic", "Untitled data analysis")
+    dataset_summary = data.get("dataset_summary", "")
+    agents_raw = data.get("agents", [])
+    if not agents_raw:
+        raise HTTPException(status_code=400, detail="No agents defined in demo file")
+
+    state = STORE.reset(topic)
+    if dataset_summary:
+        state.dataset_summary = dataset_summary
     created = create_agents_from_user(topic, agents_raw)
     state = STORE.add_agents(created)
     snapshot = state.model_dump()

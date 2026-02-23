@@ -1,8 +1,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, downloadLogs, getState, loadDemo, reset, runRounds, setAdminKey, setTopic, testChat } from "./api";
+import { addAgentsWithMBTI, downloadLogs, getState, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, ChatMessage, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import { VisualCard } from "./components/VisualCard";
 import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -52,6 +53,10 @@ export default function App() {
   const [mbtiMode, setMbtiMode] = useState<"pick" | "quiz">("pick");
   const [mbtiPicks, setMbtiPicks] = useState<string[]>(["E", "S", "T", "J"]);
   const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
+  const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
+  const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
   const { speak, stop: stopTTS } = useTTS();
 
   const [isAdmin] = useState<boolean>(() => {
@@ -253,6 +258,13 @@ export default function App() {
     }
   }, [feed, sidebarCollapsed]);
 
+  // Auto-switch side panel to dashboard when dataset is present
+  useEffect(() => {
+    if (state?.dataset_summary) {
+      setSidePanelView("dashboard");
+    }
+  }, [state?.dataset_summary]);
+
   const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
 
   const currentMbtiType = useMemo(() => {
@@ -399,10 +411,13 @@ export default function App() {
   }
 
   async function launchArena() {
-    if (!topicInput.trim() || draftAgents.length === 0) return;
+    if ((!topicInput.trim() && !datasetInfo) || draftAgents.length === 0) return;
     setError("");
     try {
-      await setTopic(topicInput.trim());
+      // In dataset mode the topic was already set by the upload endpoint
+      if (!datasetInfo) {
+        await setTopic(topicInput.trim());
+      }
       const enrichedAgents = draftAgents.map((a) => ({
         ...a,
         persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
@@ -410,6 +425,7 @@ export default function App() {
       const result = await addAgentsWithMBTI(enrichedAgents);
       setStateValue(result.state);
       setFeed([]);
+      if (datasetInfo) setSidePanelView("dashboard");
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
@@ -441,6 +457,9 @@ export default function App() {
       clearTurnQueue();
       setAppPhase("setup");
       setDraftAgents([]);
+      setDatasetInfo(null);
+      setInputMode("topic");
+      setSidePanelView("controls");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
     }
@@ -457,9 +476,46 @@ export default function App() {
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
+      setDatasetInfo(null);
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load demo");
+    }
+  }
+
+  async function onLoadDataDemo() {
+    setError("");
+    try {
+      const result = await loadDataDemo();
+      setStateValue(result.state);
+      setTopicInput(result.state.topic);
+      setFeed([]);
+      setActiveTurnIdx(-1);
+      setShowReactions(false);
+      setLiveTurns([]);
+      clearTurnQueue();
+      setSidePanelView("dashboard");
+      setAppPhase("arena");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to load data demo");
+    }
+  }
+
+  async function onDatasetUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError("");
+    setUploading(true);
+    try {
+      const result = await uploadDataset(file);
+      setStateValue(result.state);
+      setTopicInput(result.state.topic);
+      setDatasetInfo(result.parsed);
+      setFeed([]);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to upload dataset");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -498,20 +554,53 @@ export default function App() {
         <main className="setup-phase">
           {/* ---- LEFT COLUMN: Topic + Agent Creator ---- */}
           <section className="setup-left">
-            {/* Topic (admin only) */}
+            {/* Topic or Dataset (admin only) */}
             {isAdmin && (
               <div className="section-block">
                 <h2 className="section-title">Mission Briefing</h2>
-                <form onSubmit={onTopicSubmit} className="stacked-form">
-                  <label className="form-label">Discussion Topic</label>
-                  <textarea
-                    value={topicInput}
-                    onChange={(e) => setTopicInput(e.target.value)}
-                    rows={2}
-                    placeholder="What should the agents debate about?"
-                  />
-                  <button type="submit">Set Topic</button>
-                </form>
+                <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
+                  <button type="button" className={`mbti-tab${inputMode === "topic" ? " mbti-tab--active" : ""}`}
+                    onClick={() => setInputMode("topic")}>
+                    Text Topic
+                  </button>
+                  <button type="button" className={`mbti-tab${inputMode === "dataset" ? " mbti-tab--active" : ""}`}
+                    onClick={() => setInputMode("dataset")}>
+                    Upload Dataset
+                  </button>
+                </div>
+
+                {inputMode === "topic" ? (
+                  <form onSubmit={onTopicSubmit} className="stacked-form">
+                    <label className="form-label">Discussion Topic</label>
+                    <textarea
+                      value={topicInput}
+                      onChange={(e) => setTopicInput(e.target.value)}
+                      rows={2}
+                      placeholder="What should the agents debate about?"
+                    />
+                    <button type="submit">Set Topic</button>
+                  </form>
+                ) : (
+                  <div className="stacked-form">
+                    <label className="form-label">CSV or Excel File</label>
+                    <input type="file" accept=".csv,.xlsx,.xls" onChange={onDatasetUpload} disabled={uploading} />
+                    {uploading && <p style={{ color: "#94a3b8", fontSize: "0.82rem" }}>Uploading and parsing...</p>}
+                    {datasetInfo && (
+                      <div className="dataset-preview">
+                        <p style={{ color: "#4ade80", fontSize: "0.82rem", margin: "4px 0" }}>
+                          {datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns
+                        </p>
+                        <div className="dataset-columns">
+                          {datasetInfo.columns.map((col, i) => (
+                            <span key={i} className="arena-node__quirk">
+                              {col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {/* Show current topic for students */}
@@ -694,11 +783,12 @@ export default function App() {
             {/* Action Buttons (admin only) */}
             {isAdmin && (
             <div className="setup-actions">
-              <button className="btn-demo" onClick={onLoadDemo}>Load Demo</button>
+              <button className="btn-demo" onClick={onLoadDemo}>Load Debate Demo</button>
+              <button className="btn-demo" onClick={onLoadDataDemo}>Load Data Analysis Demo</button>
               <button
                 className="launch-button"
                 onClick={launchArena}
-                disabled={!topicInput.trim() || draftAgents.length === 0}
+                disabled={(!topicInput.trim() && !datasetInfo) || draftAgents.length === 0}
               >
                 Launch into Arena
               </button>
@@ -840,12 +930,17 @@ export default function App() {
                       const agent = agentMap.get(turn.speaker_id);
                       const color = agent ? agentColor(agent) : "#38bdf8";
                       return (
-                        <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
-                          <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                          <div className="chat-log__body">
-                            <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                            <p className="chat-log__message">{turn.message}</p>
+                        <div key={ti}>
+                          <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
+                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            <div className="chat-log__body">
+                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <p className="chat-log__message">{turn.message}</p>
+                            </div>
                           </div>
+                          {turn.visual && (
+                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
+                          )}
                         </div>
                       );
                     })}
@@ -862,12 +957,17 @@ export default function App() {
                       const agent = agentMap.get(turn.speaker_id);
                       const color = agent ? agentColor(agent) : "#38bdf8";
                       return (
-                        <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                          <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                          <div className="chat-log__body">
-                            <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                            <p className="chat-log__message">{turn.message}</p>
+                        <div key={`live-${ti}`}>
+                          <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
+                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            <div className="chat-log__body">
+                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <p className="chat-log__message">{turn.message}</p>
+                            </div>
                           </div>
+                          {turn.visual && (
+                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
+                          )}
                         </div>
                       );
                     })}
@@ -885,146 +985,215 @@ export default function App() {
             </aside>
           ) : (
             <aside className="side-panel">
-              {/* Command Center (admin only) */}
-              {isAdmin && (
-                <div className="section-block">
-                  <h2 className="section-title">Command Center</h2>
-                  <div className="button-row">
-                    <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                    <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                    <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
-                    <button className="btn-danger" onClick={onReset}>Reset</button>
+              {/* Tab selector */}
+              <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
+                <button type="button" className={`mbti-tab${sidePanelView === "controls" ? " mbti-tab--active" : ""}`}
+                  onClick={() => setSidePanelView("controls")}>
+                  Controls
+                </button>
+                <button type="button" className={`mbti-tab${sidePanelView === "dashboard" ? " mbti-tab--active" : ""}`}
+                  onClick={() => setSidePanelView("dashboard")}>
+                  Dashboard
+                </button>
+              </div>
+
+              {sidePanelView === "controls" ? (
+                <>
+                  {/* Command Center (admin only) */}
+                  {isAdmin && (
+                    <div className="section-block">
+                      <h2 className="section-title">Command Center</h2>
+                      <div className="button-row">
+                        <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                        <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                        <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                        <button className="btn-danger" onClick={onReset}>Reset</button>
+                      </div>
+                      <div className="control-row">
+                        <label className="toggle-row">
+                          <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
+                          <span className="toggle-switch" />
+                          <span className="toggle-label">Auto-Run</span>
+                        </label>
+                      </div>
+                      <div className="control-row">
+                        <label className="form-label">Interval (ms)</label>
+                        <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Battle Metrics */}
+                  <div className="section-block">
+                    <h2 className="section-title">Battle Metrics</h2>
+                    {metrics ? (
+                      <div className="metrics">
+                        <div className="metric-row">
+                          <span className="metric-label">Consensus</span>
+                          <div className="metric-bar-track">
+                            <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
+                          </div>
+                          <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
+                        </div>
+                        <div className="metric-row">
+                          <span className="metric-label">Polarization</span>
+                          <div className="metric-bar-track">
+                            <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
+                          </div>
+                          <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
+                        </div>
+                        <div className="metric-row">
+                          <span className="metric-label">Civility</span>
+                          <div className="metric-bar-track">
+                            <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
+                          </div>
+                          <span className="metric-value">{metricValue(metrics.civility_score)}</span>
+                        </div>
+                        <div className="coalitions-row">
+                          <span className="metric-label">Coalitions</span>
+                          <div className="coalitions-list">
+                            {metrics.detected_coalitions.length
+                              ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
+                              : <span className="metric-value">None detected</span>
+                            }
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="metrics-empty">No metrics yet</div>
+                    )}
                   </div>
-                  <div className="control-row">
-                    <label className="toggle-row">
-                      <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
-                      <span className="toggle-switch" />
-                      <span className="toggle-label">Auto-Run</span>
-                    </label>
+
+                  {/* Simulation Info */}
+                  <div className="section-block">
+                    <h2 className="section-title">Simulation Info</h2>
+                    <div className="info-grid">
+                      <div className="info-item">
+                        <span className="info-label">Round</span>
+                        <span className="info-value">{state?.round_number ?? 0}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Agents</span>
+                        <span className="info-value">{state?.agents.length ?? 0}</span>
+                      </div>
+                      <div className="info-item info-item--full">
+                        <span className="info-label">Topic</span>
+                        <span className="info-value">{state?.topic ?? "-"}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="control-row">
-                    <label className="form-label">Interval (ms)</label>
-                    <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
+
+                  {/* Conversation Log */}
+                  <div className="section-block section-block--log">
+                    <h2 className="section-title">
+                      Conversation Log
+                      <span className="section-title__count">{feed.length}</span>
+                    </h2>
+                    <div className="chat-log" ref={chatLogRef}>
+                      {feed.length === 0 && liveTurns.length === 0 && (
+                        <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
+                      )}
+                      {feed.map((roundEvent) => (
+                        <div key={roundEvent.round_result.round_number}>
+                          <div className="chat-log__round-divider">
+                            <span className="chat-log__round-divider-line" />
+                            <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
+                            <span className="chat-log__round-divider-line" />
+                          </div>
+                          {roundEvent.round_result.turns.map((turn, ti) => {
+                            const agent = agentMap.get(turn.speaker_id);
+                            const color = agent ? agentColor(agent) : "#38bdf8";
+                            return (
+                              <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
+                                <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                <div className="chat-log__body">
+                                  <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                  <p className="chat-log__message">{turn.message}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                      {liveTurns.length > 0 && (
+                        <div>
+                          <div className="chat-log__round-divider">
+                            <span className="chat-log__round-divider-line" />
+                            <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
+                            <span className="chat-log__round-divider-line" />
+                          </div>
+                          {liveTurns.map((turn, ti) => {
+                            const agent = agentMap.get(turn.speaker_id);
+                            const color = agent ? agentColor(agent) : "#38bdf8";
+                            return (
+                              <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                                <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                <div className="chat-log__body">
+                                  <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                  <p className="chat-log__message">{turn.message}</p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                /* ---- Dashboard Tab: Visual Contributions ---- */
+                <div className="section-block section-block--log">
+                  <h2 className="section-title">Analysis Dashboard</h2>
+                  {/* Admin controls row within dashboard */}
+                  {isAdmin && (
+                    <div className="button-row" style={{ marginBottom: "8px" }}>
+                      <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                      <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                      <button className="btn-danger" onClick={onReset}>Reset</button>
+                    </div>
+                  )}
+                  <div className="dashboard-section">
+                    {feed.length === 0 ? (
+                      <div className="chat-log__empty">No analysis yet. Run a round to begin.</div>
+                    ) : (
+                      feed.map((roundEvent) => {
+                        const visuals = roundEvent.round_result.turns.filter(t => t.visual);
+                        return (
+                          <div className="dashboard-round-group" key={roundEvent.round_result.round_number}>
+                            <div className="dashboard-round-label">Round {roundEvent.round_result.round_number}</div>
+                            {/* Text summary for this round */}
+                            {roundEvent.round_result.turns.map((turn, ti) => {
+                              const agent = agentMap.get(turn.speaker_id);
+                              const color = agent ? agentColor(agent) : "#38bdf8";
+                              return (
+                                <div className="chat-log__entry" key={`text-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={28} height={28} />
+                                  <div className="chat-log__body">
+                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <p className="chat-log__message">{turn.message}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {/* Visual contributions */}
+                            {visuals.map((turn, ti) => {
+                              const agent = agentMap.get(turn.speaker_id);
+                              return (
+                                <VisualCard
+                                  key={`vis-${ti}`}
+                                  visual={turn.visual!}
+                                  agentColor={agent ? agentColor(agent) : "#38bdf8"}
+                                  agentName={agent?.name ?? "Unknown"}
+                                />
+                              );
+                            })}
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
-
-              {/* Battle Metrics */}
-              <div className="section-block">
-                <h2 className="section-title">Battle Metrics</h2>
-                {metrics ? (
-                  <div className="metrics">
-                    <div className="metric-row">
-                      <span className="metric-label">Consensus</span>
-                      <div className="metric-bar-track">
-                        <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
-                      </div>
-                      <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
-                    </div>
-                    <div className="metric-row">
-                      <span className="metric-label">Polarization</span>
-                      <div className="metric-bar-track">
-                        <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
-                      </div>
-                      <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
-                    </div>
-                    <div className="metric-row">
-                      <span className="metric-label">Civility</span>
-                      <div className="metric-bar-track">
-                        <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
-                      </div>
-                      <span className="metric-value">{metricValue(metrics.civility_score)}</span>
-                    </div>
-                    <div className="coalitions-row">
-                      <span className="metric-label">Coalitions</span>
-                      <div className="coalitions-list">
-                        {metrics.detected_coalitions.length
-                          ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
-                          : <span className="metric-value">None detected</span>
-                        }
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="metrics-empty">No metrics yet</div>
-                )}
-              </div>
-
-              {/* Simulation Info */}
-              <div className="section-block">
-                <h2 className="section-title">Simulation Info</h2>
-                <div className="info-grid">
-                  <div className="info-item">
-                    <span className="info-label">Round</span>
-                    <span className="info-value">{state?.round_number ?? 0}</span>
-                  </div>
-                  <div className="info-item">
-                    <span className="info-label">Agents</span>
-                    <span className="info-value">{state?.agents.length ?? 0}</span>
-                  </div>
-                  <div className="info-item info-item--full">
-                    <span className="info-label">Topic</span>
-                    <span className="info-value">{state?.topic ?? "-"}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Conversation Log */}
-              <div className="section-block section-block--log">
-                <h2 className="section-title">
-                  Conversation Log
-                  <span className="section-title__count">{feed.length}</span>
-                </h2>
-                <div className="chat-log" ref={chatLogRef}>
-                  {feed.length === 0 && liveTurns.length === 0 && (
-                    <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
-                  )}
-                  {feed.map((roundEvent) => (
-                    <div key={roundEvent.round_result.round_number}>
-                      <div className="chat-log__round-divider">
-                        <span className="chat-log__round-divider-line" />
-                        <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
-                        <span className="chat-log__round-divider-line" />
-                      </div>
-                      {roundEvent.round_result.turns.map((turn, ti) => {
-                        const agent = agentMap.get(turn.speaker_id);
-                        const color = agent ? agentColor(agent) : "#38bdf8";
-                        return (
-                          <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
-                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                  {liveTurns.length > 0 && (
-                    <div>
-                      <div className="chat-log__round-divider">
-                        <span className="chat-log__round-divider-line" />
-                        <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
-                        <span className="chat-log__round-divider-line" />
-                      </div>
-                      {liveTurns.map((turn, ti) => {
-                        const agent = agentMap.get(turn.speaker_id);
-                        const color = agent ? agentColor(agent) : "#38bdf8";
-                        return (
-                          <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
             </aside>
           )}
         </main>

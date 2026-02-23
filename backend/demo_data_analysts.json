@@ -1,0 +1,36 @@
+{
+  "topic": "Analyze the uploaded dataset: student_performance.csv",
+  "dataset_summary": "DATASET: student_performance.csv\nShape: 1000 rows x 8 columns\n\nCOLUMNS:\n  - student_id [int64]\n  - gender [object] (0 nulls)\n  - study_hours_per_week [float64] (12 nulls, 1.2%)\n  - attendance_rate [float64] (5 nulls, 0.5%)\n  - previous_gpa [float64] (8 nulls, 0.8%)\n  - extracurricular_activities [int64]\n  - sleep_hours [float64] (3 nulls, 0.3%)\n  - final_grade [float64] (0 nulls)\n\nSAMPLE ROWS (first 5):\n  Row 1: student_id=1, gender=Female, study_hours_per_week=15.5, attendance_rate=0.92, previous_gpa=3.4, extracurricular_activities=2, sleep_hours=7.5, final_grade=85.2\n  Row 2: student_id=2, gender=Male, study_hours_per_week=8.0, attendance_rate=0.78, previous_gpa=2.8, extracurricular_activities=0, sleep_hours=6.0, final_grade=72.1\n  Row 3: student_id=3, gender=Female, study_hours_per_week=22.0, attendance_rate=0.95, previous_gpa=3.9, extracurricular_activities=3, sleep_hours=8.0, final_grade=94.7\n  Row 4: student_id=4, gender=Male, study_hours_per_week=NULL, attendance_rate=0.85, previous_gpa=3.1, extracurricular_activities=1, sleep_hours=7.0, final_grade=78.5\n  Row 5: student_id=5, gender=Female, study_hours_per_week=12.0, attendance_rate=0.88, previous_gpa=NULL, extracurricular_activities=2, sleep_hours=6.5, final_grade=81.3\n\nNUMERIC COLUMN STATISTICS:\n  study_hours_per_week: count=988, mean=14.2, std=5.8, min=2.0, 25%=10.0, 50%=14.0, 75%=18.5, max=35.0\n  attendance_rate: count=995, mean=0.85, std=0.12, min=0.40, 25%=0.78, 50%=0.87, 75%=0.94, max=1.00\n  previous_gpa: count=992, mean=3.1, std=0.6, min=1.5, 25%=2.7, 50%=3.1, 75%=3.5, max=4.0\n  final_grade: count=1000, mean=79.5, std=12.3, min=35.0, 25%=72.0, 50%=80.0, 75%=88.0, max=100.0",
+  "agents": [
+    {
+      "name": "Raj Patel",
+      "persona_text": "Senior data engineer obsessed with data quality and pipeline integrity. Always checks for nulls, duplicates, and type mismatches before anyone touches the data. Believes clean data is the foundation of every insight.",
+      "energy": 0.75,
+      "mbti_type": "ISTJ"
+    },
+    {
+      "name": "Sofia Chen",
+      "persona_text": "Exploratory data analyst who lives for descriptive statistics and correlation hunting. First instinct is always to run distributions, cross-tabs, and summary stats. Finds patterns others miss.",
+      "energy": 0.65,
+      "mbti_type": "INTP"
+    },
+    {
+      "name": "Marcus Williams",
+      "persona_text": "Visualization expert who believes every insight needs a picture. Advocates for the right chart type, color accessibility, and visual storytelling. Passionate about making data speak through graphics.",
+      "energy": 0.80,
+      "mbti_type": "ENFP"
+    },
+    {
+      "name": "Dr. Anika Johansson",
+      "persona_text": "Machine learning engineer who thinks about features, models, and predictions. Wants to build predictive models and evaluate feature importance. Balances complexity with interpretability.",
+      "energy": 0.55,
+      "mbti_type": "INTJ"
+    },
+    {
+      "name": "Kai Nakamura",
+      "persona_text": "Data storyteller who translates numbers into narratives. Focuses on the human story behind the data, key takeaways, and actionable recommendations. Makes data accessible to non-technical stakeholders.",
+      "energy": 0.70,
+      "mbti_type": "ENFJ"
+    }
+  ]
+}

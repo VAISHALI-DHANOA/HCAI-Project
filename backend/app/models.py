@@ -36,9 +36,18 @@ class Agent(BaseModel):
         return cleaned
 
 
+class VisualSpec(BaseModel):
+    """A visual contribution from an agent, rendered in the dashboard."""
+    visual_type: str  # bar_chart, table, scatter, line_chart, stat_card, heatmap
+    title: str
+    data: dict | list
+    description: str = ""
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
+    visual: VisualSpec | None = None
 
 
 class Reaction(BaseModel):
@@ -72,6 +81,7 @@ class State(BaseModel):
     public_history: list[PublicTurn] = Field(default_factory=list)
     reactions: list[Reaction] = Field(default_factory=list)
     world_state: dict = Field(default_factory=dict)
+    dataset_summary: str = ""
 
 
 class UserAgentInput(BaseModel):

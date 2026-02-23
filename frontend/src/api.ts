@@ -1,4 +1,4 @@
-import type { State } from "./types";
+import type { DatasetInfo, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -59,6 +59,31 @@ export async function reset(topic?: string): Promise<{ state: State }> {
 
 export async function loadDemo(): Promise<{ state: State }> {
   return request<{ state: State }>("/demo", { method: "POST" });
+}
+
+export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; state: State }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const headers: Record<string, string> = {};
+  if (_adminKey) {
+    headers["X-Admin-Key"] = _adminKey;
+  }
+
+  const response = await fetch(`${API_BASE}/upload-dataset`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Upload failed: ${response.status}`);
+  }
+  return (await response.json()) as { parsed: DatasetInfo; state: State };
+}
+
+export async function loadDataDemo(): Promise<{ state: State }> {
+  return request<{ state: State }>("/demo-data", { method: "POST" });
 }
 
 export async function addAgentsWithMBTI(

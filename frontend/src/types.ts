@@ -25,9 +25,24 @@ export interface ChatMessage {
 
 export type AppPhase = "setup" | "arena";
 
+export interface VisualSpec {
+  visual_type: "bar_chart" | "table" | "scatter" | "line_chart" | "stat_card" | "heatmap";
+  title: string;
+  data: any;
+  description?: string;
+}
+
 export interface PublicTurn {
   speaker_id: string;
   message: string;
+  visual?: VisualSpec | null;
+}
+
+export interface DatasetInfo {
+  filename: string;
+  shape: [number, number];
+  columns: Array<{ name: string; dtype: string; null_count: number; null_pct: number }>;
+  sample_rows: Record<string, any>[];
 }
 
 export interface Reaction {
@@ -59,6 +74,7 @@ export interface State {
   public_history: PublicTurn[];
   reactions: Reaction[];
   world_state: Record<string, unknown>;
+  dataset_summary?: string;
 }
 
 export interface WsRoundEvent {

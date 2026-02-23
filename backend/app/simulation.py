@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from app.llm import generate_agent_message, generate_chair_summary
+from app.llm import generate_agent_message, generate_chair_summary, generate_visual_spec
 from app.metrics import compute_emergent_metrics
-from app.models import Agent, PublicTurn, Reaction, RoundResult, State
+from app.models import Agent, PublicTurn, Reaction, RoundResult, State, VisualSpec
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
 
@@ -61,7 +61,17 @@ async def run_round(
         )
         message = enforce_civility(raw_message)
         message = truncate_to_words(message, 100)
-        turn = PublicTurn(speaker_id=speaker.id, message=message)
+
+        visual = None
+        if state.dataset_summary and speaker.role == "user":
+            visual_data = await generate_visual_spec(speaker, state, message)
+            if visual_data:
+                try:
+                    visual = VisualSpec(**visual_data)
+                except Exception:
+                    visual = None
+
+        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual)
         turns.append(turn)
         if on_turn:
             await on_turn(turn, state.round_number)

@@ -58,8 +58,16 @@ def get_client() -> anthropic.AsyncAnthropic:
     return _client
 
 
-def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int) -> str:
-    return (
+ROUND_PROMPTS = {
+    1: "Focus on first observations: data quality issues, initial patterns, and what stands out about this dataset.",
+    2: "Focus on data cleaning recommendations, preprocessing needs, and deeper statistical analysis.",
+    3: "Focus on key insights discovered, visualization recommendations, and predictive modeling opportunities.",
+}
+DEFAULT_ROUND_PROMPT = "Continue the data analysis discussion, building on previous findings and refining recommendations."
+
+
+def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
+    base = (
         f'You are "{agent.name}", a mediator in a multi-agent deliberation about: {topic}\n'
         f"\n"
         f"Your persona: {agent.persona_text}\n"
@@ -82,6 +90,9 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int) -> s
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- Write in a natural conversational tone as if speaking aloud in a meeting"
     )
+    if dataset_context:
+        base += f"\n\nDATASET CONTEXT (the team is analyzing this data):\n{dataset_context}\n"
+    return base
 
 
 def _mbti_behavior(mbti_type: str | None) -> str:
@@ -107,11 +118,11 @@ def _mbti_behavior(mbti_type: str | None) -> str:
     return "\n".join(f"- {b}" for b in behaviors)
 
 
-def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> str:
+def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
     active_quirk = agent.quirks[round_number % 3]
     mbti = _mbti_line(agent.mbti_type)
     mbti_behavior = _mbti_behavior(agent.mbti_type)
-    return (
+    base = (
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
         f"\n"
         f"Your persona: {agent.persona_text}\n"
@@ -140,12 +151,15 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int) -> st
         f"- End with an invitation for others to respond (a question or challenge)\n"
         f"- Write in a natural conversational tone as if speaking aloud in a meeting"
     )
+    if dataset_context:
+        base += f"\n\nDATASET CONTEXT (use this data in your analysis):\n{dataset_context}\n"
+    return base
 
 
-def build_system_prompt(agent: Agent, topic: str, round_number: int) -> str:
+def build_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
     if agent.role == "mediator":
-        return _build_chair_system_prompt(agent, topic, round_number)
-    return _build_user_system_prompt(agent, topic, round_number)
+        return _build_chair_system_prompt(agent, topic, round_number, dataset_context)
+    return _build_user_system_prompt(agent, topic, round_number, dataset_context)
 
 
 def _format_conversation_history(
@@ -156,6 +170,11 @@ def _format_conversation_history(
     recent_history = state.public_history[-12:]
     all_context_turns = recent_history + active_turns
 
+    round_hint = ""
+    if state.dataset_summary:
+        round_hint = ROUND_PROMPTS.get(state.round_number, DEFAULT_ROUND_PROMPT)
+        round_hint = f"\nROUND FOCUS: {round_hint}\n"
+
     if not all_context_turns:
         return [
             {
@@ -163,6 +182,7 @@ def _format_conversation_history(
                 "content": (
                     f'You are starting the discussion on the topic: "{state.topic}"\n'
                     f"No one has spoken yet. Please open the conversation."
+                    f"{round_hint}"
                 ),
             }
         ]
@@ -180,6 +200,7 @@ def _format_conversation_history(
             "role": "user",
             "content": (
                 f"Here is the recent conversation:\n\n{transcript}\n\n"
+                f"{round_hint}"
                 f"Now respond as {speaker.name}. "
                 f"Remember your persona, traits, and constraints."
             ),
@@ -206,7 +227,10 @@ async def generate_agent_message(
 ) -> str:
     try:
         client = get_client()
-        system_prompt = build_system_prompt(agent, state.topic, state.round_number)
+        system_prompt = build_system_prompt(
+            agent, state.topic, state.round_number,
+            dataset_context=state.dataset_summary,
+        )
         messages = _format_conversation_history(state, active_turns, agent)
 
         response = await client.messages.create(
@@ -287,6 +311,59 @@ async def generate_chair_summary(
         logger.warning("Chair summary error: %s", exc)
 
     return f"Good discussion this round. Let's continue exploring {state.topic}."
+
+
+VISUAL_MAX_TOKENS = 500
+
+
+async def generate_visual_spec(
+    agent: Agent,
+    state: State,
+    agent_message: str,
+) -> dict | None:
+    """Generate a visual contribution spec based on the agent's message and role."""
+    if not state.dataset_summary:
+        return None
+
+    visual_system = (
+        f'You are "{agent.name}" generating a data visualization specification.\n'
+        f"Your persona: {agent.persona_text}\n"
+        f"\nDATASET:\n{state.dataset_summary}\n"
+        f"\nYour message this round was: {agent_message}\n"
+        f"\nGenerate a JSON object describing a visual contribution. The JSON MUST have:\n"
+        f'- "visual_type": one of "bar_chart", "table", "scatter", "line_chart", "stat_card", "heatmap"\n'
+        f'- "title": short descriptive title\n'
+        f'- "data": the chart data payload:\n'
+        f'  For bar_chart/line_chart: {{"labels": [...], "values": [...], "series_name": "..."}}\n'
+        f'  For scatter: {{"points": [{{"x": num, "y": num}}, ...], "x_label": "...", "y_label": "..."}}\n'
+        f'  For table: {{"headers": [...], "rows": [[...], ...]}}\n'
+        f'  For stat_card: {{"stats": [{{"label": "...", "value": "..."}}, ...]}}\n'
+        f'  For heatmap: {{"headers": [...], "rows": [[...], ...]}}\n'
+        f'- "description": one sentence about what this shows\n'
+        f"\nUse realistic data values based on the dataset statistics provided.\n"
+        f"Respond with ONLY the JSON object, no markdown, no explanation."
+    )
+
+    try:
+        client = get_client()
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=VISUAL_MAX_TOKENS,
+            temperature=0.7,
+            system=visual_system,
+            messages=[{"role": "user", "content": "Generate the visual spec now."}],
+        )
+        import json
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        return json.loads(text)
+    except Exception as exc:
+        logger.warning("Visual spec generation failed for %s: %s", agent.name, exc)
+        return None
 
 
 def _build_test_chat_system_prompt(
