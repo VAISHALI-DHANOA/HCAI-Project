@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, downloadLogs, getState, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
+import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
@@ -58,6 +58,8 @@ export default function App() {
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
+  const [interveneInput, setInterveneInput] = useState("");
+  const [intervening, setIntervening] = useState(false);
   const { speak, stop: stopTTS } = useTTS();
 
   const [isAdmin] = useState<boolean>(() => {
@@ -97,7 +99,8 @@ export default function App() {
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
         pendingRoundRef.current = null;
-        setLiveTurns([]);
+        // Preserve human intervention turns across round boundaries
+        setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
         setActiveTurnIdx(ev.round_result.turns.length - 1);
         setShowReactions(true);
         setFeed((prev) => [...prev, ev]);
@@ -202,6 +205,8 @@ export default function App() {
           return;
         }
         if (event.type === "turn") {
+          // Human interventions are shown locally on submit — skip WebSocket echo
+          if (event.turn.speaker_id === "human") return;
           // Auto-transition students to arena when debate starts
           if (!isAdmin && appPhaseRef.current === "setup") {
             setAppPhase("arena");
@@ -481,6 +486,25 @@ export default function App() {
       setSidePanelView("controls");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
+    }
+  }
+
+  async function onIntervene(event: FormEvent) {
+    event.preventDefault();
+    if (!interveneInput.trim() || intervening) return;
+    const msg = interveneInput.trim();
+    setError("");
+    try {
+      setIntervening(true);
+      await intervene(msg);
+      // Show immediately in center stage and logs (don't wait for WebSocket)
+      const turn: PublicTurn = { speaker_id: "human", message: msg };
+      setLiveTurns((prev) => [...prev, turn]);
+      setInterveneInput("");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to send message");
+    } finally {
+      setIntervening(false);
     }
   }
 
@@ -895,15 +919,17 @@ export default function App() {
                   {pastTurns.length > 0 && (
                     <div className="center-stage__history" ref={historyRef}>
                       {pastTurns.map((turn, i) => (
-                        <p className="center-stage__past-turn" key={i}>
-                          <strong>{agentMap.get(turn.speaker_id)?.name ?? "?"}: </strong>
+                        <p className={`center-stage__past-turn${turn.speaker_id === "human" ? " center-stage__past-turn--human" : ""}`} key={i}>
+                          <strong>{turn.speaker_id === "human" ? "You" : (agentMap.get(turn.speaker_id)?.name ?? "?")}: </strong>
                           {turn.message}
                         </p>
                       ))}
                     </div>
                   )}
-                  <div className="center-stage__speaker">
-                    {agentMap.get(currentTurn.speaker_id) && (
+                  <div className={`center-stage__speaker${currentTurn.speaker_id === "human" ? " center-stage__speaker--human" : ""}`}>
+                    {currentTurn.speaker_id === "human" ? (
+                      <span className="center-stage__speaker-avatar center-stage__human-icon">You</span>
+                    ) : agentMap.get(currentTurn.speaker_id) ? (
                       <img
                         className="center-stage__speaker-avatar"
                         src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
@@ -911,9 +937,9 @@ export default function App() {
                         width={40}
                         height={40}
                       />
-                    )}
+                    ) : null}
                     <span className="center-stage__speaker-name">
-                      {agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id}
+                      {currentTurn.speaker_id === "human" ? "You" : (agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id)}
                     </span>
                   </div>
                   <p className="center-stage__message" key={`turn-${currentTurn.speaker_id}-${pastTurns.length}`}>
@@ -941,6 +967,25 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            {/* Intervention Input Bar */}
+            <form className="intervention-bar" onSubmit={onIntervene}>
+              <input
+                className="intervention-bar__input"
+                value={interveneInput}
+                onChange={(e) => setInterveneInput(e.target.value)}
+                placeholder="Type a message to intervene in the discussion..."
+                disabled={intervening}
+                maxLength={500}
+              />
+              <button
+                className="intervention-bar__send"
+                type="submit"
+                disabled={intervening || !interveneInput.trim()}
+              >
+                Send
+              </button>
+            </form>
           </section>
 
           {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}
@@ -962,14 +1007,19 @@ export default function App() {
                       <span className="chat-log__round-divider-line" />
                     </div>
                     {roundEvent.round_result.turns.map((turn, ti) => {
+                      const isHuman = turn.speaker_id === "human";
                       const agent = agentMap.get(turn.speaker_id);
-                      const color = agent ? agentColor(agent) : "#38bdf8";
+                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
                       return (
                         <div key={ti}>
-                          <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
-                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                            {isHuman ? (
+                              <span className="chat-log__human-avatar">You</span>
+                            ) : (
+                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            )}
                             <div className="chat-log__body">
-                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
                               <p className="chat-log__message">{turn.message}</p>
                             </div>
                           </div>
@@ -989,14 +1039,19 @@ export default function App() {
                       <span className="chat-log__round-divider-line" />
                     </div>
                     {liveTurns.map((turn, ti) => {
+                      const isHuman = turn.speaker_id === "human";
                       const agent = agentMap.get(turn.speaker_id);
-                      const color = agent ? agentColor(agent) : "#38bdf8";
+                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
                       return (
                         <div key={`live-${ti}`}>
-                          <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
-                            <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                            {isHuman ? (
+                              <span className="chat-log__human-avatar">You</span>
+                            ) : (
+                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                            )}
                             <div className="chat-log__body">
-                              <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
                               <p className="chat-log__message">{turn.message}</p>
                             </div>
                           </div>
@@ -1136,14 +1191,19 @@ export default function App() {
                             <span className="chat-log__round-divider-line" />
                           </div>
                           {roundEvent.round_result.turns.map((turn, ti) => {
+                            const isHuman = turn.speaker_id === "human";
                             const agent = agentMap.get(turn.speaker_id);
-                            const color = agent ? agentColor(agent) : "#38bdf8";
+                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
                             return (
                               <div key={ti}>
-                                <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
-                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                                  {isHuman ? (
+                                    <span className="chat-log__human-avatar">You</span>
+                                  ) : (
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                  )}
                                   <div className="chat-log__body">
-                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
                                     <p className="chat-log__message">{turn.message}</p>
                                   </div>
                                 </div>
@@ -1163,14 +1223,19 @@ export default function App() {
                             <span className="chat-log__round-divider-line" />
                           </div>
                           {liveTurns.map((turn, ti) => {
+                            const isHuman = turn.speaker_id === "human";
                             const agent = agentMap.get(turn.speaker_id);
-                            const color = agent ? agentColor(agent) : "#38bdf8";
+                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
                             return (
                               <div key={`live-${ti}`}>
-                                <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
-                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                                  {isHuman ? (
+                                    <span className="chat-log__human-avatar">You</span>
+                                  ) : (
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                  )}
                                   <div className="chat-log__body">
-                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
                                     <p className="chat-log__message">{turn.message}</p>
                                   </div>
                                 </div>
@@ -1215,13 +1280,18 @@ export default function App() {
                             <div className="dashboard-round-label">Round {roundEvent.round_result.round_number}</div>
                             {/* Text summary for this round */}
                             {roundEvent.round_result.turns.map((turn, ti) => {
+                              const isHuman = turn.speaker_id === "human";
                               const agent = agentMap.get(turn.speaker_id);
-                              const color = agent ? agentColor(agent) : "#38bdf8";
+                              const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
                               return (
-                                <div className="chat-log__entry" key={`text-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={28} height={28} />
+                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} key={`text-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                                  {isHuman ? (
+                                    <span className="chat-log__human-avatar">You</span>
+                                  ) : (
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={28} height={28} />
+                                  )}
                                   <div className="chat-log__body">
-                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
                                     <p className="chat-log__message">{turn.message}</p>
                                   </div>
                                 </div>

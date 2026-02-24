@@ -190,12 +190,24 @@ def _format_conversation_history(
         ]
 
     agent_names = {a.id: a.name for a in state.agents}
+    agent_names["human"] = "Human Participant"
     lines = []
+    has_human_input = False
     for turn in all_context_turns:
         name = agent_names.get(turn.speaker_id, "Unknown")
         lines.append(f"{name}: {turn.message}")
+        if turn.speaker_id == "human":
+            has_human_input = True
 
     transcript = "\n".join(lines)
+
+    human_note = ""
+    if has_human_input:
+        human_note = (
+            "\nIMPORTANT: A human participant has contributed to the discussion. "
+            "You MUST directly acknowledge and respond to their input. "
+            "Address them as 'Human Participant' and engage with their specific points.\n"
+        )
 
     return [
         {
@@ -203,6 +215,7 @@ def _format_conversation_history(
             "content": (
                 f"Here is the recent conversation:\n\n{transcript}\n\n"
                 f"{round_hint}"
+                f"{human_note}"
                 f"Now respond as {speaker.name}. "
                 f"Remember your persona, traits, and constraints."
             ),

@@ -86,6 +86,13 @@ export async function loadDataDemo(): Promise<{ state: State; parsed?: DatasetIn
   return request<{ state: State; parsed?: DatasetInfo }>("/demo-data", { method: "POST" });
 }
 
+export async function intervene(message: string): Promise<{ state: State }> {
+  return request<{ state: State }>("/intervene", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
 export async function addAgentsWithMBTI(
   agents: Array<{ name: string; persona_text: string; energy: number; mbti_type: string }>
 ): Promise<{ state: State }> {

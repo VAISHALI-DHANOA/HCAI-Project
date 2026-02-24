@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse, Response
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from app.agent_factory import create_agents_from_user
-from app.models import AddAgentsRequest, ChatRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
+from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
+from app.models import PublicTurn
 from app.simulation import run_round
 from app.state import STORE
 
@@ -162,6 +163,19 @@ async def reset(payload: ResetRequest) -> dict:
     snapshot = state.model_dump()
     await manager.broadcast({"type": "state", "state_snapshot": snapshot})
     return {"state": snapshot}
+
+
+@app.post("/intervene")
+async def intervene(payload: InterveneRequest) -> dict:
+    state = STORE.get_state()
+    turn = PublicTurn(speaker_id="human", message=payload.message.strip())
+    state.public_history.append(turn)
+    await manager.broadcast({
+        "type": "turn",
+        "turn": turn.model_dump(),
+        "round_number": state.round_number,
+    })
+    return {"state": state.model_dump()}
 
 
 @app.post("/demo", dependencies=[Depends(verify_admin)])
