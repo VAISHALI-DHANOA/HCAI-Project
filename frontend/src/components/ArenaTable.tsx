@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { Agent, CellAnnotation, CellHighlight, PublicTurn, VisualSpec } from "../types";
+import { useEffect, useMemo, useRef } from "react";
+import type { Agent, CellAnnotation, CellHighlight, PublicTurn } from "../types";
 import { VisualCard } from "./VisualCard";
 
 const AGENT_COLORS = [
@@ -46,7 +46,6 @@ export function ArenaTable({
   agentMap,
 }: ArenaTableProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const agentRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   // Build highlight map: "row-col" -> color
   const highlightMap = useMemo(() => {
@@ -75,26 +74,6 @@ export function ArenaTable({
     return map;
   }, [accumulatedAnnotations]);
 
-  // Compute pixel positions for agents based on their table positions
-  const getAgentPixelPosition = useCallback((agentId: string): { top: number; left: number } | null => {
-    const pos = agentPositions.get(agentId);
-    const container = containerRef.current;
-    if (!pos || !container) return null;
-
-    const cell = container.querySelector(
-      `td[data-row="${pos.row}"][data-col="${pos.column}"]`
-    ) as HTMLElement | null;
-    if (!cell) return null;
-
-    const containerRect = container.getBoundingClientRect();
-    const cellRect = cell.getBoundingClientRect();
-
-    return {
-      top: cellRect.top - containerRect.top + container.scrollTop,
-      left: cellRect.left - containerRect.left + container.scrollLeft + cellRect.width / 2,
-    };
-  }, [agentPositions]);
-
   // Auto-scroll to the current speaker's cell
   useEffect(() => {
     if (!currentTurn || currentTurn.speaker_id === "human") return;
@@ -110,15 +89,9 @@ export function ArenaTable({
     }
   }, [currentTurn, agentPositions]);
 
-  // Default agent positions: spread evenly across header columns
-  const defaultPositions = useMemo(() => {
-    const positions = new Map<string, { row: number; column: string }>();
-    agents.forEach((agent, i) => {
-      const colIdx = Math.floor((i / agents.length) * columns.length);
-      positions.set(agent.id, { row: 0, column: columns[colIdx] ?? columns[0] });
-    });
-    return positions;
-  }, [agents, columns]);
+  // Default: all agents start at top-left (row 0, first column) near the chair
+  // They move to their target cell only when their turn comes with a navigate_to action
+  const defaultColumn = columns[0] ?? "";
 
   const currentSpeakerId = currentTurn?.speaker_id ?? null;
 
@@ -174,15 +147,14 @@ export function ArenaTable({
 
       {/* Agent overlay layer */}
       {agents.map((agent) => {
-        const pos = agentPositions.get(agent.id) ?? defaultPositions.get(agent.id);
+        const pos = agentPositions.get(agent.id);
         const isSpeaking = currentSpeakerId === agent.id;
         const isDimmed = currentSpeakerId !== null && !isSpeaking;
         const color = agentColor(agent);
-        const pixelPos = getAgentPixelPosition(agent.id);
 
-        // Find the cell for positioning
+        // If the agent has navigated somewhere, use that; otherwise top-left
         const targetRow = pos?.row ?? 0;
-        const targetCol = pos?.column ?? columns[0];
+        const targetCol = pos?.column ?? defaultColumn;
 
         return (
           <AgentOverlay
@@ -195,7 +167,6 @@ export function ArenaTable({
             targetCol={targetCol}
             containerRef={containerRef}
             currentTurn={isSpeaking ? currentTurn : null}
-            pastTurns={isSpeaking ? pastTurns : []}
             agentMap={agentMap}
           />
         );
@@ -213,7 +184,6 @@ interface AgentOverlayProps {
   targetCol: string;
   containerRef: React.RefObject<HTMLDivElement | null>;
   currentTurn: PublicTurn | null;
-  pastTurns: PublicTurn[];
   agentMap: Map<string, Agent>;
 }
 
@@ -226,7 +196,6 @@ function AgentOverlay({
   targetCol,
   containerRef,
   currentTurn,
-  pastTurns,
   agentMap,
 }: AgentOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -278,20 +247,6 @@ function AgentOverlay({
 
       {isSpeaking && currentTurn && (
         <div className="speech-bubble">
-          {pastTurns.length > 0 && (
-            <div className="speech-bubble__history">
-              {pastTurns.map((turn, i) => {
-                const speaker = agentMap.get(turn.speaker_id);
-                const isHuman = turn.speaker_id === "human";
-                return (
-                  <p className="speech-bubble__past" key={i}>
-                    <strong>{isHuman ? "You" : (speaker?.name ?? "?")}: </strong>
-                    {turn.message}
-                  </p>
-                );
-              })}
-            </div>
-          )}
           <p className="speech-bubble__message">{currentTurn.message}</p>
           {currentTurn.visual && (
             <div className="speech-bubble__visual">
