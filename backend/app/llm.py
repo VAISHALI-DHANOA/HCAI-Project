@@ -478,6 +478,68 @@ async def generate_table_action_and_visual(
         return {}
 
 
+DASHBOARD_VISUAL_MAX_TOKENS = 800
+
+
+async def generate_dashboard_visual(
+    agent: Agent,
+    state: State,
+    agent_message: str,
+    round_number: int = 0,
+    column_names: list[str] | None = None,
+) -> dict | None:
+    """Generate a richer visual spec for the dashboard canvas (rounds 3+)."""
+    if not state.dataset_summary or not column_names:
+        return None
+
+    round_visual_hint = VISUAL_ROUND_HINTS.get(
+        round_number,
+        "Choose the most appropriate visual type for the analysis being discussed.",
+    )
+    cols_str = ", ".join(column_names)
+
+    system_prompt = (
+        f'You are "{agent.name}" creating a dashboard visualization.\n'
+        f"Your persona: {agent.persona_text}\n"
+        f"\nDATASET:\n{state.dataset_summary}\n"
+        f"\nAVAILABLE COLUMNS: {cols_str}\n"
+        f"\nYour message this round was: {agent_message}\n"
+        f"\nROUND GUIDANCE: {round_visual_hint}\n"
+        f"\nGenerate a JSON object for a SINGLE dashboard chart. Use 8-15 data points for rich display.\n"
+        f"It MUST have:\n"
+        f'- "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
+        f'- "title": short descriptive title\n'
+        f'- "data": chart data payload matching this format:\n'
+        f'  For bar_chart/line_chart: {{"labels": ["A","B","C",...], "values": [1,2,3,...]}}\n'
+        f'  For scatter: {{"points": [{{"x":1,"y":2}},{{"x":3,"y":4}},...], "x_label":"X", "y_label":"Y"}}\n'
+        f'  For stat_card: {{"stats": [{{"label":"Metric","value":"42"}},...]}}  (3-6 stats ideal)\n'
+        f'- "description": one sentence summarizing the insight\n'
+        f"\nRespond with ONLY the JSON object, no markdown, no explanation.\n"
+        f"Use ONLY column names from the AVAILABLE COLUMNS list."
+    )
+
+    try:
+        client = get_client()
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=DASHBOARD_VISUAL_MAX_TOKENS,
+            temperature=0.7,
+            system=system_prompt,
+            messages=[{"role": "user", "content": "Generate the dashboard visual now. Include rich data with 8-15 data points."}],
+        )
+        import json
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        return json.loads(text)
+    except Exception as exc:
+        logger.warning("Dashboard visual generation failed for %s: %s", agent.name, exc)
+        return None
+
+
 def _build_test_chat_system_prompt(
     agent_name: str, agent_persona: str, mbti_type: str,
 ) -> str:

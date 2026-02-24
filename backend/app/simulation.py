@@ -5,6 +5,7 @@ from typing import Awaitable, Callable
 from app.llm import (
     generate_agent_message,
     generate_chair_summary,
+    generate_dashboard_visual,
     generate_table_action_and_visual,
     generate_visual_spec,
     AGENT_COLORS,
@@ -74,8 +75,20 @@ async def run_round(
         visual = None
         table_action = None
         if state.dataset_summary and speaker.role == "user":
-            if state.dataset_columns:
-                # Use combined table action + visual generation
+            if state.dataset_columns and state.round_number >= 3:
+                # Dashboard mode: visual only, no table_action
+                visual_data = await generate_dashboard_visual(
+                    speaker, state, message,
+                    round_number=state.round_number,
+                    column_names=state.dataset_columns,
+                )
+                if visual_data and isinstance(visual_data, dict) and visual_data.get("visual_type"):
+                    try:
+                        visual = VisualSpec(**visual_data)
+                    except Exception:
+                        pass
+            elif state.dataset_columns:
+                # Rounds 1-2: combined table action + visual generation
                 speaker_idx = next(
                     (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
                 )

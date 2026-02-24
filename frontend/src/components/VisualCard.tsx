@@ -10,6 +10,7 @@ interface VisualCardProps {
   visual: VisualSpec;
   agentColor: string;
   agentName: string;
+  size?: "default" | "large";
 }
 
 /** Error boundary so a single malformed visual doesn't crash the app. */
@@ -26,21 +27,25 @@ class VisualErrorBoundary extends Component<{ children: ReactNode }, { hasError:
 
 const CHART_W = 280;
 const CHART_H = 150;
+const CHART_W_LARGE = 480;
+const CHART_H_LARGE = 260;
 
-export function VisualCard({ visual, agentColor, agentName }: VisualCardProps) {
+export function VisualCard({ visual, agentColor, agentName, size = "default" }: VisualCardProps) {
   if (!visual || !visual.data) {
     return null;
   }
 
+  const isLarge = size === "large";
+
   return (
-    <div className="visual-card" style={{ "--agent-color": agentColor } as React.CSSProperties}>
+    <div className={`visual-card${isLarge ? " visual-card--large" : ""}`} style={{ "--agent-color": agentColor } as React.CSSProperties}>
       <div className="visual-card__header">
         <span className="visual-card__agent">{agentName}</span>
         <span className="visual-card__title">{visual.title}</span>
       </div>
       <div className="visual-card__body">
         <VisualErrorBoundary>
-          {renderVisual(visual, agentColor)}
+          {renderVisual(visual, agentColor, isLarge)}
         </VisualErrorBoundary>
       </div>
       {visual.description && (
@@ -50,15 +55,17 @@ export function VisualCard({ visual, agentColor, agentName }: VisualCardProps) {
   );
 }
 
-function renderVisual(spec: VisualSpec, color: string) {
+function renderVisual(spec: VisualSpec, color: string, large: boolean = false) {
+  const w = large ? CHART_W_LARGE : CHART_W;
+  const h = large ? CHART_H_LARGE : CHART_H;
   try {
     switch (spec.visual_type) {
       case "bar_chart":
-        return renderBarChart(spec.data, color);
+        return renderBarChart(spec.data, color, w, h);
       case "line_chart":
-        return renderLineChart(spec.data, color);
+        return renderLineChart(spec.data, color, w, h);
       case "scatter":
-        return renderScatterChart(spec.data, color);
+        return renderScatterChart(spec.data, color, w, h);
       case "table":
       case "heatmap":
         return renderTable(spec.data);
@@ -72,7 +79,7 @@ function renderVisual(spec: VisualSpec, color: string) {
   }
 }
 
-function renderBarChart(data: any, color: string) {
+function renderBarChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
   const labels = Array.isArray(data.labels) ? data.labels : [];
   const values = Array.isArray(data.values) ? data.values : [];
   if (labels.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
@@ -82,7 +89,7 @@ function renderBarChart(data: any, color: string) {
     value: Number(values[i]) || 0,
   }));
   return (
-    <BarChart width={CHART_W} height={CHART_H} data={chartData}>
+    <BarChart width={w} height={h} data={chartData}>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
@@ -92,7 +99,7 @@ function renderBarChart(data: any, color: string) {
   );
 }
 
-function renderLineChart(data: any, color: string) {
+function renderLineChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
   const labels = Array.isArray(data.labels) ? data.labels : [];
   const values = Array.isArray(data.values) ? data.values : [];
   if (labels.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
@@ -102,7 +109,7 @@ function renderLineChart(data: any, color: string) {
     value: Number(values[i]) || 0,
   }));
   return (
-    <LineChart width={CHART_W} height={CHART_H} data={chartData}>
+    <LineChart width={w} height={h} data={chartData}>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
@@ -112,13 +119,13 @@ function renderLineChart(data: any, color: string) {
   );
 }
 
-function renderScatterChart(data: any, color: string) {
+function renderScatterChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
   const points = Array.isArray(data.points) ? data.points : [];
   if (points.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
 
   const chartData = points.map((pt: any) => ({ x: Number(pt.x) || 0, y: Number(pt.y) || 0 }));
   return (
-    <ScatterChart width={CHART_W} height={CHART_H}>
+    <ScatterChart width={w} height={h}>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="x" name={data.x_label || "X"} tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis dataKey="y" name={data.y_label || "Y"} tick={{ fontSize: 9, fill: "#94a3b8" }} />

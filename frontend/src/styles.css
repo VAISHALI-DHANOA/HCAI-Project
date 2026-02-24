@@ -2673,3 +2673,185 @@ thead .arena-table__row-index {
 .speech-bubble__visual .visual-card__body {
   max-height: 140px;
 }
+
+/* ================================================================
+   DASHBOARD TRANSITION & CANVAS
+   ================================================================ */
+
+/* Transition overlay */
+.dashboard-transition-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(8px);
+  animation: dashboardOverlayIn 0.4s ease-out;
+}
+
+@keyframes dashboardOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dashboard-transition-overlay__spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(56, 189, 248, 0.15);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-transition-overlay__text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+  letter-spacing: 0.04em;
+}
+
+/* Dashboard viewport */
+.arena-viewport--dashboard {
+  display: flex;
+  flex-direction: column;
+}
+
+.arena-viewport--dashboard::before,
+.arena-viewport--dashboard::after {
+  display: none;
+}
+
+/* Dashboard canvas */
+.dashboard-canvas {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.dashboard-canvas__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 16px;
+}
+
+.dashboard-canvas__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.dashboard-canvas__empty p {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* Dashboard cards */
+.dashboard-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  animation: dashboardCardIn 0.5s ease-out both;
+}
+
+@keyframes dashboardCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-card--active {
+  border-color: var(--agent-color, #38bdf8);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.2), inset 0 0 24px rgba(56, 189, 248, 0.04);
+}
+
+/* Agent badge on card */
+.dashboard-card__agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dashboard-card__agent--speaking {
+  animation: agentPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.dashboard-card__avatar {
+  border-radius: 50%;
+  border: 2px solid var(--agent-color, #38bdf8);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.dashboard-card__agent-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--agent-color, #38bdf8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Speech / message below chart */
+.dashboard-card__speech {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.dashboard-card__message {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Round badge */
+.dashboard-card__round-badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+}
+
+/* Large visual card variant */
+.visual-card--large {
+  padding: 14px 16px;
+}
+
+.visual-card--large .visual-card__title {
+  font-size: 0.88rem;
+}
+
+.visual-card--large .visual-card__description {
+  font-size: 0.8rem;
+}

@@ -2,10 +2,11 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
+import { DashboardCanvas } from "./components/DashboardCanvas";
 import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -65,6 +66,9 @@ export default function App() {
   const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
   const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
   const [fullDatasetRows, setFullDatasetRows] = useState<Record<string, any>[]>([]);
+  const [dashboardMode, setDashboardMode] = useState(false);
+  const [dashboardTransitioning, setDashboardTransitioning] = useState(false);
+  const [dashboardVisuals, setDashboardVisuals] = useState<DashboardVisual[]>([]);
   const { speak, stop: stopTTS } = useTTS();
 
   const [isAdmin] = useState<boolean>(() => {
@@ -80,23 +84,30 @@ export default function App() {
   const historyRef = useRef<HTMLDivElement>(null);
   const appPhaseRef = useRef(appPhase);
   appPhaseRef.current = appPhase;
+  const dashboardModeRef = useRef(false);
+  dashboardModeRef.current = dashboardMode;
 
   // Turn queue: incoming turns are queued and revealed one at a time
   // with 20s display + 3s gap between each message.
-  const turnQueueRef = useRef<PublicTurn[]>([]);
+  const turnQueueRef = useRef<{ turn: PublicTurn; roundNumber: number }[]>([]);
   const pendingRoundRef = useRef<WsRoundEvent | null>(null);
   const displayTimerRef = useRef<number | null>(null);
 
   const processQueue = useCallback(() => {
     if (displayTimerRef.current !== null) return; // timer already active
 
-    const next = turnQueueRef.current.shift();
-    if (next) {
+    const queued = turnQueueRef.current.shift();
+    if (queued) {
+      const next = queued.turn;
+      const turnRoundNum = queued.roundNumber;
       setShowReactions(false);
       setLiveTurns((prev) => [...prev, next]);
 
-      // Accumulate table actions from this turn
-      if (next.table_action) {
+      // Determine if this turn belongs to a dashboard round (3+)
+      const isDashboardRound = turnRoundNum >= 3;
+
+      // Accumulate table actions from this turn (only in table mode, rounds 1-2)
+      if (next.table_action && !isDashboardRound) {
         const ta = next.table_action;
         if (ta.navigate_to) {
           setAgentTablePositions((prev) => {
@@ -117,6 +128,33 @@ export default function App() {
         }
       }
 
+      // Accumulate dashboard visuals for rounds 3+
+      if (isDashboardRound && next.visual && next.speaker_id !== "human") {
+        // Ensure dashboard mode is active when we start receiving round 3+ turns
+        if (!dashboardModeRef.current) {
+          setDashboardTransitioning(false);
+          setDashboardMode(true);
+        }
+        const speakerId = next.speaker_id;
+        setDashboardVisuals((prev) => {
+          // Look up agent info from the state snapshot in the pending round
+          const agents = pendingRoundRef.current?.state_snapshot?.agents ?? [];
+          const agent = agents.find((a: Agent) => a.id === speakerId);
+          const color = agent ? agentColor(agent) : "#38bdf8";
+          const dv: DashboardVisual = {
+            id: `${turnRoundNum}-${speakerId}`,
+            roundNumber: turnRoundNum,
+            speakerId,
+            agentName: agent?.name ?? "Unknown",
+            agentColor: color,
+            visual: next.visual!,
+            message: next.message,
+          };
+          const filtered = prev.filter((v) => v.id !== dv.id);
+          return [...filtered, dv];
+        });
+      }
+
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
         processQueue();
@@ -133,6 +171,15 @@ export default function App() {
         setShowReactions(true);
         setFeed((prev) => [...prev, ev]);
         setStateValue(ev.state_snapshot);
+
+        // Trigger dashboard transition after round 2 completes
+        if (ev.round_result.round_number === 2 && !dashboardModeRef.current) {
+          setDashboardTransitioning(true);
+          setTimeout(() => {
+            setDashboardTransitioning(false);
+            setDashboardMode(true);
+          }, 2000);
+        }
       }, 12000); // 15s display for last turn
     }
   }, []);
@@ -241,7 +288,7 @@ export default function App() {
           }
           // Queue turn for timed reveal (20s display + 3s gap)
           setShowReactions(false);
-          turnQueueRef.current.push(event.turn);
+          turnQueueRef.current.push({ turn: event.turn, roundNumber: event.round_number });
           processQueue();
           return;
         }
@@ -514,6 +561,9 @@ export default function App() {
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
+      setDashboardMode(false);
+      setDashboardTransitioning(false);
+      setDashboardVisuals([]);
       setInputMode("topic");
       setSidePanelView("controls");
     } catch (e: unknown) {
@@ -882,8 +932,44 @@ export default function App() {
            ================================================================ */
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
-          <section className={`arena-viewport${datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
-            {datasetInfo && fullDatasetRows.length > 0 ? (
+          <section className={`arena-viewport${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+            {/* Dashboard transition overlay */}
+            {dashboardTransitioning && (
+              <div className="dashboard-transition-overlay">
+                <div className="dashboard-transition-overlay__spinner" />
+                <p className="dashboard-transition-overlay__text">Building dashboard...</p>
+              </div>
+            )}
+
+            {dashboardMode ? (
+              /* ---- DASHBOARD CANVAS ---- */
+              <>
+                <DashboardCanvas
+                  visuals={dashboardVisuals}
+                  agents={state?.agents ?? []}
+                  agentMap={agentMap}
+                  currentTurn={currentTurn}
+                />
+                {/* Intervention Input Bar */}
+                <form className="intervention-bar" onSubmit={onIntervene}>
+                  <input
+                    className="intervention-bar__input"
+                    value={interveneInput}
+                    onChange={(e) => setInterveneInput(e.target.value)}
+                    placeholder="Type a message to intervene in the discussion..."
+                    disabled={intervening}
+                    maxLength={500}
+                  />
+                  <button
+                    className="intervention-bar__send"
+                    type="submit"
+                    disabled={intervening || !interveneInput.trim()}
+                  >
+                    Send
+                  </button>
+                </form>
+              </>
+            ) : datasetInfo && fullDatasetRows.length > 0 ? (
               /* ---- DATA TABLE ARENA ---- */
               <>
                 <ArenaTable

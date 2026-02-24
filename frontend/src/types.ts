@@ -119,3 +119,13 @@ export interface WsStateEvent {
 }
 
 export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;
+
+export interface DashboardVisual {
+  id: string;
+  roundNumber: number;
+  speakerId: string;
+  agentName: string;
+  agentColor: string;
+  visual: VisualSpec;
+  message: string;
+}
