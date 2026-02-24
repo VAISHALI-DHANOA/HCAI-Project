@@ -60,11 +60,11 @@ async def run_round(
             active_turns=turns,
         )
         message = enforce_civility(raw_message)
-        message = truncate_to_words(message, 100)
+        message = truncate_to_words(message, 125)
 
         visual = None
         if state.dataset_summary and speaker.role == "user":
-            visual_data = await generate_visual_spec(speaker, state, message)
+            visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
             if visual_data:
                 try:
                     visual = VisualSpec(**visual_data)

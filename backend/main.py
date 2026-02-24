@@ -217,7 +217,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
             "filename": parsed["filename"],
             "shape": parsed["shape"],
             "columns": parsed["columns"],
-            "sample_rows": parsed["sample_rows"][:3],
+            "sample_rows": parsed["sample_rows"][:5],
         },
         "state": snapshot,
     }

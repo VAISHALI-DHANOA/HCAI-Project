@@ -90,7 +90,7 @@ export default function App() {
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
         processQueue();
-      }, 8000); // 15s display + 3s gap
+      }, 12000); // 15s display + 3s gap
     } else if (pendingRoundRef.current) {
       // All turns displayed — finalize round after 15s for last turn
       const ev = pendingRoundRef.current;

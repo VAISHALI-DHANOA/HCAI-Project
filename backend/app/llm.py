@@ -15,7 +15,7 @@ from app.models import Agent, PublicTurn, State
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 100
+MAX_TOKENS = 125
 TEMPERATURE = 0.85
 TIMEOUT_SECONDS = 15.0
 
@@ -59,11 +59,13 @@ def get_client() -> anthropic.AsyncAnthropic:
 
 
 ROUND_PROMPTS = {
-    1: "Focus on first observations: data quality issues, initial patterns, and what stands out about this dataset.",
-    2: "Focus on data cleaning recommendations, preprocessing needs, and deeper statistical analysis.",
-    3: "Focus on key insights discovered, visualization recommendations, and predictive modeling opportunities.",
+    1: "DATA ONBOARDING: Introduce the dataset to the team. Describe what this data represents, key columns, data types, and overall scope. Help everyone understand what we're working with.",
+    2: "DATA QUALITY & PROCESSING: Identify data quality issues — missing values, suspicious patterns, columns that need cleaning or transformation. Recommend specific preprocessing steps.",
+    3: "VISUALIZATION & PATTERNS: Create visualizations to explore the data. Propose and generate charts that reveal distributions, comparisons, and trends. Each agent should create a visual that highlights something meaningful.",
+    4: "DEEP EXPLORATION: Use visualizations and cross-column analysis to dig deeper. Explore relationships between variables — how do discounts affect profit? Which regions have more returns? What drives support costs?",
+    5: "INSIGHTS & RECOMMENDATIONS: Synthesize findings into actionable insights. What are the key takeaways? What business decisions should this data inform? Summarize the most important discoveries.",
 }
-DEFAULT_ROUND_PROMPT = "Continue the data analysis discussion, building on previous findings and refining recommendations."
+DEFAULT_ROUND_PROMPT = "Continue exploring the data, building on all previous findings and refining your analysis with new evidence."
 
 
 def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
@@ -83,7 +85,7 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, data
         f"- Do NOT summarize previous rounds; a separate summary happens at the end\n"
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 18 words maximum\n"
+        f"- Respond in 30 words maximum\n"
         f"- Stay neutral; do not advocate for a specific position\n"
         f"- Address participants by name when referencing their points\n"
         f"- Start your message with a single relevant emoji\n"
@@ -144,7 +146,7 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, datas
         f'- Use your active trait for this round: "{active_quirk}"\n'
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 18 words maximum\n"
+        f"- Respond in 40 words maximum\n"
         f"- Start your message with a single relevant emoji\n"
         f"- Do not break character or reference the simulation\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
@@ -276,7 +278,7 @@ async def generate_chair_summary(
         f"YOUR TASK:\n"
         f"Summarize the main themes discussed and suggest next steps moving forward.\n\n"
         f"CONSTRAINTS:\n"
-        f"- 18 words maximum\n"
+        f"- 30 words maximum\n"
         f"- Start your message with a single relevant emoji\n"
         f"- Focus on themes and next steps, not listing who said what\n"
         f"- Do not list participant names\n"
@@ -290,7 +292,7 @@ async def generate_chair_summary(
             "role": "user",
             "content": (
                 f"Here is what was said this round:\n\n{transcript}\n\n"
-                f"Now summarize the key themes and next steps in 18 words or fewer."
+                f"Now summarize the key themes and next steps in 30 words or fewer."
             ),
         }
     ]
@@ -316,20 +318,33 @@ async def generate_chair_summary(
 VISUAL_MAX_TOKENS = 500
 
 
+VISUAL_ROUND_HINTS = {
+    1: "For round 1 (data onboarding), prefer stat_card or table visuals that give an overview of the dataset — column counts, data types, basic statistics.",
+    2: "For round 2 (data quality), prefer table or stat_card visuals showing missing values, null counts, or data quality metrics that need attention.",
+    3: "For round 3 (visualization), prefer bar_chart or line_chart visuals that reveal distributions, category comparisons, or trends in the data.",
+    4: "For round 4 (deep exploration), prefer scatter or heatmap visuals that show relationships between variables — correlations, cross-column analysis.",
+    5: "For round 5 (insights), prefer bar_chart or stat_card visuals that summarize key findings and actionable business metrics.",
+}
+
+
 async def generate_visual_spec(
     agent: Agent,
     state: State,
     agent_message: str,
+    round_number: int = 0,
 ) -> dict | None:
     """Generate a visual contribution spec based on the agent's message and role."""
     if not state.dataset_summary:
         return None
+
+    round_visual_hint = VISUAL_ROUND_HINTS.get(round_number, "Choose the most appropriate visual type for the analysis being discussed.")
 
     visual_system = (
         f'You are "{agent.name}" generating a data visualization specification.\n'
         f"Your persona: {agent.persona_text}\n"
         f"\nDATASET:\n{state.dataset_summary}\n"
         f"\nYour message this round was: {agent_message}\n"
+        f"\nROUND GUIDANCE: {round_visual_hint}\n"
         f"\nGenerate a JSON object describing a visual contribution. The JSON MUST have:\n"
         f'- "visual_type": one of "bar_chart", "table", "scatter", "line_chart", "stat_card", "heatmap"\n'
         f'- "title": short descriptive title\n'

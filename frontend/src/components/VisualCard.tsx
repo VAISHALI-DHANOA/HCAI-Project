@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from "react";
 import type { VisualSpec } from "../types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -11,6 +12,18 @@ interface VisualCardProps {
   agentName: string;
 }
 
+/** Error boundary so a single malformed visual doesn't crash the app. */
+class VisualErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  render() {
+    if (this.state.hasError) {
+      return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>Visual could not be rendered.</p>;
+    }
+    return this.props.children;
+  }
+}
+
 export function VisualCard({ visual, agentColor, agentName }: VisualCardProps) {
   return (
     <div className="visual-card" style={{ "--agent-color": agentColor } as React.CSSProperties}>
@@ -19,7 +32,9 @@ export function VisualCard({ visual, agentColor, agentName }: VisualCardProps) {
         <span className="visual-card__title">{visual.title}</span>
       </div>
       <div className="visual-card__body">
-        {renderVisual(visual, agentColor)}
+        <VisualErrorBoundary>
+          {renderVisual(visual, agentColor)}
+        </VisualErrorBoundary>
       </div>
       {visual.description && (
         <p className="visual-card__description">{visual.description}</p>
@@ -97,9 +112,18 @@ function renderScatterChart(data: any, color: string) {
   );
 }
 
+/** Normalize a row: if it's an object, extract values using headers order; if array, use as-is. */
+function normalizeRow(row: any, headers: string[]): any[] {
+  if (Array.isArray(row)) return row;
+  if (row && typeof row === "object") {
+    return headers.map((h) => row[h] ?? "");
+  }
+  return [];
+}
+
 function renderTable(data: any) {
   const headers: string[] = data.headers || [];
-  const rows: any[][] = data.rows || [];
+  const rawRows: any[] = data.rows || [];
   return (
     <div className="visual-table-wrap">
       <table className="visual-table">
@@ -107,9 +131,12 @@ function renderTable(data: any) {
           <tr>{headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
         </thead>
         <tbody>
-          {rows.map((row, ri) => (
-            <tr key={ri}>{row.map((cell: any, ci: number) => <td key={ci}>{String(cell)}</td>)}</tr>
-          ))}
+          {rawRows.map((row, ri) => {
+            const cells = normalizeRow(row, headers);
+            return (
+              <tr key={ri}>{cells.map((cell: any, ci: number) => <td key={ci}>{String(cell)}</td>)}</tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
