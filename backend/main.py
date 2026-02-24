@@ -231,6 +231,7 @@ async def load_data_demo() -> dict:
     data = json.loads(DEMO_DATA_FILE.read_text())
     topic = data.get("topic", "Untitled data analysis")
     dataset_summary = data.get("dataset_summary", "")
+    parsed_data = data.get("parsed_data", None)
     agents_raw = data.get("agents", [])
     if not agents_raw:
         raise HTTPException(status_code=400, detail="No agents defined in demo file")
@@ -242,10 +243,18 @@ async def load_data_demo() -> dict:
     state = STORE.add_agents(created)
     snapshot = state.model_dump()
     await manager.broadcast({"type": "state", "state_snapshot": snapshot})
-    return {
+    response: dict = {
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
     }
+    if parsed_data:
+        response["parsed"] = {
+            "filename": parsed_data["filename"],
+            "shape": parsed_data["shape"],
+            "columns": parsed_data["columns"],
+            "sample_rows": parsed_data["sample_rows"][:5],
+        }
+    return response
 
 
 @app.post("/chat")

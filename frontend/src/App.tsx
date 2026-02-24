@@ -4,6 +4,7 @@ import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
+import { DataPreviewTable } from "./components/DataPreviewTable";
 import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -150,6 +151,24 @@ export default function App() {
   }, [liveTurns, latestTurns, activeTurnIdx]);
 
   const currentSpeakerId = currentTurn?.speaker_id ?? null;
+
+  // Derive highlighted columns from current turn's message
+  const highlightedColumns = useMemo(() => {
+    const result = new Set<string>();
+    if (!currentTurn || !datasetInfo) return result;
+    const message = currentTurn.message.toLowerCase();
+    for (const col of datasetInfo.columns) {
+      const colName = col.name.toLowerCase();
+      if (message.includes(colName)) {
+        result.add(col.name);
+      }
+      const spacedName = colName.replace(/_/g, " ");
+      if (spacedName !== colName && message.includes(spacedName)) {
+        result.add(col.name);
+      }
+    }
+    return result;
+  }, [currentTurn, datasetInfo]);
 
   // Circular positioning
   const agentPositions = useMemo(() => {
@@ -494,6 +513,9 @@ export default function App() {
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
+      if (result.parsed) {
+        setDatasetInfo(result.parsed);
+      }
       setSidePanelView("dashboard");
       setAppPhase("arena");
     } catch (e: unknown) {
@@ -897,6 +919,19 @@ export default function App() {
                   <p className="center-stage__message" key={`turn-${currentTurn.speaker_id}-${pastTurns.length}`}>
                     {currentTurn.message}
                   </p>
+                  {currentTurn.visual && (() => {
+                    const speaker = agentMap.get(currentTurn.speaker_id);
+                    const color = speaker ? agentColor(speaker) : "#38bdf8";
+                    return (
+                      <div className="center-stage__visual">
+                        <VisualCard
+                          visual={currentTurn.visual}
+                          agentColor={color}
+                          agentName={speaker?.name ?? "Unknown"}
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div className="center-stage__empty">
@@ -1104,12 +1139,17 @@ export default function App() {
                             const agent = agentMap.get(turn.speaker_id);
                             const color = agent ? agentColor(agent) : "#38bdf8";
                             return (
-                              <div className="chat-log__entry" key={ti} style={{ "--agent-color": color } as React.CSSProperties}>
-                                <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                                <div className="chat-log__body">
-                                  <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                                  <p className="chat-log__message">{turn.message}</p>
+                              <div key={ti}>
+                                <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
+                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                  <div className="chat-log__body">
+                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <p className="chat-log__message">{turn.message}</p>
+                                  </div>
                                 </div>
+                                {turn.visual && (
+                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
+                                )}
                               </div>
                             );
                           })}
@@ -1126,12 +1166,17 @@ export default function App() {
                             const agent = agentMap.get(turn.speaker_id);
                             const color = agent ? agentColor(agent) : "#38bdf8";
                             return (
-                              <div className="chat-log__entry" key={`live-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                                <div className="chat-log__body">
-                                  <span className="chat-log__name">{agent?.name ?? "?"}</span>
-                                  <p className="chat-log__message">{turn.message}</p>
+                              <div key={`live-${ti}`}>
+                                <div className="chat-log__entry" style={{ "--agent-color": color } as React.CSSProperties}>
+                                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                  <div className="chat-log__body">
+                                    <span className="chat-log__name">{agent?.name ?? "?"}</span>
+                                    <p className="chat-log__message">{turn.message}</p>
+                                  </div>
                                 </div>
+                                {turn.visual && (
+                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
+                                )}
                               </div>
                             );
                           })}
@@ -1151,6 +1196,13 @@ export default function App() {
                       <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
                       <button className="btn-danger" onClick={onReset}>Reset</button>
                     </div>
+                  )}
+                  {/* Data Preview Table */}
+                  {datasetInfo && (
+                    <DataPreviewTable
+                      datasetInfo={datasetInfo}
+                      highlightedColumns={highlightedColumns}
+                    />
                   )}
                   <div className="dashboard-section">
                     {feed.length === 0 ? (

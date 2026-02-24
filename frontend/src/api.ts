@@ -82,8 +82,8 @@ export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; 
   return (await response.json()) as { parsed: DatasetInfo; state: State };
 }
 
-export async function loadDataDemo(): Promise<{ state: State }> {
-  return request<{ state: State }>("/demo-data", { method: "POST" });
+export async function loadDataDemo(): Promise<{ state: State; parsed?: DatasetInfo }> {
+  return request<{ state: State; parsed?: DatasetInfo }>("/demo-data", { method: "POST" });
 }
 
 export async function addAgentsWithMBTI(
