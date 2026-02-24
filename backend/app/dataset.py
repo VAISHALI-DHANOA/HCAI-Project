@@ -28,7 +28,7 @@ def parse_dataset(file_bytes: bytes, filename: str) -> dict[str, Any]:
             "null_pct": round(null_count / len(df) * 100, 1) if len(df) > 0 else 0.0,
         })
 
-    sample_rows = df.head(5).fillna("NULL").to_dict(orient="records")
+    sample_rows = df.head(500).fillna("NULL").to_dict(orient="records")
 
     numeric_stats: dict[str, Any] = {}
     numeric_df = df.select_dtypes(include="number")

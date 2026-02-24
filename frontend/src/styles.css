@@ -2398,3 +2398,289 @@ button:disabled {
   font-weight: 700;
   flex-shrink: 0;
 }
+
+/* ================================================================
+   DATA TABLE ARENA
+   ================================================================ */
+
+.arena-viewport--table {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-deep);
+}
+
+.arena-viewport--table::before,
+.arena-viewport--table::after {
+  display: none;
+}
+
+.arena-viewport--table .intervention-bar {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  width: 100%;
+  flex-shrink: 0;
+  border-radius: 0;
+  border-top: 1px solid rgba(16, 185, 129, 0.3);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.arena-table-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--bg-deep);
+  /* Reserve space around table for agent avatars + speech bubbles */
+  padding: 80px 20px 20px 20px;
+}
+
+.arena-table {
+  border-collapse: collapse;
+  min-width: max-content;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.arena-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.arena-table th {
+  background: var(--bg-panel);
+  color: var(--accent-primary);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  border: 1px solid var(--border-dim);
+  white-space: nowrap;
+  position: relative;
+}
+
+.arena-table__header-cell {
+  min-width: 80px;
+}
+
+.arena-table__row-index {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.65rem;
+  text-align: center;
+  padding: 4px 6px;
+  border: 1px solid var(--border-dim);
+  min-width: 36px;
+}
+
+thead .arena-table__row-index {
+  z-index: 11;
+}
+
+.arena-table__cell {
+  padding: 4px 8px;
+  border: 1px solid rgba(56, 189, 248, 0.08);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.4s ease;
+  position: relative;
+}
+
+.arena-table tbody tr:hover .arena-table__cell {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+/* ---- Annotation markers ---- */
+.arena-table__annotation-marker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 10px 10px 0;
+  border-color: transparent var(--accent-gold) transparent transparent;
+  cursor: pointer;
+}
+
+.arena-table__annotation-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--accent-gold);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  min-width: 160px;
+  max-width: 260px;
+  z-index: 30;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  white-space: normal;
+}
+
+.arena-table__annotation-marker:hover .arena-table__annotation-tooltip {
+  display: block;
+}
+
+.arena-table__annotation-line {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.arena-table__annotation-line strong {
+  color: var(--accent-gold);
+}
+
+/* ---- Agent overlays on the table ---- */
+.arena-table-agent {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 4px));
+  transition: top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 15;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.arena-table-agent--dimmed {
+  opacity: 0.35;
+  transition: opacity 0.4s, top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.arena-table-agent--speaking {
+  z-index: 20;
+}
+
+.arena-table-agent__avatar {
+  border-radius: 50%;
+  border: 2px solid var(--agent-color, var(--accent-primary));
+  background: var(--bg-panel);
+  transition: width 0.3s, height 0.3s, box-shadow 0.3s;
+}
+
+.arena-table-agent--speaking .arena-table-agent__avatar {
+  box-shadow: 0 0 16px var(--agent-color, var(--accent-primary)),
+              0 0 32px rgba(56, 189, 248, 0.2);
+  animation: speakingPulseTable 2s ease-in-out infinite;
+}
+
+@keyframes speakingPulseTable {
+  0%, 100% { box-shadow: 0 0 12px var(--agent-color, var(--accent-primary)); }
+  50% { box-shadow: 0 0 24px var(--agent-color, var(--accent-primary)), 0 0 40px rgba(56, 189, 248, 0.3); }
+}
+
+.arena-table-agent__name {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-align: center;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+/* ---- Speech bubble ---- */
+.speech-bubble {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 12px);
+  transform: translateY(-50%);
+  background: rgba(17, 24, 39, 0.94);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--agent-color, var(--border-active));
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  max-width: 320px;
+  min-width: 180px;
+  z-index: 25;
+  animation: fadeInRight 0.35s ease-out;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
+              0 0 12px rgba(56, 189, 248, 0.1);
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 100%;
+  transform: translateY(-50%);
+  border: 6px solid transparent;
+  border-right-color: rgba(17, 24, 39, 0.94);
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.speech-bubble__history {
+  max-height: 80px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.speech-bubble__past {
+  margin: 0 0 3px;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+
+.speech-bubble__past strong {
+  color: var(--text-primary);
+}
+
+.speech-bubble__message {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-bright);
+  line-height: 1.45;
+}
+
+.speech-bubble__visual {
+  margin-top: 8px;
+  border-top: 1px solid rgba(56, 189, 248, 0.1);
+  padding-top: 6px;
+}
+
+.speech-bubble__visual .visual-card {
+  margin: 0;
+}
+
+.speech-bubble__visual .visual-card__body {
+  max-height: 140px;
+}

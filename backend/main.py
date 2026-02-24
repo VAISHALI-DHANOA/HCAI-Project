@@ -222,6 +222,8 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
 
     summary_text = build_dataset_summary_text(parsed)
     state = STORE.set_dataset_summary(summary_text, file.filename)
+    state.dataset_columns = [c["name"] for c in parsed["columns"]]
+    state.world_state["dataset_row_count"] = parsed["shape"][0]
 
     snapshot = state.model_dump()
     await manager.broadcast({"type": "state", "state_snapshot": snapshot})
@@ -231,7 +233,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
             "filename": parsed["filename"],
             "shape": parsed["shape"],
             "columns": parsed["columns"],
-            "sample_rows": parsed["sample_rows"][:5],
+            "sample_rows": parsed["sample_rows"],
         },
         "state": snapshot,
     }
@@ -245,14 +247,24 @@ async def load_data_demo() -> dict:
     data = json.loads(DEMO_DATA_FILE.read_text())
     topic = data.get("topic", "Untitled data analysis")
     dataset_summary = data.get("dataset_summary", "")
-    parsed_data = data.get("parsed_data", None)
     agents_raw = data.get("agents", [])
     if not agents_raw:
         raise HTTPException(status_code=400, detail="No agents defined in demo file")
 
+    # Load actual CSV to get all rows
+    from app.dataset import parse_dataset
+    csv_path = Path(__file__).resolve().parent / "RevenueDataset.csv"
+    if csv_path.exists():
+        parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
+    else:
+        parsed_data = data.get("parsed_data", None)
+
     state = STORE.reset(topic)
     if dataset_summary:
         state.dataset_summary = dataset_summary
+    if parsed_data:
+        state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
+        state.world_state["dataset_row_count"] = parsed_data["shape"][0]
     created = create_agents_from_user(topic, agents_raw)
     state = STORE.add_agents(created)
     snapshot = state.model_dump()
@@ -266,7 +278,7 @@ async def load_data_demo() -> dict:
             "filename": parsed_data["filename"],
             "shape": parsed_data["shape"],
             "columns": parsed_data["columns"],
-            "sample_rows": parsed_data["sample_rows"][:5],
+            "sample_rows": parsed_data["sample_rows"],
         }
     return response
 

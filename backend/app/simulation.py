@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
-from app.llm import generate_agent_message, generate_chair_summary, generate_visual_spec
+from app.llm import (
+    generate_agent_message,
+    generate_chair_summary,
+    generate_table_action_and_visual,
+    generate_visual_spec,
+    AGENT_COLORS,
+)
 from app.metrics import compute_emergent_metrics
-from app.models import Agent, PublicTurn, Reaction, RoundResult, State, VisualSpec
+from app.models import (
+    Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
+    RoundResult, State, TableAction, VisualSpec,
+)
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
 
@@ -63,15 +72,61 @@ async def run_round(
         message = truncate_to_words(message, 125)
 
         visual = None
+        table_action = None
         if state.dataset_summary and speaker.role == "user":
-            visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
-            if visual_data:
+            if state.dataset_columns:
+                # Use combined table action + visual generation
+                speaker_idx = next(
+                    (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
+                )
+                agent_color = AGENT_COLORS[speaker_idx % len(AGENT_COLORS)]
+                action_data = await generate_table_action_and_visual(
+                    speaker, state, message,
+                    round_number=state.round_number,
+                    column_names=state.dataset_columns,
+                    row_count=state.world_state.get("dataset_row_count", 200),
+                )
                 try:
-                    visual = VisualSpec(**visual_data)
+                    ta_raw = action_data.get("table_action")
+                    if ta_raw:
+                        # Enrich highlights and annotations with agent_id and color
+                        highlights = []
+                        for h in ta_raw.get("highlights", []):
+                            highlights.append(CellHighlight(
+                                row_start=h["row_start"],
+                                row_end=h["row_end"],
+                                columns=h["columns"],
+                                color=agent_color,
+                                agent_id=speaker.id,
+                            ))
+                        annotations = []
+                        for a in ta_raw.get("annotations", []):
+                            annotations.append(CellAnnotation(
+                                row=a["row"],
+                                column=a["column"],
+                                text=str(a["text"])[:40],
+                                agent_id=speaker.id,
+                            ))
+                        table_action = TableAction(
+                            navigate_to=ta_raw.get("navigate_to", {"row": 0, "column": state.dataset_columns[0]}),
+                            highlights=highlights,
+                            annotations=annotations,
+                        )
+                    vis_raw = action_data.get("visual")
+                    if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
+                        visual = VisualSpec(**vis_raw)
                 except Exception:
-                    visual = None
+                    pass
+            else:
+                # Fallback: no dataset columns, use original visual generation
+                visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
+                if visual_data:
+                    try:
+                        visual = VisualSpec(**visual_data)
+                    except Exception:
+                        visual = None
 
-        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual)
+        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual, table_action=table_action)
         turns.append(turn)
         if on_turn:
             await on_turn(turn, state.round_number)

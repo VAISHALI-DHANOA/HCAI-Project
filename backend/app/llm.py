@@ -330,6 +330,7 @@ async def generate_chair_summary(
 
 VISUAL_MAX_TOKENS = 500
 
+TABLE_ACTION_MAX_TOKENS = 700
 
 VISUAL_ROUND_HINTS = {
     1: "For round 1 (data onboarding), prefer stat_card or table visuals that give an overview of the dataset — column counts, data types, basic statistics.",
@@ -339,6 +340,18 @@ VISUAL_ROUND_HINTS = {
     5: "For round 5 (insights), prefer bar_chart or stat_card visuals that summarize key findings and actionable business metrics.",
 }
 
+# Agent-specific highlight colors (with alpha for overlay)
+AGENT_COLORS = [
+    "#38bdf844",  # sky blue
+    "#f97316cc",  # orange
+    "#a855f744",  # purple
+    "#22c55e44",  # green
+    "#ef444444",  # red
+    "#eab30844",  # yellow
+    "#ec489944",  # pink
+    "#06b6d444",  # cyan
+]
+
 
 async def generate_visual_spec(
     agent: Agent,
@@ -346,7 +359,8 @@ async def generate_visual_spec(
     agent_message: str,
     round_number: int = 0,
 ) -> dict | None:
-    """Generate a visual contribution spec based on the agent's message and role."""
+    """Generate a visual contribution spec based on the agent's message and role.
+    Used as fallback when no dataset columns are available."""
     if not state.dataset_summary:
         return None
 
@@ -392,6 +406,74 @@ async def generate_visual_spec(
     except Exception as exc:
         logger.warning("Visual spec generation failed for %s: %s", agent.name, exc)
         return None
+
+
+async def generate_table_action_and_visual(
+    agent: Agent,
+    state: State,
+    agent_message: str,
+    round_number: int = 0,
+    column_names: list[str] | None = None,
+    row_count: int = 200,
+) -> dict:
+    """Generate table action (navigate, highlight, annotate) and optional visual in one LLM call."""
+    if not column_names:
+        return {}
+
+    round_visual_hint = VISUAL_ROUND_HINTS.get(
+        round_number, "Choose the most appropriate visual type for the analysis being discussed."
+    )
+    cols_str = ", ".join(column_names)
+
+    system_prompt = (
+        f'You are "{agent.name}" generating table interaction actions.\n'
+        f"Your persona: {agent.persona_text}\n"
+        f"\nDATASET:\n{state.dataset_summary}\n"
+        f"\nYour message this round was: {agent_message}\n"
+        f"\nAVAILABLE COLUMNS: {cols_str}\n"
+        f"ROW RANGE: 0 to {row_count - 1}\n"
+        f"\nGenerate a JSON object with TWO fields:\n"
+        f'\n1. "table_action" (REQUIRED): Where you navigate and what you highlight on the data table.\n'
+        f'   - "navigate_to": {{"row": <int 0-{row_count - 1}>, "column": "<column name>"}}\n'
+        f'     Pick the row and column most relevant to your message.\n'
+        f'   - "highlights": array of cell range highlights (0-2 highlights):\n'
+        f'     [{{"row_start": <int>, "row_end": <int>, "columns": ["<col1>", "<col2>"]}}]\n'
+        f'     Highlight a specific range that supports your point.\n'
+        f'   - "annotations": array of cell annotations (0-2 annotations):\n'
+        f'     [{{"row": <int>, "column": "<col>", "text": "<max 30 chars>"}}]\n'
+        f'     Add a short note on a specific cell.\n'
+        f'\n2. "visual" (OPTIONAL, can be null): A chart to show in your speech bubble.\n'
+        f"   Only include a visual if a chart would add value beyond what the table shows.\n"
+        f"   ROUND GUIDANCE: {round_visual_hint}\n"
+        f"   If included, it MUST have:\n"
+        f'   - "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
+        f'   - "title": short descriptive title\n'
+        f'   - "data": chart data payload\n'
+        f'   - "description": one sentence\n'
+        f"\nRespond with ONLY the JSON object, no markdown, no explanation.\n"
+        f"Use ONLY column names from the AVAILABLE COLUMNS list."
+    )
+
+    try:
+        client = get_client()
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=TABLE_ACTION_MAX_TOKENS,
+            temperature=0.7,
+            system=system_prompt,
+            messages=[{"role": "user", "content": "Generate the table action and optional visual now."}],
+        )
+        import json
+        text = response.content[0].text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            text = text.strip()
+        return json.loads(text)
+    except Exception as exc:
+        logger.warning("Table action generation failed for %s: %s", agent.name, exc)
+        return {}
 
 
 def _build_test_chat_system_prompt(

@@ -44,10 +44,32 @@ class VisualSpec(BaseModel):
     description: str = ""
 
 
+class CellHighlight(BaseModel):
+    row_start: int
+    row_end: int
+    columns: list[str]
+    color: str  # hex with alpha, e.g. "#38bdf844"
+    agent_id: str
+
+
+class CellAnnotation(BaseModel):
+    row: int
+    column: str
+    text: str = Field(max_length=40)
+    agent_id: str
+
+
+class TableAction(BaseModel):
+    navigate_to: dict  # {"row": int, "column": str}
+    highlights: list[CellHighlight] = Field(default_factory=list)
+    annotations: list[CellAnnotation] = Field(default_factory=list)
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
     visual: VisualSpec | None = None
+    table_action: TableAction | None = None
 
 
 class Reaction(BaseModel):
@@ -82,6 +104,7 @@ class State(BaseModel):
     reactions: list[Reaction] = Field(default_factory=list)
     world_state: dict = Field(default_factory=dict)
     dataset_summary: str = ""
+    dataset_columns: list[str] = Field(default_factory=list)
 
 
 class UserAgentInput(BaseModel):

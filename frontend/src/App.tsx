@@ -2,9 +2,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { DataPreviewTable } from "./components/DataPreviewTable";
+import { ArenaTable } from "./components/ArenaTable";
 import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -60,6 +61,10 @@ export default function App() {
   const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
+  const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
+  const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
+  const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
+  const [fullDatasetRows, setFullDatasetRows] = useState<Record<string, any>[]>([]);
   const { speak, stop: stopTTS } = useTTS();
 
   const [isAdmin] = useState<boolean>(() => {
@@ -89,6 +94,29 @@ export default function App() {
     if (next) {
       setShowReactions(false);
       setLiveTurns((prev) => [...prev, next]);
+
+      // Accumulate table actions from this turn
+      if (next.table_action) {
+        const ta = next.table_action;
+        if (ta.navigate_to) {
+          setAgentTablePositions((prev) => {
+            const updated = new Map(prev);
+            updated.set(next.speaker_id, {
+              agentId: next.speaker_id,
+              row: ta.navigate_to.row,
+              column: ta.navigate_to.column,
+            });
+            return updated;
+          });
+        }
+        if (ta.highlights?.length) {
+          setAccumulatedHighlights((prev) => [...prev, ...ta.highlights]);
+        }
+        if (ta.annotations?.length) {
+          setAccumulatedAnnotations((prev) => [...prev, ...ta.annotations]);
+        }
+      }
+
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
         processQueue();
@@ -482,6 +510,10 @@ export default function App() {
       setAppPhase("setup");
       setDraftAgents([]);
       setDatasetInfo(null);
+      setFullDatasetRows([]);
+      setAccumulatedHighlights([]);
+      setAccumulatedAnnotations([]);
+      setAgentTablePositions(new Map());
       setInputMode("topic");
       setSidePanelView("controls");
     } catch (e: unknown) {
@@ -539,6 +571,7 @@ export default function App() {
       clearTurnQueue();
       if (result.parsed) {
         setDatasetInfo(result.parsed);
+        setFullDatasetRows(result.parsed.sample_rows);
       }
       setSidePanelView("dashboard");
       setAppPhase("arena");
@@ -557,6 +590,7 @@ export default function App() {
       setStateValue(result.state);
       setTopicInput(result.state.topic);
       setDatasetInfo(result.parsed);
+      setFullDatasetRows(result.parsed.sample_rows);
       setFeed([]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to upload dataset");
@@ -848,144 +882,182 @@ export default function App() {
            ================================================================ */
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
-          <section className="arena-viewport">
-            <div className="arena-ring">
-              {agentPositions.map(({ agent, x, y }) => {
-                const isSpeaking = currentSpeakerId === agent.id;
-                const hasSomeoneActive = currentSpeakerId !== null;
-                const color = agentColor(agent);
-                const isHovered = hoveredAgentId === agent.id;
-                const visibleTurns = liveTurns.length > 0 ? liveTurns : latestTurns;
-                const lastMsg = visibleTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
-                const speakingTransform = isSpeaking
-                  ? `translate(-50%, -50%) scale(1.35) translate(${(50 - x) * 0.3}%, ${(50 - y) * 0.3}%)`
-                  : "translate(-50%, -50%)";
-
-                return (
-                  <div
-                    className={`arena-node${isSpeaking ? " arena-node--speaking" : ""}${hasSomeoneActive && !isSpeaking ? " arena-node--dimmed" : ""}`}
-                    key={agent.id}
-                    style={{
-                      left: `${x}%`,
-                      top: `${y}%`,
-                      transform: speakingTransform,
-                      "--agent-color": color,
-                    } as React.CSSProperties}
-                    onMouseEnter={() => setHoveredAgentId(agent.id)}
-                    onMouseLeave={() => setHoveredAgentId(null)}
+          <section className={`arena-viewport${datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+            {datasetInfo && fullDatasetRows.length > 0 ? (
+              /* ---- DATA TABLE ARENA ---- */
+              <>
+                <ArenaTable
+                  rows={fullDatasetRows}
+                  columns={datasetInfo.columns.map(c => c.name)}
+                  agents={state?.agents ?? []}
+                  currentTurn={currentTurn}
+                  pastTurns={pastTurns}
+                  accumulatedHighlights={accumulatedHighlights}
+                  accumulatedAnnotations={accumulatedAnnotations}
+                  agentPositions={agentTablePositions}
+                  agentMap={agentMap}
+                />
+                {/* Intervention Input Bar */}
+                <form className="intervention-bar" onSubmit={onIntervene}>
+                  <input
+                    className="intervention-bar__input"
+                    value={interveneInput}
+                    onChange={(e) => setInterveneInput(e.target.value)}
+                    placeholder="Type a message to intervene in the discussion..."
+                    disabled={intervening}
+                    maxLength={500}
+                  />
+                  <button
+                    className="intervention-bar__send"
+                    type="submit"
+                    disabled={intervening || !interveneInput.trim()}
                   >
-                    <div className="arena-node__avatar-wrap">
-                      <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
-                      {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
-                      {agent.mbti_type && <span className="arena-node__mbti-badge">{agent.mbti_type}</span>}
-                    </div>
-                    <div className="arena-node__name">{agent.name}</div>
-                    <div className="arena-node__energy-bar">
-                      <div
-                        className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
-                        style={{ width: `${agent.energy * 100}%` }}
-                      />
-                    </div>
-                    <div className="arena-node__quirks">
-                      {agent.quirks.map((q, i) => (
-                        <span className="arena-node__quirk" key={i}>{q}</span>
-                      ))}
-                    </div>
+                    Send
+                  </button>
+                </form>
+              </>
+            ) : (
+              /* ---- CIRCULAR ARENA (fallback for non-dataset mode) ---- */
+              <>
+                <div className="arena-ring">
+                  {agentPositions.map(({ agent, x, y }) => {
+                    const isSpeaking = currentSpeakerId === agent.id;
+                    const hasSomeoneActive = currentSpeakerId !== null;
+                    const color = agentColor(agent);
+                    const isHovered = hoveredAgentId === agent.id;
+                    const visibleTurns = liveTurns.length > 0 ? liveTurns : latestTurns;
+                    const lastMsg = visibleTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
+                    const speakingTransform = isSpeaking
+                      ? `translate(-50%, -50%) scale(1.35) translate(${(50 - x) * 0.3}%, ${(50 - y) * 0.3}%)`
+                      : "translate(-50%, -50%)";
 
-                    {showReactions && latestRound?.round_result.reactions
-                      .filter(r => r.agent_id === agent.id)
-                      .map((reaction, ri) => (
-                        <div className="arena-reaction-bubble" key={ri}>
-                          <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
-                          <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
-                        </div>
-                      ))
-                    }
-
-                    {isHovered && lastMsg && !isSpeaking && (
-                      <div className="agent-tooltip">
-                        <p className="agent-tooltip__message">{lastMsg}</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Center Stage */}
-            <div className="center-stage">
-              {currentTurn ? (
-                <div className="center-stage__content">
-                  {pastTurns.length > 0 && (
-                    <div className="center-stage__history" ref={historyRef}>
-                      {pastTurns.map((turn, i) => (
-                        <p className={`center-stage__past-turn${turn.speaker_id === "human" ? " center-stage__past-turn--human" : ""}`} key={i}>
-                          <strong>{turn.speaker_id === "human" ? "You" : (agentMap.get(turn.speaker_id)?.name ?? "?")}: </strong>
-                          {turn.message}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <div className={`center-stage__speaker${currentTurn.speaker_id === "human" ? " center-stage__speaker--human" : ""}`}>
-                    {currentTurn.speaker_id === "human" ? (
-                      <span className="center-stage__speaker-avatar center-stage__human-icon">You</span>
-                    ) : agentMap.get(currentTurn.speaker_id) ? (
-                      <img
-                        className="center-stage__speaker-avatar"
-                        src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
-                        alt=""
-                        width={40}
-                        height={40}
-                      />
-                    ) : null}
-                    <span className="center-stage__speaker-name">
-                      {currentTurn.speaker_id === "human" ? "You" : (agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id)}
-                    </span>
-                  </div>
-                  <p className="center-stage__message" key={`turn-${currentTurn.speaker_id}-${pastTurns.length}`}>
-                    {currentTurn.message}
-                  </p>
-                  {currentTurn.visual && (() => {
-                    const speaker = agentMap.get(currentTurn.speaker_id);
-                    const color = speaker ? agentColor(speaker) : "#38bdf8";
                     return (
-                      <div className="center-stage__visual">
-                        <VisualCard
-                          visual={currentTurn.visual}
-                          agentColor={color}
-                          agentName={speaker?.name ?? "Unknown"}
-                        />
+                      <div
+                        className={`arena-node${isSpeaking ? " arena-node--speaking" : ""}${hasSomeoneActive && !isSpeaking ? " arena-node--dimmed" : ""}`}
+                        key={agent.id}
+                        style={{
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          transform: speakingTransform,
+                          "--agent-color": color,
+                        } as React.CSSProperties}
+                        onMouseEnter={() => setHoveredAgentId(agent.id)}
+                        onMouseLeave={() => setHoveredAgentId(null)}
+                      >
+                        <div className="arena-node__avatar-wrap">
+                          <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
+                          {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
+                          {agent.mbti_type && <span className="arena-node__mbti-badge">{agent.mbti_type}</span>}
+                        </div>
+                        <div className="arena-node__name">{agent.name}</div>
+                        <div className="arena-node__energy-bar">
+                          <div
+                            className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
+                            style={{ width: `${agent.energy * 100}%` }}
+                          />
+                        </div>
+                        <div className="arena-node__quirks">
+                          {agent.quirks.map((q, i) => (
+                            <span className="arena-node__quirk" key={i}>{q}</span>
+                          ))}
+                        </div>
+
+                        {showReactions && latestRound?.round_result.reactions
+                          .filter(r => r.agent_id === agent.id)
+                          .map((reaction, ri) => (
+                            <div className="arena-reaction-bubble" key={ri}>
+                              <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
+                              <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
+                            </div>
+                          ))
+                        }
+
+                        {isHovered && lastMsg && !isSpeaking && (
+                          <div className="agent-tooltip">
+                            <p className="agent-tooltip__message">{lastMsg}</p>
+                          </div>
+                        )}
                       </div>
                     );
-                  })()}
+                  })}
                 </div>
-              ) : (
-                <div className="center-stage__empty">
-                  <div className="center-stage__empty-icon">{"\u2694\uFE0F"}</div>
-                  <div className="center-stage__empty-text">Awaiting combatants...</div>
-                  <div className="center-stage__empty-sub">Run a round to begin the debate.</div>
-                </div>
-              )}
-            </div>
 
-            {/* Intervention Input Bar */}
-            <form className="intervention-bar" onSubmit={onIntervene}>
-              <input
-                className="intervention-bar__input"
-                value={interveneInput}
-                onChange={(e) => setInterveneInput(e.target.value)}
-                placeholder="Type a message to intervene in the discussion..."
-                disabled={intervening}
-                maxLength={500}
-              />
-              <button
-                className="intervention-bar__send"
-                type="submit"
-                disabled={intervening || !interveneInput.trim()}
-              >
-                Send
-              </button>
-            </form>
+                {/* Center Stage */}
+                <div className="center-stage">
+                  {currentTurn ? (
+                    <div className="center-stage__content">
+                      {pastTurns.length > 0 && (
+                        <div className="center-stage__history" ref={historyRef}>
+                          {pastTurns.map((turn, i) => (
+                            <p className={`center-stage__past-turn${turn.speaker_id === "human" ? " center-stage__past-turn--human" : ""}`} key={i}>
+                              <strong>{turn.speaker_id === "human" ? "You" : (agentMap.get(turn.speaker_id)?.name ?? "?")}: </strong>
+                              {turn.message}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                      <div className={`center-stage__speaker${currentTurn.speaker_id === "human" ? " center-stage__speaker--human" : ""}`}>
+                        {currentTurn.speaker_id === "human" ? (
+                          <span className="center-stage__speaker-avatar center-stage__human-icon">You</span>
+                        ) : agentMap.get(currentTurn.speaker_id) ? (
+                          <img
+                            className="center-stage__speaker-avatar"
+                            src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
+                            alt=""
+                            width={40}
+                            height={40}
+                          />
+                        ) : null}
+                        <span className="center-stage__speaker-name">
+                          {currentTurn.speaker_id === "human" ? "You" : (agentMap.get(currentTurn.speaker_id)?.name ?? currentTurn.speaker_id)}
+                        </span>
+                      </div>
+                      <p className="center-stage__message" key={`turn-${currentTurn.speaker_id}-${pastTurns.length}`}>
+                        {currentTurn.message}
+                      </p>
+                      {currentTurn.visual && (() => {
+                        const speaker = agentMap.get(currentTurn.speaker_id);
+                        const color = speaker ? agentColor(speaker) : "#38bdf8";
+                        return (
+                          <div className="center-stage__visual">
+                            <VisualCard
+                              visual={currentTurn.visual}
+                              agentColor={color}
+                              agentName={speaker?.name ?? "Unknown"}
+                            />
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="center-stage__empty">
+                      <div className="center-stage__empty-icon">{"\u2694\uFE0F"}</div>
+                      <div className="center-stage__empty-text">Awaiting combatants...</div>
+                      <div className="center-stage__empty-sub">Run a round to begin the debate.</div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Intervention Input Bar */}
+                <form className="intervention-bar" onSubmit={onIntervene}>
+                  <input
+                    className="intervention-bar__input"
+                    value={interveneInput}
+                    onChange={(e) => setInterveneInput(e.target.value)}
+                    placeholder="Type a message to intervene in the discussion..."
+                    disabled={intervening}
+                    maxLength={500}
+                  />
+                  <button
+                    className="intervention-bar__send"
+                    type="submit"
+                    disabled={intervening || !interveneInput.trim()}
+                  >
+                    Send
+                  </button>
+                </form>
+              </>
+            )}
           </section>
 
           {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}

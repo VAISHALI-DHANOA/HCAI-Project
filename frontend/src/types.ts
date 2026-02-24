@@ -32,10 +32,32 @@ export interface VisualSpec {
   description?: string;
 }
 
+export interface CellHighlight {
+  row_start: number;
+  row_end: number;
+  columns: string[];
+  color: string;
+  agent_id: string;
+}
+
+export interface CellAnnotation {
+  row: number;
+  column: string;
+  text: string;
+  agent_id: string;
+}
+
+export interface TableAction {
+  navigate_to: { row: number; column: string };
+  highlights: CellHighlight[];
+  annotations: CellAnnotation[];
+}
+
 export interface PublicTurn {
   speaker_id: string;
   message: string;
   visual?: VisualSpec | null;
+  table_action?: TableAction | null;
 }
 
 export interface DatasetInfo {
@@ -75,6 +97,7 @@ export interface State {
   reactions: Reaction[];
   world_state: Record<string, unknown>;
   dataset_summary?: string;
+  dataset_columns?: string[];
 }
 
 export interface WsRoundEvent {
