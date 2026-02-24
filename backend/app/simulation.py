@@ -69,7 +69,7 @@ async def run_round(
             active_turns=turns,
         )
         message = enforce_civility(raw_message)
-        message = truncate_to_words(message, 125)
+        message = truncate_to_words(message, 40)
 
         visual = None
         table_action = None

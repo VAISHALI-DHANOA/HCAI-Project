@@ -15,7 +15,7 @@ from app.models import Agent, PublicTurn, State
 logger = logging.getLogger(__name__)
 
 MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS = 125
+MAX_TOKENS = 80
 TEMPERATURE = 0.85
 TIMEOUT_SECONDS = 15.0
 
@@ -85,7 +85,7 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, data
         f"- Do NOT summarize previous rounds; a separate summary happens at the end\n"
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 30 words maximum\n"
+        f"- Respond in 20 words maximum — be brief\n"
         f"- Stay neutral; do not advocate for a specific position\n"
         f"- Address participants by name when referencing their points\n"
         f"- Start your message with a single relevant emoji\n"
@@ -146,7 +146,7 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, datas
         f'- Use your active trait for this round: "{active_quirk}"\n'
         f"\n"
         f"CONSTRAINTS:\n"
-        f"- Respond in 40 words maximum\n"
+        f"- Respond in 25 words maximum — be concise and punchy\n"
         f"- Start your message with a single relevant emoji\n"
         f"- Do not break character or reference the simulation\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
@@ -291,7 +291,7 @@ async def generate_chair_summary(
         f"YOUR TASK:\n"
         f"Summarize the main themes discussed and suggest next steps moving forward.\n\n"
         f"CONSTRAINTS:\n"
-        f"- 30 words maximum\n"
+        f"- 20 words maximum — be very brief\n"
         f"- Start your message with a single relevant emoji\n"
         f"- Focus on themes and next steps, not listing who said what\n"
         f"- Do not list participant names\n"
@@ -330,7 +330,7 @@ async def generate_chair_summary(
 
 VISUAL_MAX_TOKENS = 500
 
-TABLE_ACTION_MAX_TOKENS = 700
+TABLE_ACTION_MAX_TOKENS = 900
 
 VISUAL_ROUND_HINTS = {
     1: "For round 1 (data onboarding), prefer stat_card or table visuals that give an overview of the dataset — column counts, data types, basic statistics.",
@@ -442,13 +442,15 @@ async def generate_table_action_and_visual(
         f'   - "annotations": array of cell annotations (0-2 annotations):\n'
         f'     [{{"row": <int>, "column": "<col>", "text": "<max 30 chars>"}}]\n'
         f'     Add a short note on a specific cell.\n'
-        f'\n2. "visual" (OPTIONAL, can be null): A chart to show in your speech bubble.\n'
-        f"   Only include a visual if a chart would add value beyond what the table shows.\n"
+        f'\n2. "visual" (REQUIRED — always include a chart): A chart to show in your speech bubble.\n'
         f"   ROUND GUIDANCE: {round_visual_hint}\n"
-        f"   If included, it MUST have:\n"
+        f"   It MUST have:\n"
         f'   - "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
         f'   - "title": short descriptive title\n'
-        f'   - "data": chart data payload\n'
+        f'   - "data": chart data payload matching this format:\n'
+        f'     For bar_chart/line_chart: {{"labels": ["A","B","C"], "values": [1,2,3]}}\n'
+        f'     For scatter: {{"points": [{{"x":1,"y":2}},{{"x":3,"y":4}}], "x_label":"X", "y_label":"Y"}}\n'
+        f'     For stat_card: {{"stats": [{{"label":"Metric","value":"42"}}]}}\n'
         f'   - "description": one sentence\n'
         f"\nRespond with ONLY the JSON object, no markdown, no explanation.\n"
         f"Use ONLY column names from the AVAILABLE COLUMNS list."
@@ -461,7 +463,7 @@ async def generate_table_action_and_visual(
             max_tokens=TABLE_ACTION_MAX_TOKENS,
             temperature=0.7,
             system=system_prompt,
-            messages=[{"role": "user", "content": "Generate the table action and optional visual now."}],
+            messages=[{"role": "user", "content": "Generate the table action and visual chart now. You MUST include a visual with valid data."}],
         )
         import json
         text = response.content[0].text.strip()

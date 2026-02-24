@@ -113,9 +113,8 @@ export function ArenaTable({
   // Default agent positions: spread evenly across header columns
   const defaultPositions = useMemo(() => {
     const positions = new Map<string, { row: number; column: string }>();
-    const userAgents = agents.filter(a => a.role === "user");
-    userAgents.forEach((agent, i) => {
-      const colIdx = Math.floor((i / userAgents.length) * columns.length);
+    agents.forEach((agent, i) => {
+      const colIdx = Math.floor((i / agents.length) * columns.length);
       positions.set(agent.id, { row: 0, column: columns[colIdx] ?? columns[0] });
     });
     return positions;
@@ -174,7 +173,7 @@ export function ArenaTable({
       </table>
 
       {/* Agent overlay layer */}
-      {agents.filter(a => a.role === "user").map((agent) => {
+      {agents.map((agent) => {
         const pos = agentPositions.get(agent.id) ?? defaultPositions.get(agent.id);
         const isSpeaking = currentSpeakerId === agent.id;
         const isDimmed = currentSpeakerId !== null && !isSpeaking;
@@ -274,6 +273,7 @@ function AgentOverlay({
         width={isSpeaking ? 48 : 36}
         height={isSpeaking ? 48 : 36}
       />
+      {agent.role === "mediator" && <span className="arena-table-agent__role-badge">MOD</span>}
       <span className="arena-table-agent__name">{agent.name}</span>
 
       {isSpeaking && currentTurn && (

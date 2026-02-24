@@ -2602,18 +2602,27 @@ thead .arena-table__row-index {
   border-radius: 3px;
 }
 
+.arena-table-agent__role-badge {
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
 /* ---- Speech bubble ---- */
 .speech-bubble {
   position: absolute;
-  top: 50%;
+  top: 0;
   left: calc(100% + 12px);
-  transform: translateY(-50%);
   background: rgba(17, 24, 39, 0.94);
   backdrop-filter: blur(10px);
   border: 1px solid var(--agent-color, var(--border-active));
   border-radius: var(--radius-md);
   padding: 10px 14px;
-  max-width: 320px;
+  max-width: 1000px;
   min-width: 180px;
   z-index: 25;
   animation: fadeInRight 0.35s ease-out;
@@ -2627,9 +2636,8 @@ thead .arena-table__row-index {
 .speech-bubble::after {
   content: "";
   position: absolute;
-  top: 50%;
+  top: 16px;
   right: 100%;
-  transform: translateY(-50%);
   border: 6px solid transparent;
   border-right-color: rgba(17, 24, 39, 0.94);
 }
@@ -2637,11 +2645,11 @@ thead .arena-table__row-index {
 @keyframes fadeInRight {
   from {
     opacity: 0;
-    transform: translateY(-50%) translateX(8px);
+    transform: translateX(8px);
   }
   to {
     opacity: 1;
-    transform: translateY(-50%) translateX(0);
+    transform: translateX(0);
   }
 }
 
