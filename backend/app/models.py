@@ -105,6 +105,7 @@ class State(BaseModel):
     world_state: dict = Field(default_factory=dict)
     dataset_summary: str = ""
     dataset_columns: list[str] = Field(default_factory=list)
+    human_request: str = ""
 
 
 class UserAgentInput(BaseModel):

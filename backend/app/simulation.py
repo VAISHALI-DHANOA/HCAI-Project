@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
+from app.chart_compute import compute_chart_data
 from app.llm import (
     generate_agent_message,
     generate_chair_summary,
@@ -77,21 +78,28 @@ async def run_round(
         table_action = None
         if state.dataset_summary and speaker.role == "user":
             if state.dataset_columns and state.round_number >= 3:
-                # Dashboard mode: visual only, no table_action
+                # Dashboard mode: LLM returns lightweight spec, backend computes real data
                 narrative = state.world_state.get("dashboard_narrative", "")
-                visual_data = await generate_dashboard_visual(
+                spec_data = await generate_dashboard_visual(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
                     dashboard_narrative=narrative,
                 )
-                if visual_data and isinstance(visual_data, dict) and visual_data.get("visual_type"):
-                    try:
-                        visual = VisualSpec(**visual_data)
-                    except Exception:
-                        pass
+                if spec_data and isinstance(spec_data, dict) and spec_data.get("visual_type"):
+                    computed = compute_chart_data(spec_data)
+                    if computed:
+                        try:
+                            visual = VisualSpec(
+                                visual_type=spec_data["visual_type"],
+                                title=spec_data.get("title", ""),
+                                data=computed,
+                                description=spec_data.get("description", ""),
+                            )
+                        except Exception:
+                            pass
             elif state.dataset_columns:
-                # Rounds 1-2: combined table action + visual generation
+                # Rounds 1-2: table action + lightweight visual spec
                 speaker_idx = next(
                     (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
                 )
@@ -105,7 +113,6 @@ async def run_round(
                 try:
                     ta_raw = action_data.get("table_action")
                     if ta_raw:
-                        # Enrich highlights and annotations with agent_id and color
                         highlights = []
                         for h in ta_raw.get("highlights", []):
                             highlights.append(CellHighlight(
@@ -128,9 +135,17 @@ async def run_round(
                             highlights=highlights,
                             annotations=annotations,
                         )
+                    # Compute real chart data from the lightweight spec
                     vis_raw = action_data.get("visual")
                     if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
-                        visual = VisualSpec(**vis_raw)
+                        computed = compute_chart_data(vis_raw)
+                        if computed:
+                            visual = VisualSpec(
+                                visual_type=vis_raw["visual_type"],
+                                title=vis_raw.get("title", ""),
+                                data=computed,
+                                description=vis_raw.get("description", ""),
+                            )
                 except Exception:
                     pass
             else:

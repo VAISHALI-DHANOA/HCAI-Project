@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +20,33 @@ MODEL = "claude-haiku-4-5-20251001"
 MAX_TOKENS = 80
 TEMPERATURE = 0.85
 TIMEOUT_SECONDS = 15.0
+
+
+def _extract_json(text: str) -> dict | list | None:
+    """Robustly extract a JSON object from LLM output.
+
+    Handles markdown fences, leading prose, and trailing text.
+    """
+    text = text.strip()
+    # Strip markdown code fences
+    if text.startswith("```"):
+        text = text.split("\n", 1)[1] if "\n" in text else text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+    # Try direct parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    # Try to find a JSON object in the text
+    match = re.search(r'\{[\s\S]*\}', text)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    return None
 
 MBTI_DESCRIPTIONS = {
     "E": "extraverted, energized by interaction",
@@ -209,6 +238,13 @@ def _format_conversation_history(
             "Address them as 'Human Participant' and engage with their specific points.\n"
         )
 
+    human_request_note = ""
+    if state.human_request:
+        human_request_note = (
+            f'\nHUMAN REQUEST (the human participant asked for this — you MUST address it):\n'
+            f'"{state.human_request}"\n'
+        )
+
     return [
         {
             "role": "user",
@@ -216,6 +252,7 @@ def _format_conversation_history(
                 f"Here is the recent conversation:\n\n{transcript}\n\n"
                 f"{round_hint}"
                 f"{human_note}"
+                f"{human_request_note}"
                 f"Now respond as {speaker.name}. "
                 f"Remember your persona, traits, and constraints."
             ),
@@ -342,11 +379,20 @@ async def generate_dashboard_narrative(
     lines = [f"{agent_names.get(t.speaker_id, 'Unknown')}: {t.message}" for t in all_turns]
     transcript = "\n".join(lines)
 
+    human_request_note = ""
+    if state.human_request:
+        human_request_note = (
+            f'\nHUMAN REQUEST (the human participant asked for this — '
+            f'your narrative MUST address it):\n'
+            f'"{state.human_request}"\n'
+        )
+
     system_prompt = (
         f'You are "{chair.name}", the meeting facilitator.\n'
         f"Topic: {state.topic}\n"
         f"The team has completed two rounds of data exploration and quality assessment.\n\n"
         f"DATASET CONTEXT:\n{state.dataset_summary}\n\n"
+        f"{human_request_note}"
         f"YOUR TASK:\n"
         f"Based on the team's discussion so far, synthesize a single central finding, "
         f"question, or thesis that the upcoming data dashboard should argue or explore.\n"
@@ -387,9 +433,32 @@ async def generate_dashboard_narrative(
     return f"Exploring key patterns and relationships in the {state.topic} dataset."
 
 
-VISUAL_MAX_TOKENS = 500
+VISUAL_MAX_TOKENS = 500  # fallback only (no-columns case)
 
-TABLE_ACTION_MAX_TOKENS = 900
+SPEC_MAX_TOKENS = 350
+TABLE_ACTION_SPEC_MAX_TOKENS = 700
+SPEC_TEMPERATURE = 0.3
+
+CHART_SPEC_FORMAT = (
+    'CHART SPEC FORMAT — pick one visual_type and fill in the matching "spec" object.\n'
+    'Use real column names from AVAILABLE COLUMNS. Do NOT invent data values.\n'
+    '\n'
+    'bar_chart example:\n'
+    '  {"visual_type":"bar_chart","title":"Avg Income by Region","description":"...","spec":{"x_column":"Region_Type","y_column":"Median_Income_USD","aggregation":"mean","sort":"desc","top_n":10}}\n'
+    'line_chart example:\n'
+    '  {"visual_type":"line_chart","title":"QoL by Country","description":"...","spec":{"x_column":"Country","y_column":"Overall_Quality_of_Life_Score_0_100","aggregation":"mean","sort":"asc"}}\n'
+    'scatter example:\n'
+    '  {"visual_type":"scatter","title":"Income vs Happiness","description":"...","spec":{"x_column":"Median_Income_USD","y_column":"Happiness_Index_0_10","sample_n":50}}\n'
+    'stat_card example:\n'
+    '  {"visual_type":"stat_card","title":"Key Metrics","description":"...","spec":{"metrics":[{"column":"Population","aggregation":"mean","label":"Avg Pop"},{"column":"Median_Income_USD","aggregation":"median","label":"Med Income"}]}}\n'
+    'heatmap example:\n'
+    '  {"visual_type":"heatmap","title":"Correlations","description":"...","spec":{"columns":["Population","Median_Income_USD","Happiness_Index_0_10"]}}\n'
+    'table example:\n'
+    '  {"visual_type":"table","title":"Top Cities","description":"...","spec":{"columns":["City_Name","Country","Population"],"sort_by":"Population","sort_order":"desc","head_n":10}}\n'
+    '\n'
+    'Optional filter: add "filter_column":"Region_Type","filter_value":"Urban" inside spec.\n'
+    'aggregation options: mean, sum, count, median, min, max.\n'
+)
 
 VISUAL_ROUND_HINTS = {
     1: "For round 1 (data onboarding), prefer stat_card or table visuals that give an overview of the dataset — column counts, data types, basic statistics.",
@@ -454,14 +523,7 @@ async def generate_visual_spec(
             system=visual_system,
             messages=[{"role": "user", "content": "Generate the visual spec now."}],
         )
-        import json
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-        return json.loads(text)
+        return _extract_json(response.content[0].text)
     except Exception as exc:
         logger.warning("Visual spec generation failed for %s: %s", agent.name, exc)
         return None
@@ -475,7 +537,12 @@ async def generate_table_action_and_visual(
     column_names: list[str] | None = None,
     row_count: int = 200,
 ) -> dict:
-    """Generate table action (navigate, highlight, annotate) and optional visual in one LLM call."""
+    """Generate table action + lightweight visual spec (no data values).
+
+    Returns a dict with ``table_action`` and ``visual`` keys.  The visual
+    contains a ``spec`` sub-dict describing *what* to compute — the real
+    data is computed by ``chart_compute.compute_chart_data`` in the caller.
+    """
     if not column_names:
         return {}
 
@@ -484,34 +551,30 @@ async def generate_table_action_and_visual(
     )
     cols_str = ", ".join(column_names)
 
+    human_request_note = ""
+    if state.human_request:
+        human_request_note = (
+            f'\nHUMAN REQUEST (address this in your chart choice):\n'
+            f'"{state.human_request}"\n'
+        )
+
     system_prompt = (
-        f'You are "{agent.name}" generating table interaction actions.\n'
+        f'You are "{agent.name}" generating table interaction actions and a chart spec.\n'
         f"Your persona: {agent.persona_text}\n"
-        f"\nDATASET:\n{state.dataset_summary}\n"
         f"\nYour message this round was: {agent_message}\n"
         f"\nAVAILABLE COLUMNS: {cols_str}\n"
         f"ROW RANGE: 0 to {row_count - 1}\n"
+        f"{human_request_note}"
         f"\nGenerate a JSON object with TWO fields:\n"
-        f'\n1. "table_action" (REQUIRED): Where you navigate and what you highlight on the data table.\n'
+        f'\n1. "table_action" (REQUIRED): Where you navigate and what you highlight.\n'
         f'   - "navigate_to": {{"row": <int 0-{row_count - 1}>, "column": "<column name>"}}\n'
-        f'     Pick the row and column most relevant to your message.\n'
-        f'   - "highlights": array of cell range highlights (0-2 highlights):\n'
-        f'     [{{"row_start": <int>, "row_end": <int>, "columns": ["<col1>", "<col2>"]}}]\n'
-        f'     Highlight a specific range that supports your point.\n'
-        f'   - "annotations": array of cell annotations (0-2 annotations):\n'
-        f'     [{{"row": <int>, "column": "<col>", "text": "<max 30 chars>"}}]\n'
-        f'     Add a short note on a specific cell.\n'
-        f'\n2. "visual" (REQUIRED — always include a chart): A chart to show in your speech bubble.\n'
+        f'   - "highlights": [{{"row_start":<int>,"row_end":<int>,"columns":["<col>"]}}] (0-2)\n'
+        f'   - "annotations": [{{"row":<int>,"column":"<col>","text":"<max 30 chars>"}}] (0-2)\n'
+        f'\n2. "visual" (REQUIRED): A lightweight chart spec — NO data values.\n'
         f"   ROUND GUIDANCE: {round_visual_hint}\n"
-        f"   It MUST have:\n"
-        f'   - "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
-        f'   - "title": short descriptive title\n'
-        f'   - "data": chart data payload matching this format:\n'
-        f'     For bar_chart/line_chart: {{"labels": ["A","B","C"], "values": [1,2,3]}}\n'
-        f'     For scatter: {{"points": [{{"x":1,"y":2}},{{"x":3,"y":4}}], "x_label":"X", "y_label":"Y"}}\n'
-        f'     For stat_card: {{"stats": [{{"label":"Metric","value":"42"}}]}}\n'
-        f'   - "description": one sentence\n'
-        f"\nRespond with ONLY the JSON object, no markdown, no explanation.\n"
+        f'   Must have: "visual_type", "title", "description", and "spec".\n'
+        f"\n{CHART_SPEC_FORMAT}\n"
+        f"Respond with ONLY the JSON object, no markdown.\n"
         f"Use ONLY column names from the AVAILABLE COLUMNS list."
     )
 
@@ -519,25 +582,16 @@ async def generate_table_action_and_visual(
         client = get_client()
         response = await client.messages.create(
             model=MODEL,
-            max_tokens=TABLE_ACTION_MAX_TOKENS,
-            temperature=0.7,
+            max_tokens=TABLE_ACTION_SPEC_MAX_TOKENS,
+            temperature=SPEC_TEMPERATURE,
             system=system_prompt,
-            messages=[{"role": "user", "content": "Generate the table action and visual chart now. You MUST include a visual with valid data."}],
+            messages=[{"role": "user", "content": "Generate the table action and chart spec now."}],
         )
-        import json
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-        return json.loads(text)
+        result = _extract_json(response.content[0].text)
+        return result if isinstance(result, dict) else {}
     except Exception as exc:
         logger.warning("Table action generation failed for %s: %s", agent.name, exc)
         return {}
-
-
-DASHBOARD_VISUAL_MAX_TOKENS = 800
 
 
 async def generate_dashboard_visual(
@@ -548,7 +602,12 @@ async def generate_dashboard_visual(
     column_names: list[str] | None = None,
     dashboard_narrative: str = "",
 ) -> dict | None:
-    """Generate a richer visual spec for the dashboard canvas (rounds 3+)."""
+    """Generate a lightweight chart spec for the dashboard canvas (rounds 3+).
+
+    Returns a dict with ``visual_type``, ``title``, ``description``, and
+    ``spec``.  The caller feeds this to ``chart_compute.compute_chart_data``
+    to obtain the real data payload.
+    """
     if not state.dataset_summary or not column_names:
         return None
 
@@ -561,29 +620,29 @@ async def generate_dashboard_visual(
     narrative_context = ""
     if dashboard_narrative:
         narrative_context = (
-            f"\nDASHBOARD NARRATIVE (your visualization should support this central story):\n"
+            f"\nDASHBOARD NARRATIVE (your chart should support this central story):\n"
             f'"{dashboard_narrative}"\n'
-            f"Ensure your chart directly contributes evidence for or against this narrative.\n"
+        )
+
+    human_request_note = ""
+    if state.human_request:
+        human_request_note = (
+            f'\nHUMAN REQUEST (the human participant asked for this — '
+            f'your chart MUST address it):\n'
+            f'"{state.human_request}"\n'
         )
 
     system_prompt = (
-        f'You are "{agent.name}" creating a dashboard visualization.\n'
+        f'You are "{agent.name}" creating a dashboard chart specification.\n'
         f"Your persona: {agent.persona_text}\n"
-        f"\nDATASET:\n{state.dataset_summary}\n"
         f"\nAVAILABLE COLUMNS: {cols_str}\n"
         f"\nYour message this round was: {agent_message}\n"
         f"\nROUND GUIDANCE: {round_visual_hint}\n"
         f"{narrative_context}"
-        f"\nGenerate a JSON object for a SINGLE dashboard chart. Use 8-15 data points for rich display.\n"
-        f"It MUST have:\n"
-        f'- "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
-        f'- "title": short descriptive title\n'
-        f'- "data": chart data payload matching this format:\n'
-        f'  For bar_chart/line_chart: {{"labels": ["A","B","C",...], "values": [1,2,3,...]}}\n'
-        f'  For scatter: {{"points": [{{"x":1,"y":2}},{{"x":3,"y":4}},...], "x_label":"X", "y_label":"Y"}}\n'
-        f'  For stat_card: {{"stats": [{{"label":"Metric","value":"42"}},...]}}  (3-6 stats ideal)\n'
-        f'- "description": one sentence summarizing the insight\n'
-        f"\nRespond with ONLY the JSON object, no markdown, no explanation.\n"
+        f"{human_request_note}"
+        f'\nGenerate a JSON object with: "visual_type", "title", "description", "spec".\n'
+        f"\n{CHART_SPEC_FORMAT}\n"
+        f"Respond with ONLY the JSON object, no markdown.\n"
         f"Use ONLY column names from the AVAILABLE COLUMNS list."
     )
 
@@ -591,21 +650,14 @@ async def generate_dashboard_visual(
         client = get_client()
         response = await client.messages.create(
             model=MODEL,
-            max_tokens=DASHBOARD_VISUAL_MAX_TOKENS,
-            temperature=0.7,
+            max_tokens=SPEC_MAX_TOKENS,
+            temperature=SPEC_TEMPERATURE,
             system=system_prompt,
-            messages=[{"role": "user", "content": "Generate the dashboard visual now. Include rich data with 8-15 data points."}],
+            messages=[{"role": "user", "content": "Generate the chart spec now."}],
         )
-        import json
-        text = response.content[0].text.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-        return json.loads(text)
+        return _extract_json(response.content[0].text)
     except Exception as exc:
-        logger.warning("Dashboard visual generation failed for %s: %s", agent.name, exc)
+        logger.warning("Dashboard visual spec generation failed for %s: %s", agent.name, exc)
         return None
 
 

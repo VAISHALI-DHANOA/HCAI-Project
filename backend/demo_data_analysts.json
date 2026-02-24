@@ -1,76 +1,277 @@
 {
-  "topic": "Analyze the uploaded dataset: RevenueDataset.csv",
-  "dataset_summary": "DATASET: RevenueDataset.csv\nShape: 200 rows x 27 columns\n\nCOLUMNS:\n  - order_id [int64]\n  - customer_id [int64]\n  - order_date [str]\n  - region [str]\n  - product_id [str]\n  - quantity [int64]\n  - price_usd [int64]\n  - discount_pct [int64]\n  - returned [int64]\n  - product [str]\n  - category [str]\n  - brand [str]\n  - color_or_size [str]\n  - cost_usd [float64]\n  - profit_usd [float64]\n  - supplier [str]\n  - warehouse [str]\n  - defective [int64]\n  - support_ticket_id [str] (164 nulls, 82.0%)\n  - support_issue_type [str] (164 nulls, 82.0%)\n  - support_issue_text [str] (164 nulls, 82.0%)\n  - response_time_min [int64]\n  - resolved [int64]\n  - support_cost_usd [float64]\n  - delivery_days [int64]\n  - shipping_speed [str]\n  - return_reason [str] (187 nulls, 93.5%)\n\nSAMPLE ROWS (first 5):\n  Row 1: order_id=1, customer_id=1023, order_date=2024-01-24, region=East, product_id=P400, quantity=1, price_usd=107, discount_pct=0, returned=0, product=Backpack, category=Accessories, brand=Brand B, color_or_size=Blue, cost_usd=61.96, profit_usd=45.04, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n  Row 2: order_id=2, customer_id=1090, order_date=2024-02-27, region=West, product_id=P300, quantity=2, price_usd=67, discount_pct=20, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=31.07, profit_usd=76.13, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=4, shipping_speed=Standard, return_reason=NULL\n  Row 3: order_id=3, customer_id=1017, order_date=2024-01-03, region=North, product_id=P300, quantity=3, price_usd=29, discount_pct=5, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=16.98, profit_usd=65.67, supplier=Supplier A, warehouse=C, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n  Row 4: order_id=4, customer_id=1007, order_date=2024-02-16, region=West, product_id=P400, quantity=2, price_usd=103, discount_pct=20, returned=0, product=Backpack, category=Accessories, brand=Brand B, color_or_size=Blue, cost_usd=53.11, profit_usd=111.69, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=4, shipping_speed=Standard, return_reason=NULL\n  Row 5: order_id=5, customer_id=1099, order_date=2024-01-18, region=North, product_id=P300, quantity=2, price_usd=95, discount_pct=0, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=50.12, profit_usd=139.88, supplier=Supplier A, warehouse=B, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n\nNUMERIC COLUMN STATISTICS:\n  order_id: count=200.0, mean=100.5, std=57.88, min=1.0, 25%=50.75, 50%=100.5, 75%=150.25, max=200.0\n  customer_id: count=200.0, mean=1047.76, std=28.02, min=1000.0, 25%=1025.0, 50%=1043.0, 75%=1071.0, max=1099.0\n  quantity: count=200.0, mean=1.97, std=0.8, min=1.0, 25%=1.0, 50%=2.0, 75%=3.0, max=3.0\n  price_usd: count=200.0, mean=81.4, std=37.56, min=15.0, 25%=50.75, 50%=78.5, 75%=113.0, max=148.0\n  discount_pct: count=200.0, mean=7.92, std=7.41, min=0.0, 25%=0.0, 50%=5.0, 75%=15.0, max=20.0\n  returned: count=200.0, mean=0.06, std=0.25, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=1.0\n  cost_usd: count=200.0, mean=44.4, std=21.59, min=7.09, 25%=26.76, 50%=44.24, 75%=58.84, max=102.26\n  profit_usd: count=200.0, mean=101.96, std=82.43, min=3.96, 25%=34.07, 50%=79.51, 75%=157.3, max=337.73\n  defective: count=200.0, mean=0.02, std=0.12, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=1.0\n  response_time_min: count=200.0, mean=29.96, std=74.77, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=299.0\n  resolved: count=200.0, mean=0.98, std=0.14, min=0.0, 25%=1.0, 50%=1.0, 75%=1.0, max=1.0\n  support_cost_usd: count=200.0, mean=2.62, std=6.0, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=24.36\n  delivery_days: count=200.0, mean=3.94, std=2.36, min=1.0, 25%=2.0, 50%=4.0, 75%=5.0, max=9.0",
+  "topic": "Analyze the uploaded dataset: ExampleDataset.csv",
+  "dataset_summary": "DATASET: ExampleDataset.csv\nShape: 200 rows x 20 columns\n\nCOLUMNS:\n  - City_ID [int64]\n  - City_Name [str]\n  - Country [str]\n  - Region_Type [str]\n  - Population [int64]\n  - Density_per_km2 [int64]\n  - Public_Transport_Score_0_100 [float64]\n  - Air_Quality_AQI [int64]\n  - Green_Space_m2_per_capita [float64]\n  - Crime_Rate_per_100k [int64]\n  - Employment_Rate_pct [float64]\n  - Median_Income_USD [int64]\n  - Housing_Affordability_Index [float64]\n  - Education_Access_Score_0_100 [float64]\n  - Healthcare_Access_Score_0_100 [float64]\n  - Broadband_Coverage_pct [float64]\n  - Climate_Resilience_Score_0_100 [float64]\n  - Happiness_Index_0_10 [float64]\n  - Overall_Quality_of_Life_Score_0_100 [float64]\n  - QoL_Tier [str]\n\nSAMPLE ROWS (first 5):\n  Row 1: City_ID=1, City_Name=Oakridge 001, Country=Portugal, Region_Type=Rural-Regional, Population=1369271, Density_per_km2=648, Public_Transport_Score_0_100=62.0, Air_Quality_AQI=40, Green_Space_m2_per_capita=31.9, Crime_Rate_per_100k=554 ...\n  Row 2: City_ID=2, City_Name=Lakeside 002, Country=Ireland, Region_Type=Suburban, Population=418208, Density_per_km2=2859, Public_Transport_Score_0_100=74.6, Air_Quality_AQI=59, Green_Space_m2_per_capita=28.1, Crime_Rate_per_100k=622 ...\n  Row 3: City_ID=3, City_Name=Westhaven 003, Country=Canada, Region_Type=Rural-Regional, Population=550207, Density_per_km2=740, Public_Transport_Score_0_100=45.6, Air_Quality_AQI=45, Green_Space_m2_per_capita=12.6, Crime_Rate_per_100k=576 ...\n  Row 4: City_ID=4, City_Name=Riverton 004, Country=Denmark, Region_Type=Rural-Regional, Population=676125, Density_per_km2=781, Public_Transport_Score_0_100=68.1, Air_Quality_AQI=57, Green_Space_m2_per_capita=36.4, Crime_Rate_per_100k=607 ...\n  Row 5: City_ID=5, City_Name=Greenhaven 005, Country=Japan, Region_Type=Suburban, Population=350141, Density_per_km2=1341, Public_Transport_Score_0_100=65.2, Air_Quality_AQI=60, Green_Space_m2_per_capita=19.5, Crime_Rate_per_100k=470 ...\n\nNUMERIC COLUMN STATISTICS:\n  City_ID: count=200.0, mean=100.5, std=57.8792, min=1.0, 25%=50.75, 50%=100.5, 75%=150.25, max=200.0\n  Population: count=200.0, mean=616178.59, std=347641.4737, min=153495.0, 25%=371890.25, 50%=531890.5, 75%=755585.75, max=1872848.0\n  Density_per_km2: count=200.0, mean=1817.855, std=1060.994, min=300.0, 25%=1145.75, 50%=1574.5, 75%=2268.0, max=7892.0\n  Public_Transport_Score_0_100: count=200.0, mean=63.327, std=11.6446, min=29.2, 25%=55.75, 50%=63.2, 75%=71.625, max=93.4\n  Air_Quality_AQI: count=200.0, mean=57.955, std=14.013, min=25.0, 25%=48.0, 50%=58.0, 75%=68.25, max=91.0\n  Green_Space_m2_per_capita: count=200.0, mean=26.878, std=8.7488, min=4.0, 25%=21.4, 50%=27.0, 75%=32.325, max=57.7\n  Crime_Rate_per_100k: count=200.0, mean=526.115, std=164.4899, min=79.0, 25%=418.5, 50%=542.0, 75%=619.5, max=1046.0\n  Employment_Rate_pct: count=200.0, mean=92.2265, std=3.0289, min=82.6, 25%=90.2, 50%=91.9, 75%=94.425, max=98.0\n  Median_Income_USD: count=200.0, mean=48413.81, std=12056.2062, min=20000.0, 25%=40137.25, 50%=49054.5, 75%=55839.25, max=96209.0\n  Housing_Affordability_Index: count=200.0, mean=110.096, std=17.8976, min=64.1, 25%=98.45, 50%=109.2, 75%=122.725, max=149.3\n  Education_Access_Score_0_100: count=200.0, mean=64.313, std=9.5856, min=35.0, 25%=58.175, 50%=64.5, 75%=71.3, max=86.6\n  Healthcare_Access_Score_0_100: count=200.0, mean=68.8365, std=9.1313, min=46.6, 25%=62.475, 50%=68.3, 75%=75.425, max=93.9\n  Broadband_Coverage_pct: count=200.0, mean=85.663, std=7.2617, min=63.2, 25%=80.375, 50%=86.35, 75%=91.025, max=99.0\n  Climate_Resilience_Score_0_100: count=200.0, mean=77.7825, std=9.9541, min=48.1, 25%=71.425, 50%=79.0, 75%=85.125, max=98.0\n  Happiness_Index_0_10: count=200.0, mean=5.6005, std=0.8086, min=3.4, 25%=5.0, 50%=5.6, 75%=6.2, max=7.8\n  Overall_Quality_of_Life_Score_0_100: count=200.0, mean=64.5175, std=5.5892, min=46.2, 25%=60.875, 50%=64.15, 75%=68.825, max=77.1",
   "parsed_data": {
-    "filename": "RevenueDataset.csv",
-    "shape": [200, 27],
+    "filename": "ExampleDataset.csv",
+    "shape": [
+      200,
+      20
+    ],
     "columns": [
-      { "name": "order_id", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "customer_id", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "order_date", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "region", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "product_id", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "quantity", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "price_usd", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "discount_pct", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "returned", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "product", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "category", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "brand", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "color_or_size", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "cost_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
-      { "name": "profit_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
-      { "name": "supplier", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "warehouse", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "defective", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "support_ticket_id", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
-      { "name": "support_issue_type", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
-      { "name": "support_issue_text", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
-      { "name": "response_time_min", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "resolved", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "support_cost_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
-      { "name": "delivery_days", "dtype": "int64", "null_count": 0, "null_pct": 0 },
-      { "name": "shipping_speed", "dtype": "str", "null_count": 0, "null_pct": 0 },
-      { "name": "return_reason", "dtype": "str", "null_count": 187, "null_pct": 93.5 }
+      {
+        "name": "City_ID",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "City_Name",
+        "dtype": "str",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Country",
+        "dtype": "str",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Region_Type",
+        "dtype": "str",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Population",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Density_per_km2",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Public_Transport_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Air_Quality_AQI",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Green_Space_m2_per_capita",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Crime_Rate_per_100k",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Employment_Rate_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Median_Income_USD",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Housing_Affordability_Index",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Education_Access_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Healthcare_Access_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Broadband_Coverage_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Climate_Resilience_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Happiness_Index_0_10",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Overall_Quality_of_Life_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "QoL_Tier",
+        "dtype": "str",
+        "null_count": 0,
+        "null_pct": 0.0
+      }
     ],
     "sample_rows": [
-      { "order_id": 1, "customer_id": 1023, "order_date": "2024-01-24", "region": "East", "product_id": "P400", "quantity": 1, "price_usd": 107, "discount_pct": 0, "returned": 0, "product": "Backpack", "category": "Accessories", "brand": "Brand B", "color_or_size": "Blue", "cost_usd": 61.96, "profit_usd": 45.04, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" },
-      { "order_id": 2, "customer_id": 1090, "order_date": "2024-02-27", "region": "West", "product_id": "P300", "quantity": 2, "price_usd": 67, "discount_pct": 20, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 31.07, "profit_usd": 76.13, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 4, "shipping_speed": "Standard", "return_reason": "NULL" },
-      { "order_id": 3, "customer_id": 1017, "order_date": "2024-01-03", "region": "North", "product_id": "P300", "quantity": 3, "price_usd": 29, "discount_pct": 5, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 16.98, "profit_usd": 65.67, "supplier": "Supplier A", "warehouse": "C", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" },
-      { "order_id": 4, "customer_id": 1007, "order_date": "2024-02-16", "region": "West", "product_id": "P400", "quantity": 2, "price_usd": 103, "discount_pct": 20, "returned": 0, "product": "Backpack", "category": "Accessories", "brand": "Brand B", "color_or_size": "Blue", "cost_usd": 53.11, "profit_usd": 111.69, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 4, "shipping_speed": "Standard", "return_reason": "NULL" },
-      { "order_id": 5, "customer_id": 1099, "order_date": "2024-01-18", "region": "North", "product_id": "P300", "quantity": 2, "price_usd": 95, "discount_pct": 0, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 50.12, "profit_usd": 139.88, "supplier": "Supplier A", "warehouse": "B", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" }
+      {
+        "City_ID": 1,
+        "City_Name": "Oakridge 001",
+        "Country": "Portugal",
+        "Region_Type": "Rural-Regional",
+        "Population": 1369271,
+        "Density_per_km2": 648,
+        "Public_Transport_Score_0_100": 62.0,
+        "Air_Quality_AQI": 40,
+        "Green_Space_m2_per_capita": 31.9,
+        "Crime_Rate_per_100k": 554,
+        "Employment_Rate_pct": 95.1,
+        "Median_Income_USD": 52170,
+        "Housing_Affordability_Index": 75.8,
+        "Education_Access_Score_0_100": 65.2,
+        "Healthcare_Access_Score_0_100": 69.0,
+        "Broadband_Coverage_pct": 92.2,
+        "Climate_Resilience_Score_0_100": 81.5,
+        "Happiness_Index_0_10": 6.2,
+        "Overall_Quality_of_Life_Score_0_100": 70.2,
+        "QoL_Tier": "Improving"
+      },
+      {
+        "City_ID": 2,
+        "City_Name": "Lakeside 002",
+        "Country": "Ireland",
+        "Region_Type": "Suburban",
+        "Population": 418208,
+        "Density_per_km2": 2859,
+        "Public_Transport_Score_0_100": 74.6,
+        "Air_Quality_AQI": 59,
+        "Green_Space_m2_per_capita": 28.1,
+        "Crime_Rate_per_100k": 622,
+        "Employment_Rate_pct": 97.3,
+        "Median_Income_USD": 49079,
+        "Housing_Affordability_Index": 106.4,
+        "Education_Access_Score_0_100": 53.6,
+        "Healthcare_Access_Score_0_100": 63.3,
+        "Broadband_Coverage_pct": 79.6,
+        "Climate_Resilience_Score_0_100": 55.0,
+        "Happiness_Index_0_10": 5.4,
+        "Overall_Quality_of_Life_Score_0_100": 58.9,
+        "QoL_Tier": "Improving"
+      },
+      {
+        "City_ID": 3,
+        "City_Name": "Westhaven 003",
+        "Country": "Canada",
+        "Region_Type": "Rural-Regional",
+        "Population": 550207,
+        "Density_per_km2": 740,
+        "Public_Transport_Score_0_100": 45.6,
+        "Air_Quality_AQI": 45,
+        "Green_Space_m2_per_capita": 12.6,
+        "Crime_Rate_per_100k": 576,
+        "Employment_Rate_pct": 87.1,
+        "Median_Income_USD": 20000,
+        "Housing_Affordability_Index": 99.3,
+        "Education_Access_Score_0_100": 46.3,
+        "Healthcare_Access_Score_0_100": 52.9,
+        "Broadband_Coverage_pct": 93.9,
+        "Climate_Resilience_Score_0_100": 59.1,
+        "Happiness_Index_0_10": 3.7,
+        "Overall_Quality_of_Life_Score_0_100": 46.2,
+        "QoL_Tier": "Needs Support"
+      },
+      {
+        "City_ID": 4,
+        "City_Name": "Riverton 004",
+        "Country": "Denmark",
+        "Region_Type": "Rural-Regional",
+        "Population": 676125,
+        "Density_per_km2": 781,
+        "Public_Transport_Score_0_100": 68.1,
+        "Air_Quality_AQI": 57,
+        "Green_Space_m2_per_capita": 36.4,
+        "Crime_Rate_per_100k": 607,
+        "Employment_Rate_pct": 91.6,
+        "Median_Income_USD": 36559,
+        "Housing_Affordability_Index": 74.9,
+        "Education_Access_Score_0_100": 47.2,
+        "Healthcare_Access_Score_0_100": 72.4,
+        "Broadband_Coverage_pct": 86.6,
+        "Climate_Resilience_Score_0_100": 89.9,
+        "Happiness_Index_0_10": 6.1,
+        "Overall_Quality_of_Life_Score_0_100": 68.1,
+        "QoL_Tier": "Improving"
+      },
+      {
+        "City_ID": 5,
+        "City_Name": "Greenhaven 005",
+        "Country": "Japan",
+        "Region_Type": "Suburban",
+        "Population": 350141,
+        "Density_per_km2": 1341,
+        "Public_Transport_Score_0_100": 65.2,
+        "Air_Quality_AQI": 60,
+        "Green_Space_m2_per_capita": 19.5,
+        "Crime_Rate_per_100k": 470,
+        "Employment_Rate_pct": 92.0,
+        "Median_Income_USD": 50671,
+        "Housing_Affordability_Index": 84.1,
+        "Education_Access_Score_0_100": 69.6,
+        "Healthcare_Access_Score_0_100": 70.4,
+        "Broadband_Coverage_pct": 91.3,
+        "Climate_Resilience_Score_0_100": 76.2,
+        "Happiness_Index_0_10": 5.1,
+        "Overall_Quality_of_Life_Score_0_100": 67.4,
+        "QoL_Tier": "Improving"
+      }
     ]
   },
   "agents": [
     {
-      "name": "Raj Patel",
-      "persona_text": "Senior data quality engineer obsessed with pipeline integrity. Checks for nulls, duplicates, type mismatches, and suspicious patterns before anyone touches the data. Specializes in e-commerce data validation and cleaning strategies.",
-      "energy": 0.75,
+      "name": "Leila Haddad",
+      "persona_text": "Urban data quality lead who validates city indicators for consistency (units, ranges, outliers) and checks that composite scores are reproducible and interpretable for non-technical audiences.",
+      "energy": 0.7,
       "mbti_type": "ISTJ"
     },
     {
-      "name": "Sofia Chen",
-      "persona_text": "Revenue and pricing analyst who lives for descriptive statistics and correlation hunting. First instinct is to run distributions on profit margins, discount patterns, and regional breakdowns. Finds revenue leaks others miss.",
+      "name": "Mateo Silva",
+      "persona_text": "City policy analyst focused on equity and tradeoffs. Looks for underserved city-types and translates patterns into policy levers (transit, housing, green space, jobs).",
       "energy": 0.65,
+      "mbti_type": "INFJ"
+    },
+    {
+      "name": "Priya Nair",
+      "persona_text": "Quantitative researcher who tests relationships among indicators (crime, air, affordability, happiness) and sanity-checks correlations and confounders before anyone draws conclusions.",
+      "energy": 0.6,
       "mbti_type": "INTP"
     },
     {
-      "name": "Marcus Williams",
-      "persona_text": "Visualization expert who believes every insight needs a picture. Advocates for the right chart type to show revenue trends, category comparisons, and support cost breakdowns. Passionate about making data speak through graphics.",
-      "energy": 0.80,
+      "name": "Noah Bergström",
+      "persona_text": "Visualization specialist who designs dashboard stories: city rankings, driver analysis, and segment comparisons. Loves clean KPI tiles and drill-down views by country and region type.",
+      "energy": 0.8,
       "mbti_type": "ENFP"
     },
     {
-      "name": "Dr. Anika Johansson",
-      "persona_text": "Supply chain and operations analyst who thinks about supplier performance, warehouse efficiency, defect rates, and delivery logistics. Wants to optimize the end-to-end order fulfillment pipeline using data-driven decisions.",
+      "name": "Dr. Hana Kim",
+      "persona_text": "Sustainability and resilience strategist who connects climate readiness and green infrastructure to wellbeing outcomes, highlighting hopeful pathways for improvement.",
       "energy": 0.55,
       "mbti_type": "INTJ"
-    },
-    {
-      "name": "Kai Nakamura",
-      "persona_text": "Business storyteller who translates numbers into narratives. Focuses on customer behavior patterns, return drivers, and actionable recommendations for leadership. Makes data accessible to non-technical stakeholders.",
-      "energy": 0.70,
-      "mbti_type": "ENFJ"
     }
   ]
 }

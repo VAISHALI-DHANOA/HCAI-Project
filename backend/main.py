@@ -168,8 +168,10 @@ async def reset(payload: ResetRequest) -> dict:
 @app.post("/intervene")
 async def intervene(payload: InterveneRequest) -> dict:
     state = STORE.get_state()
-    turn = PublicTurn(speaker_id="human", message=payload.message.strip())
+    msg = payload.message.strip()
+    turn = PublicTurn(speaker_id="human", message=msg)
     state.public_history.append(turn)
+    state.human_request = msg
     await manager.broadcast({
         "type": "turn",
         "turn": turn.model_dump(),
@@ -253,7 +255,7 @@ async def load_data_demo() -> dict:
 
     # Load actual CSV to get all rows
     from app.dataset import parse_dataset
-    csv_path = Path(__file__).resolve().parent / "RevenueDataset.csv"
+    csv_path = Path(__file__).resolve().parent / "ExampleDataset.csv"
     if csv_path.exists():
         parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
     else:
