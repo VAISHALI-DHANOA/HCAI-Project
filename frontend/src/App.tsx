@@ -136,23 +136,29 @@ export default function App() {
           setDashboardMode(true);
         }
         const speakerId = next.speaker_id;
-        setDashboardVisuals((prev) => {
-          // Look up agent info from the state snapshot in the pending round
-          const agents = pendingRoundRef.current?.state_snapshot?.agents ?? [];
-          const agent = agents.find((a: Agent) => a.id === speakerId);
-          const color = agent ? agentColor(agent) : "#38bdf8";
-          const dv: DashboardVisual = {
-            id: `${turnRoundNum}-${speakerId}`,
-            roundNumber: turnRoundNum,
-            speakerId,
-            agentName: agent?.name ?? "Unknown",
-            agentColor: color,
-            visual: next.visual!,
-            message: next.message,
-          };
-          const filtered = prev.filter((v) => v.id !== dv.id);
-          return [...filtered, dv];
-        });
+        // Skip mediator/chair agents — they don't get dashboard cards
+        const speakerAgent = pendingRoundRef.current?.state_snapshot?.agents?.find(
+          (a: Agent) => a.id === speakerId
+        );
+        if (speakerAgent?.role !== "mediator") {
+          setDashboardVisuals((prev) => {
+            // Look up agent info from the state snapshot in the pending round
+            const agents = pendingRoundRef.current?.state_snapshot?.agents ?? [];
+            const agent = agents.find((a: Agent) => a.id === speakerId);
+            const color = agent ? agentColor(agent) : "#38bdf8";
+            const dv: DashboardVisual = {
+              id: `${turnRoundNum}-${speakerId}`,
+              roundNumber: turnRoundNum,
+              speakerId,
+              agentName: agent?.name ?? "Unknown",
+              agentColor: color,
+              visual: next.visual!,
+              message: next.message,
+            };
+            const filtered = prev.filter((v) => v.id !== dv.id);
+            return [...filtered, dv];
+          });
+        }
       }
 
       displayTimerRef.current = window.setTimeout(() => {
@@ -949,6 +955,7 @@ export default function App() {
                   agents={state?.agents ?? []}
                   agentMap={agentMap}
                   currentTurn={currentTurn}
+                  dashboardNarrative={(state?.world_state?.dashboard_narrative as string) ?? ""}
                 />
                 {/* Intervention Input Bar */}
                 <form className="intervention-bar" onSubmit={onIntervene}>

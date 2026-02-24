@@ -2739,8 +2739,9 @@ thead .arena-table__row-index {
 
 .dashboard-canvas__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 16px;
+  padding: 0 8px 16px;
 }
 
 .dashboard-canvas__empty {
@@ -2756,6 +2757,24 @@ thead .arena-table__row-index {
   font-size: 0.95rem;
 }
 
+/* Dashboard narrative header */
+.dashboard-canvas__narrative {
+  padding: 20px 24px 16px;
+  text-align: center;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  margin-bottom: 8px;
+}
+
+.dashboard-canvas__narrative-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
 /* Dashboard cards */
 .dashboard-card {
   background: rgba(15, 23, 42, 0.7);
@@ -2764,6 +2783,9 @@ thead .arena-table__row-index {
   padding: 16px;
   position: relative;
   animation: dashboardCardIn 0.5s ease-out both;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 @keyframes dashboardCardIn {
@@ -2813,11 +2835,27 @@ thead .arena-table__row-index {
   letter-spacing: 0.04em;
 }
 
+/* Ensure charts within dashboard cards stay contained */
+.dashboard-card .visual-card {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.dashboard-card .visual-card__body {
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.dashboard-card .recharts-wrapper {
+  max-width: 100% !important;
+}
+
 /* Speech / message below chart */
 .dashboard-card__speech {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  flex-shrink: 0;
 }
 
 .dashboard-card__message {

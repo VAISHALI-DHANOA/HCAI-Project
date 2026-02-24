@@ -5,6 +5,7 @@ from typing import Awaitable, Callable
 from app.llm import (
     generate_agent_message,
     generate_chair_summary,
+    generate_dashboard_narrative,
     generate_dashboard_visual,
     generate_table_action_and_visual,
     generate_visual_spec,
@@ -77,10 +78,12 @@ async def run_round(
         if state.dataset_summary and speaker.role == "user":
             if state.dataset_columns and state.round_number >= 3:
                 # Dashboard mode: visual only, no table_action
+                narrative = state.world_state.get("dashboard_narrative", "")
                 visual_data = await generate_dashboard_visual(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
+                    dashboard_narrative=narrative,
                 )
                 if visual_data and isinstance(visual_data, dict) and visual_data.get("visual_type"):
                     try:
@@ -159,6 +162,12 @@ async def run_round(
         turns.append(summary_turn)
         if on_turn:
             await on_turn(summary_turn, state.round_number)
+
+        # At end of round 2, generate the dashboard narrative
+        if state.round_number == 2 and state.dataset_summary:
+            all_history = state.public_history + turns
+            narrative = await generate_dashboard_narrative(chair, state, all_history)
+            state.world_state["dashboard_narrative"] = narrative
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

@@ -11,24 +11,35 @@ interface DashboardCanvasProps {
   agents: Agent[];
   agentMap: Map<string, Agent>;
   currentTurn: PublicTurn | null;
+  dashboardNarrative: string;
 }
 
 export function DashboardCanvas({
   visuals,
+  agents,
   agentMap,
   currentTurn,
+  dashboardNarrative,
 }: DashboardCanvasProps) {
   const currentSpeakerId = currentTurn?.speaker_id ?? null;
 
+  const mediatorIds = useMemo(() => {
+    return new Set(agents.filter(a => a.role === "mediator").map(a => a.id));
+  }, [agents]);
+
+  const filteredVisuals = useMemo(() => {
+    return visuals.filter(v => !mediatorIds.has(v.speakerId));
+  }, [visuals, mediatorIds]);
+
   const latestVisualPerAgent = useMemo(() => {
     const map = new Map<string, string>();
-    for (const v of visuals) {
+    for (const v of filteredVisuals) {
       map.set(v.speakerId, v.id);
     }
     return map;
-  }, [visuals]);
+  }, [filteredVisuals]);
 
-  if (visuals.length === 0) {
+  if (filteredVisuals.length === 0 && !dashboardNarrative) {
     return (
       <div className="dashboard-canvas">
         <div className="dashboard-canvas__empty">
@@ -40,8 +51,13 @@ export function DashboardCanvas({
 
   return (
     <div className="dashboard-canvas">
+      {dashboardNarrative && (
+        <div className="dashboard-canvas__narrative">
+          <h2 className="dashboard-canvas__narrative-title">{dashboardNarrative}</h2>
+        </div>
+      )}
       <div className="dashboard-canvas__grid">
-        {visuals.map((vis) => {
+        {filteredVisuals.map((vis) => {
           const isLatestForAgent = latestVisualPerAgent.get(vis.speakerId) === vis.id;
           const isSpeaking = currentSpeakerId === vis.speakerId;
           const agent = agentMap.get(vis.speakerId);

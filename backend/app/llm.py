@@ -328,6 +328,65 @@ async def generate_chair_summary(
     return f"Good discussion this round. Let's continue exploring {state.topic}."
 
 
+async def generate_dashboard_narrative(
+    chair: Agent,
+    state: State,
+    all_turns: list[PublicTurn],
+) -> str:
+    """Generate a central dashboard narrative at end of round 2.
+
+    This narrative frames the story the dashboard visuals should argue.
+    It receives the full history from rounds 1 and 2.
+    """
+    agent_names = {a.id: a.name for a in state.agents}
+    lines = [f"{agent_names.get(t.speaker_id, 'Unknown')}: {t.message}" for t in all_turns]
+    transcript = "\n".join(lines)
+
+    system_prompt = (
+        f'You are "{chair.name}", the meeting facilitator.\n'
+        f"Topic: {state.topic}\n"
+        f"The team has completed two rounds of data exploration and quality assessment.\n\n"
+        f"DATASET CONTEXT:\n{state.dataset_summary}\n\n"
+        f"YOUR TASK:\n"
+        f"Based on the team's discussion so far, synthesize a single central finding, "
+        f"question, or thesis that the upcoming data dashboard should argue or explore.\n"
+        f"This will be used as the dashboard's guiding narrative.\n\n"
+        f"CONSTRAINTS:\n"
+        f"- Write exactly ONE sentence (max 30 words)\n"
+        f"- Frame it as a clear analytical thesis or guiding question\n"
+        f"- Ground it in specific data patterns the team identified\n"
+        f"- Do not use markdown formatting\n"
+        f"- Do not list participant names\n"
+    )
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                f"Here is everything discussed across rounds 1 and 2:\n\n{transcript}\n\n"
+                f"Now synthesize the central finding or question for the dashboard."
+            ),
+        }
+    ]
+
+    try:
+        client = get_client()
+        response = await client.messages.create(
+            model=MODEL,
+            max_tokens=100,
+            temperature=0.7,
+            system=system_prompt,
+            messages=messages,
+        )
+        text = response.content[0].text.strip()
+        if text:
+            return text
+    except Exception as exc:
+        logger.warning("Dashboard narrative generation error: %s", exc)
+
+    return f"Exploring key patterns and relationships in the {state.topic} dataset."
+
+
 VISUAL_MAX_TOKENS = 500
 
 TABLE_ACTION_MAX_TOKENS = 900
@@ -487,6 +546,7 @@ async def generate_dashboard_visual(
     agent_message: str,
     round_number: int = 0,
     column_names: list[str] | None = None,
+    dashboard_narrative: str = "",
 ) -> dict | None:
     """Generate a richer visual spec for the dashboard canvas (rounds 3+)."""
     if not state.dataset_summary or not column_names:
@@ -498,6 +558,14 @@ async def generate_dashboard_visual(
     )
     cols_str = ", ".join(column_names)
 
+    narrative_context = ""
+    if dashboard_narrative:
+        narrative_context = (
+            f"\nDASHBOARD NARRATIVE (your visualization should support this central story):\n"
+            f'"{dashboard_narrative}"\n'
+            f"Ensure your chart directly contributes evidence for or against this narrative.\n"
+        )
+
     system_prompt = (
         f'You are "{agent.name}" creating a dashboard visualization.\n'
         f"Your persona: {agent.persona_text}\n"
@@ -505,6 +573,7 @@ async def generate_dashboard_visual(
         f"\nAVAILABLE COLUMNS: {cols_str}\n"
         f"\nYour message this round was: {agent_message}\n"
         f"\nROUND GUIDANCE: {round_visual_hint}\n"
+        f"{narrative_context}"
         f"\nGenerate a JSON object for a SINGLE dashboard chart. Use 8-15 data points for rich display.\n"
         f"It MUST have:\n"
         f'- "visual_type": one of "bar_chart", "line_chart", "scatter", "stat_card"\n'
