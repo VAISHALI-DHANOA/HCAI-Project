@@ -64,6 +64,24 @@ async def run_round(
     speakers = select_speakers(state.agents)
     state.round_number += 1
 
+    # Re-generate the dashboard narrative if the human request changed since
+    # it was last produced.  This ensures dashboard visuals align with what
+    # the human actually asked for, even when the intervention happens after
+    # round 2 (when the narrative is normally created).
+    if (
+        state.round_number >= 3
+        and state.dataset_summary
+        and state.human_request
+        and state.human_request != state.world_state.get("narrative_human_request", "")
+    ):
+        chair = next((a for a in state.agents if a.role == "mediator"), None)
+        if chair:
+            narrative = await generate_dashboard_narrative(
+                chair, state, state.public_history,
+            )
+            state.world_state["dashboard_narrative"] = narrative
+            state.world_state["narrative_human_request"] = state.human_request
+
     turns: list[PublicTurn] = []
     for speaker in speakers:
         raw_message = await generate_agent_message(
@@ -183,6 +201,7 @@ async def run_round(
             all_history = state.public_history + turns
             narrative = await generate_dashboard_narrative(chair, state, all_history)
             state.world_state["dashboard_narrative"] = narrative
+            state.world_state["narrative_human_request"] = state.human_request
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

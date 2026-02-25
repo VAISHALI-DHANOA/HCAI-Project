@@ -97,7 +97,20 @@ ROUND_PROMPTS = {
 DEFAULT_ROUND_PROMPT = "Continue exploring the data, building on all previous findings and refining your analysis with new evidence."
 
 
-def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
+def _build_chair_system_prompt(
+    agent: Agent, topic: str, round_number: int,
+    dataset_context: str = "", human_request: str = "",
+) -> str:
+    human_directive = ""
+    if human_request:
+        human_directive = (
+            f"\n*** HUMAN PARTICIPANT DIRECTIVE ***\n"
+            f"A human participant has intervened with this request:\n"
+            f'"{human_request}"\n'
+            f"You MUST redirect the discussion toward this request. Frame your opening "
+            f"question around it and steer all participants to address it.\n"
+        )
+
     base = (
         f'You are "{agent.name}", a mediator in a multi-agent deliberation about: {topic}\n'
         f"\n"
@@ -106,6 +119,7 @@ def _build_chair_system_prompt(agent: Agent, topic: str, round_number: int, data
         f"Your current stance: {agent.stance}\n"
         f"Your energy level: {agent.energy}/1.0\n"
         f"This is round {round_number} of the discussion.\n"
+        f"{human_directive}"
         f"\n"
         f"YOUR ROLE:\n"
         f"- Open the round by posing a focused question or framing the next angle to explore\n"
@@ -149,10 +163,25 @@ def _mbti_behavior(mbti_type: str | None) -> str:
     return "\n".join(f"- {b}" for b in behaviors)
 
 
-def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
+def _build_user_system_prompt(
+    agent: Agent, topic: str, round_number: int,
+    dataset_context: str = "", human_request: str = "",
+) -> str:
     active_quirk = agent.quirks[round_number % 3]
     mbti = _mbti_line(agent.mbti_type)
     mbti_behavior = _mbti_behavior(agent.mbti_type)
+
+    human_directive = ""
+    if human_request:
+        human_directive = (
+            f"\n*** HUMAN PARTICIPANT DIRECTIVE ***\n"
+            f"A human participant has intervened with this request:\n"
+            f'"{human_request}"\n'
+            f"You MUST change your analysis to address this request. Your response "
+            f"should directly engage with what the human asked for, applying your "
+            f"unique perspective and expertise to it.\n"
+        )
+
     base = (
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
         f"\n"
@@ -163,6 +192,7 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, datas
         f"Your energy level: {agent.energy}/1.0 (higher = more assertive and action-oriented; "
         f"lower = more cautious and deliberate)\n"
         f"This is round {round_number} of the discussion.\n"
+        f"{human_directive}"
         f"\n"
         f"YOUR COMMUNICATION STYLE (follow these closely):\n"
         f"{mbti_behavior}\n"
@@ -187,10 +217,13 @@ def _build_user_system_prompt(agent: Agent, topic: str, round_number: int, datas
     return base
 
 
-def build_system_prompt(agent: Agent, topic: str, round_number: int, dataset_context: str = "") -> str:
+def build_system_prompt(
+    agent: Agent, topic: str, round_number: int,
+    dataset_context: str = "", human_request: str = "",
+) -> str:
     if agent.role == "mediator":
-        return _build_chair_system_prompt(agent, topic, round_number, dataset_context)
-    return _build_user_system_prompt(agent, topic, round_number, dataset_context)
+        return _build_chair_system_prompt(agent, topic, round_number, dataset_context, human_request)
+    return _build_user_system_prompt(agent, topic, round_number, dataset_context, human_request)
 
 
 def _format_conversation_history(
@@ -233,7 +266,7 @@ def _format_conversation_history(
     human_note = ""
     if has_human_input:
         human_note = (
-            "\nIMPORTANT: A human participant has contributed to the discussion. "
+            "\nA human participant has spoken in the discussion above. "
             "You MUST directly acknowledge and respond to their input. "
             "Address them as 'Human Participant' and engage with their specific points.\n"
         )
@@ -241,18 +274,21 @@ def _format_conversation_history(
     human_request_note = ""
     if state.human_request:
         human_request_note = (
-            f'\nHUMAN REQUEST (the human participant asked for this — you MUST address it):\n'
-            f'"{state.human_request}"\n'
+            f"\n*** PRIORITY: HUMAN REQUEST ***\n"
+            f'The human participant asked: "{state.human_request}"\n'
+            f"You MUST pivot your response to address this request. "
+            f"Do NOT continue with the previous analysis direction — "
+            f"redirect your expertise toward what the human asked for.\n"
         )
 
     return [
         {
             "role": "user",
             "content": (
+                f"{human_request_note}"
                 f"Here is the recent conversation:\n\n{transcript}\n\n"
                 f"{round_hint}"
                 f"{human_note}"
-                f"{human_request_note}"
                 f"Now respond as {speaker.name}. "
                 f"Remember your persona, traits, and constraints."
             ),
@@ -282,6 +318,7 @@ async def generate_agent_message(
         system_prompt = build_system_prompt(
             agent, state.topic, state.round_number,
             dataset_context=state.dataset_summary,
+            human_request=state.human_request,
         )
         messages = _format_conversation_history(state, active_turns, agent)
 
@@ -321,10 +358,18 @@ async def generate_chair_summary(
     lines = [f"{agent_names.get(t.speaker_id, 'Unknown')}: {t.message}" for t in round_turns]
     transcript = "\n".join(lines)
 
+    human_request_note = ""
+    if state.human_request:
+        human_request_note = (
+            f"\nHUMAN REQUEST: The human participant asked: \"{state.human_request}\"\n"
+            f"Your summary MUST acknowledge this request and steer next steps toward it.\n"
+        )
+
     system_prompt = (
         f'You are "{chair.name}", the meeting facilitator.\n'
         f"Topic: {state.topic}\n"
         f"This was round {state.round_number}.\n\n"
+        f"{human_request_note}"
         f"YOUR TASK:\n"
         f"Summarize the main themes discussed and suggest next steps moving forward.\n\n"
         f"CONSTRAINTS:\n"
@@ -554,8 +599,9 @@ async def generate_table_action_and_visual(
     human_request_note = ""
     if state.human_request:
         human_request_note = (
-            f'\nHUMAN REQUEST (address this in your chart choice):\n'
-            f'"{state.human_request}"\n'
+            f'\n*** PRIORITY — HUMAN REQUEST ***\n'
+            f'The human participant specifically asked: "{state.human_request}"\n'
+            f'Your chart and table highlights MUST address this request.\n'
         )
 
     system_prompt = (
@@ -627,9 +673,10 @@ async def generate_dashboard_visual(
     human_request_note = ""
     if state.human_request:
         human_request_note = (
-            f'\nHUMAN REQUEST (the human participant asked for this — '
-            f'your chart MUST address it):\n'
-            f'"{state.human_request}"\n'
+            f'\n*** PRIORITY — HUMAN REQUEST ***\n'
+            f'The human participant specifically asked: "{state.human_request}"\n'
+            f'Your chart MUST directly address this request. Choose columns and '
+            f'aggregations that answer the human\'s question.\n'
         )
 
     system_prompt = (
@@ -637,9 +684,9 @@ async def generate_dashboard_visual(
         f"Your persona: {agent.persona_text}\n"
         f"\nAVAILABLE COLUMNS: {cols_str}\n"
         f"\nYour message this round was: {agent_message}\n"
-        f"\nROUND GUIDANCE: {round_visual_hint}\n"
-        f"{narrative_context}"
         f"{human_request_note}"
+        f"{narrative_context}"
+        f"\nROUND GUIDANCE: {round_visual_hint}\n"
         f'\nGenerate a JSON object with: "visual_type", "title", "description", "spec".\n'
         f"\n{CHART_SPEC_FORMAT}\n"
         f"Respond with ONLY the JSON object, no markdown.\n"

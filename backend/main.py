@@ -80,13 +80,13 @@ app.add_middleware(
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await manager.connect(websocket)
-    await websocket.send_json(
-        {
-            "type": "state",
-            "state_snapshot": STORE.get_state().model_dump(),
-        }
-    )
     try:
+        await websocket.send_json(
+            {
+                "type": "state",
+                "state_snapshot": STORE.get_state().model_dump(),
+            }
+        )
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
