@@ -2,9 +2,20 @@ import type { DatasetInfo, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
+// Unique session ID per browser tab — isolates state across tabs
+const _sessionId: string = crypto.randomUUID();
+export function getSessionId(): string {
+  return _sessionId;
+}
+
 let _adminKey: string | null = null;
 export function setAdminKey(key: string | null) {
   _adminKey = key;
+}
+
+function withSession(path: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}session=${_sessionId}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -12,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (_adminKey) {
     headers["X-Admin-Key"] = _adminKey;
   }
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${withSession(path)}`, {
     headers,
     ...init
   });
@@ -70,7 +81,7 @@ export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; 
     headers["X-Admin-Key"] = _adminKey;
   }
 
-  const response = await fetch(`${API_BASE}/upload-dataset`, {
+  const response = await fetch(`${API_BASE}${withSession("/upload-dataset")}`, {
     method: "POST",
     headers,
     body: formData,
@@ -134,7 +145,7 @@ export async function downloadLogs(): Promise<void> {
   if (_adminKey) {
     headers["X-Admin-Key"] = _adminKey;
   }
-  const response = await fetch(`${API_BASE}/logs/download`, { headers });
+  const response = await fetch(`${API_BASE}${withSession("/logs/download")}`, { headers });
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status}`);
   }
@@ -154,6 +165,6 @@ export async function downloadLogs(): Promise<void> {
 
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
-  if (explicit) return explicit;
-  return API_BASE.replace(/^http/, "ws") + "/ws";
+  const base = explicit ?? API_BASE.replace(/^http/, "ws") + "/ws";
+  return `${base}?session=${_sessionId}`;
 }

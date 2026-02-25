@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 
@@ -17,7 +17,7 @@ from app.agent_factory import create_agents_from_user
 from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
 from app.models import PublicTurn
 from app.simulation import run_round
-from app.state import STORE
+from app.state import SESSIONS
 
 DEMO_FILE = Path(__file__).resolve().parent / "demo_agents.json"
 DEMO_DATA_FILE = Path(__file__).resolve().parent / "demo_data_analysts.json"
@@ -32,23 +32,39 @@ async def verify_admin(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Admin access required")
 
 
+def get_session_id(
+    session: str | None = Query(None),
+    request: Request = None,
+) -> str:
+    """Extract session ID from query param or X-Session-Id header."""
+    sid = session or (request.headers.get("X-Session-Id") if request else None)
+    if not sid or len(sid) > 64:
+        raise HTTPException(status_code=400, detail="Missing or invalid session ID")
+    return sid
+
+
 class ConnectionManager:
     def __init__(self) -> None:
-        self._connections: set[WebSocket] = set()
+        self._connections: dict[str, set[WebSocket]] = {}
         self._lock = asyncio.Lock()
 
-    async def connect(self, websocket: WebSocket) -> None:
+    async def connect(self, websocket: WebSocket, session_id: str) -> None:
         await websocket.accept()
         async with self._lock:
-            self._connections.add(websocket)
+            if session_id not in self._connections:
+                self._connections[session_id] = set()
+            self._connections[session_id].add(websocket)
 
-    async def disconnect(self, websocket: WebSocket) -> None:
+    async def disconnect(self, websocket: WebSocket, session_id: str) -> None:
         async with self._lock:
-            self._connections.discard(websocket)
+            if session_id in self._connections:
+                self._connections[session_id].discard(websocket)
+                if not self._connections[session_id]:
+                    del self._connections[session_id]
 
-    async def broadcast(self, message: dict[str, Any]) -> None:
+    async def broadcast(self, session_id: str, message: dict[str, Any]) -> None:
         async with self._lock:
-            connections = list(self._connections)
+            connections = list(self._connections.get(session_id, set()))
         dead: list[WebSocket] = []
         for connection in connections:
             try:
@@ -57,8 +73,9 @@ class ConnectionManager:
                 dead.append(connection)
         if dead:
             async with self._lock:
+                session_set = self._connections.get(session_id, set())
                 for connection in dead:
-                    self._connections.discard(connection)
+                    session_set.discard(connection)
 
 
 app = FastAPI(title="Creative Multi-Agent Playground API", version="2.0.0")
@@ -79,42 +96,45 @@ app.add_middleware(
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
-    await manager.connect(websocket)
+async def websocket_endpoint(websocket: WebSocket, session: str = Query(...)) -> None:
+    store = SESSIONS.get_store(session)
+    await manager.connect(websocket, session)
     try:
         await websocket.send_json(
             {
                 "type": "state",
-                "state_snapshot": STORE.get_state().model_dump(),
+                "state_snapshot": store.get_state().model_dump(),
             }
         )
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
-        await manager.disconnect(websocket)
+        await manager.disconnect(websocket, session)
     except Exception:
-        await manager.disconnect(websocket)
+        await manager.disconnect(websocket, session)
 
 
 @app.post("/topic", dependencies=[Depends(verify_admin)])
-async def set_topic(payload: TopicRequest) -> dict:
-    state = STORE.set_topic(payload.topic.strip())
+async def set_topic(payload: TopicRequest, session_id: str = Depends(get_session_id)) -> dict:
+    store = SESSIONS.get_store(session_id)
+    state = store.set_topic(payload.topic.strip())
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {"state": snapshot}
 
 
 @app.post("/agents")
-async def add_agents(payload: AddAgentsRequest) -> dict:
-    state = STORE.get_state()
+async def add_agents(payload: AddAgentsRequest, session_id: str = Depends(get_session_id)) -> dict:
+    store = SESSIONS.get_store(session_id)
+    state = store.get_state()
     current_users = [agent for agent in state.agents if agent.role == "user"]
     if len(current_users) + len(payload.user_agents) > 25:
         raise HTTPException(status_code=400, detail="Maximum 25 user agents allowed")
 
     created = create_agents_from_user(state.topic, payload.user_agents)
-    updated = STORE.add_agents(created)
+    updated = store.add_agents(created)
     snapshot = updated.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
@@ -122,12 +142,14 @@ async def add_agents(payload: AddAgentsRequest) -> dict:
 
 
 @app.post("/run", dependencies=[Depends(verify_admin)])
-async def run(payload: RunRequest) -> dict:
-    state = STORE.get_state()
+async def run(payload: RunRequest, session_id: str = Depends(get_session_id)) -> dict:
+    store = SESSIONS.get_store(session_id)
+    state = store.get_state()
+    csv_path = SESSIONS.get_csv_path(session_id)
     results = []
 
     async def broadcast_turn(turn: Any, round_number: int) -> None:
-        await manager.broadcast({
+        await manager.broadcast(session_id, {
             "type": "turn",
             "turn": turn.model_dump(),
             "round_number": round_number,
@@ -135,13 +157,13 @@ async def run(payload: RunRequest) -> dict:
 
     for _ in range(payload.rounds):
         try:
-            result = await run_round(state, on_turn=broadcast_turn)
+            result = await run_round(state, on_turn=broadcast_turn, csv_path=csv_path)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-        STORE.save_round(result)
+        store.save_round(result)
 
         event = {
             "type": "round",
@@ -149,7 +171,7 @@ async def run(payload: RunRequest) -> dict:
             "metrics": result.metrics,
             "state_snapshot": state.model_dump(),
         }
-        await manager.broadcast(event)
+        await manager.broadcast(session_id, event)
         results.append(result.model_dump())
 
     return {
@@ -159,21 +181,23 @@ async def run(payload: RunRequest) -> dict:
 
 
 @app.post("/reset", dependencies=[Depends(verify_admin)])
-async def reset(payload: ResetRequest) -> dict:
-    state = STORE.reset(payload.topic)
+async def reset(payload: ResetRequest, session_id: str = Depends(get_session_id)) -> dict:
+    store = SESSIONS.get_store(session_id)
+    state = store.reset(payload.topic)
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {"state": snapshot}
 
 
 @app.post("/intervene")
-async def intervene(payload: InterveneRequest) -> dict:
-    state = STORE.get_state()
+async def intervene(payload: InterveneRequest, session_id: str = Depends(get_session_id)) -> dict:
+    store = SESSIONS.get_store(session_id)
+    state = store.get_state()
     msg = payload.message.strip()
     turn = PublicTurn(speaker_id="human", message=msg)
     state.public_history.append(turn)
     state.human_request = msg
-    await manager.broadcast({
+    await manager.broadcast(session_id, {
         "type": "turn",
         "turn": turn.model_dump(),
         "round_number": state.round_number,
@@ -182,7 +206,7 @@ async def intervene(payload: InterveneRequest) -> dict:
 
 
 @app.post("/demo", dependencies=[Depends(verify_admin)])
-async def load_demo() -> dict:
+async def load_demo(session_id: str = Depends(get_session_id)) -> dict:
     if not DEMO_FILE.exists():
         raise HTTPException(status_code=404, detail="demo_agents.json not found")
 
@@ -192,11 +216,12 @@ async def load_demo() -> dict:
     if not agents_raw:
         raise HTTPException(status_code=400, detail="No agents defined in demo file")
 
-    state = STORE.reset(topic)
+    store = SESSIONS.get_store(session_id)
+    state = store.reset(topic)
     created = create_agents_from_user(topic, agents_raw)
-    state = STORE.add_agents(created)
+    state = store.add_agents(created)
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
@@ -204,7 +229,7 @@ async def load_demo() -> dict:
 
 
 @app.post("/upload-dataset", dependencies=[Depends(verify_admin)])
-async def upload_dataset(file: UploadFile = File(...)) -> dict:
+async def upload_dataset(file: UploadFile = File(...), session_id: str = Depends(get_session_id)) -> dict:
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
@@ -223,13 +248,21 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {exc}") from exc
 
+    # Save uploaded file so chart_compute can read it for this session
+    upload_dir = Path(__file__).resolve().parent / "uploads"
+    upload_dir.mkdir(exist_ok=True)
+    saved_path = upload_dir / f"{session_id}_{file.filename}"
+    saved_path.write_bytes(contents)
+    SESSIONS.set_csv_path(session_id, saved_path)
+
+    store = SESSIONS.get_store(session_id)
     summary_text = build_dataset_summary_text(parsed)
-    state = STORE.set_dataset_summary(summary_text, file.filename)
+    state = store.set_dataset_summary(summary_text, file.filename)
     state.dataset_columns = [c["name"] for c in parsed["columns"]]
     state.world_state["dataset_row_count"] = parsed["shape"][0]
 
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
 
     return {
         "parsed": {
@@ -243,7 +276,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
 
 
 @app.post("/demo-data", dependencies=[Depends(verify_admin)])
-async def load_data_demo() -> dict:
+async def load_data_demo(session_id: str = Depends(get_session_id)) -> dict:
     if not DEMO_DATA_FILE.exists():
         raise HTTPException(status_code=404, detail="demo_data_analysts.json not found")
 
@@ -256,25 +289,24 @@ async def load_data_demo() -> dict:
 
     # Load actual CSV to get all rows
     from app.dataset import parse_dataset
-    from app.chart_compute import clear_cache, set_active_dataset
     csv_path = Path(__file__).resolve().parent / "ExampleDataset.csv"
     if csv_path.exists():
         parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
-        clear_cache()
-        set_active_dataset(csv_path)
+        SESSIONS.set_csv_path(session_id, csv_path)
     else:
         parsed_data = data.get("parsed_data", None)
 
-    state = STORE.reset(topic)
+    store = SESSIONS.get_store(session_id)
+    state = store.reset(topic)
     if dataset_summary:
         state.dataset_summary = dataset_summary
     if parsed_data:
         state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
         state.world_state["dataset_row_count"] = parsed_data["shape"][0]
     created = create_agents_from_user(topic, agents_raw)
-    state = STORE.add_agents(created)
+    state = store.add_agents(created)
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     response: dict = {
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
@@ -308,7 +340,7 @@ async def list_examples() -> dict:
 
 
 @app.post("/load-example")
-async def load_example(name: str) -> dict:
+async def load_example(name: str, session_id: str = Depends(get_session_id)) -> dict:
     """Load an example dataset + agents by name (e.g. ExampleDataset1)."""
     if not EXAMPLES_DIR.is_dir():
         raise HTTPException(status_code=404, detail="examples/ directory not found")
@@ -339,20 +371,19 @@ async def load_example(name: str) -> dict:
     from app.dataset import parse_dataset
     parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
 
-    # Point chart_compute at this CSV so backend computations use the right data
-    from app.chart_compute import clear_cache, set_active_dataset
-    clear_cache()
-    set_active_dataset(csv_path)
+    # Store per-session CSV path for chart_compute
+    SESSIONS.set_csv_path(session_id, csv_path)
 
-    state = STORE.reset(topic)
+    store = SESSIONS.get_store(session_id)
+    state = store.reset(topic)
     if dataset_summary:
         state.dataset_summary = dataset_summary
     state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
     state.world_state["dataset_row_count"] = parsed_data["shape"][0]
     created = create_agents_from_user(topic, agents_raw)
-    state = STORE.add_agents(created)
+    state = store.add_agents(created)
     snapshot = state.model_dump()
-    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     response: dict = {
         "added": [agent.model_dump() for agent in created],
         "state": snapshot,
@@ -402,8 +433,9 @@ async def text_to_speech(payload: TTSRequest) -> Response:
 
 
 @app.get("/logs/download", dependencies=[Depends(verify_admin)])
-async def download_logs() -> JSONResponse:
-    log = STORE.get_full_log()
+async def download_logs(session_id: str = Depends(get_session_id)) -> JSONResponse:
+    store = SESSIONS.get_store(session_id)
+    log = store.get_full_log()
     return JSONResponse(
         content=log,
         headers={
@@ -413,5 +445,5 @@ async def download_logs() -> JSONResponse:
 
 
 @app.get("/state")
-async def get_state() -> dict:
-    return STORE.get_state().model_dump()
+async def get_state(session_id: str = Depends(get_session_id)) -> dict:
+    return SESSIONS.get_store(session_id).get_state().model_dump()

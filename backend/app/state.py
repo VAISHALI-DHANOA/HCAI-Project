@@ -98,4 +98,27 @@ class InMemoryStateStore:
         log_path.write_text(json.dumps(data, indent=2, default=str))
 
 
-STORE = InMemoryStateStore()
+class SessionManager:
+    """Maps session IDs to isolated InMemoryStateStore instances."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, InMemoryStateStore] = {}
+        self._csv_paths: dict[str, Path | None] = {}
+        self._lock = RLock()
+
+    def get_store(self, session_id: str) -> InMemoryStateStore:
+        with self._lock:
+            if session_id not in self._sessions:
+                self._sessions[session_id] = InMemoryStateStore()
+            return self._sessions[session_id]
+
+    def get_csv_path(self, session_id: str) -> Path | None:
+        with self._lock:
+            return self._csv_paths.get(session_id)
+
+    def set_csv_path(self, session_id: str, path: Path | None) -> None:
+        with self._lock:
+            self._csv_paths[session_id] = path
+
+
+SESSIONS = SessionManager()

@@ -262,19 +262,20 @@ _COMPUTE_FNS = {
 }
 
 
-def compute_chart_data(chart_spec: dict) -> dict | None:
+def compute_chart_data(chart_spec: dict, csv_path: str | Path | None = None) -> dict | None:
     """Given a lightweight chart spec from the LLM, compute real data.
 
     Args:
         chart_spec: Dict with ``visual_type`` plus a ``spec`` sub-dict
             describing columns, aggregation, etc.
+        csv_path: Explicit path to the CSV file for this session.
 
     Returns:
         Data payload ready to be used as ``VisualSpec.data``, or *None*
         on failure.
     """
     try:
-        df = load_dataframe()
+        df = load_dataframe(csv_path)
     except Exception as exc:
         logger.warning("Failed to load dataframe: %s", exc)
         return None

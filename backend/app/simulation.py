@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Awaitable, Callable
 
 from app.auto_visual import (
@@ -62,6 +63,7 @@ def _drift_stance(agent: Agent, topic: str, round_number: int) -> None:
 async def run_round(
     state: State,
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
+    csv_path: str | Path | None = None,
 ) -> RoundResult:
     speakers = select_speakers(state.agents)
     state.round_number += 1
@@ -107,7 +109,7 @@ async def run_round(
                     dashboard_narrative=narrative,
                 )
                 if spec_data and isinstance(spec_data, dict) and spec_data.get("visual_type"):
-                    computed = compute_chart_data(spec_data)
+                    computed = compute_chart_data(spec_data, csv_path=csv_path)
                     if computed:
                         try:
                             visual = VisualSpec(
@@ -158,7 +160,7 @@ async def run_round(
                     # Compute real chart data from the lightweight spec
                     vis_raw = action_data.get("visual")
                     if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
-                        computed = compute_chart_data(vis_raw)
+                        computed = compute_chart_data(vis_raw, csv_path=csv_path)
                         if computed:
                             visual = VisualSpec(
                                 visual_type=vis_raw["visual_type"],
