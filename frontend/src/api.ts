@@ -86,6 +86,10 @@ export async function loadDataDemo(): Promise<{ state: State; parsed?: DatasetIn
   return request<{ state: State; parsed?: DatasetInfo }>("/demo-data", { method: "POST" });
 }
 
+export async function loadExample(name: string): Promise<{ state: State; parsed?: DatasetInfo }> {
+  return request<{ state: State; parsed?: DatasetInfo }>(`/load-example?name=${encodeURIComponent(name)}`, { method: "POST" });
+}
+
 export async function intervene(message: string): Promise<{ state: State }> {
   return request<{ state: State }>("/intervene", {
     method: "POST",

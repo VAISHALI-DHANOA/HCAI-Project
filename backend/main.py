@@ -21,6 +21,7 @@ from app.state import STORE
 
 DEMO_FILE = Path(__file__).resolve().parent / "demo_agents.json"
 DEMO_DATA_FILE = Path(__file__).resolve().parent / "demo_data_analysts.json"
+EXAMPLES_DIR = Path(__file__).resolve().parent / "examples"
 ADMIN_KEY = os.environ.get("ADMIN_KEY")
 
 
@@ -255,9 +256,12 @@ async def load_data_demo() -> dict:
 
     # Load actual CSV to get all rows
     from app.dataset import parse_dataset
+    from app.chart_compute import clear_cache, set_active_dataset
     csv_path = Path(__file__).resolve().parent / "ExampleDataset.csv"
     if csv_path.exists():
         parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
+        clear_cache()
+        set_active_dataset(csv_path)
     else:
         parsed_data = data.get("parsed_data", None)
 
@@ -282,6 +286,83 @@ async def load_data_demo() -> dict:
             "columns": parsed_data["columns"],
             "sample_rows": parsed_data["sample_rows"],
         }
+    return response
+
+
+@app.get("/examples")
+async def list_examples() -> dict:
+    """List available example datasets in the examples/ folder."""
+    if not EXAMPLES_DIR.is_dir():
+        return {"examples": []}
+    json_stems: dict[str, str] = {}
+    csv_stems: set[str] = set()
+    for f in sorted(EXAMPLES_DIR.iterdir()):
+        if f.suffix.lower() == ".json":
+            json_stems[f.stem.lower()] = f.stem
+        elif f.suffix.lower() == ".csv":
+            csv_stems.add(f.stem.lower())
+    examples = [
+        {"name": stem} for key, stem in sorted(json_stems.items()) if key in csv_stems
+    ]
+    return {"examples": examples}
+
+
+@app.post("/load-example")
+async def load_example(name: str) -> dict:
+    """Load an example dataset + agents by name (e.g. ExampleDataset1)."""
+    if not EXAMPLES_DIR.is_dir():
+        raise HTTPException(status_code=404, detail="examples/ directory not found")
+
+    # Case-insensitive lookup: scan directory for matching JSON+CSV pair
+    name_lower = name.lower()
+    json_path: Path | None = None
+    csv_path: Path | None = None
+    for f in EXAMPLES_DIR.iterdir():
+        if f.suffix.lower() == ".json" and f.stem.lower() == name_lower:
+            json_path = f
+        elif f.suffix.lower() == ".csv" and f.stem.lower() == name_lower:
+            csv_path = f
+
+    if json_path is None:
+        raise HTTPException(status_code=404, detail=f"Example '{name}' not found")
+    if csv_path is None:
+        raise HTTPException(status_code=404, detail=f"CSV for example '{name}' not found")
+
+    data = json.loads(json_path.read_text())
+    topic = data.get("topic", "Untitled data analysis")
+    dataset_summary = data.get("dataset_summary", "")
+    agents_raw = data.get("agents", [])
+    if not agents_raw:
+        raise HTTPException(status_code=400, detail="No agents defined in example file")
+
+    # Parse CSV to get columns, sample rows, and row count
+    from app.dataset import parse_dataset
+    parsed_data = parse_dataset(csv_path.read_bytes(), csv_path.name)
+
+    # Point chart_compute at this CSV so backend computations use the right data
+    from app.chart_compute import clear_cache, set_active_dataset
+    clear_cache()
+    set_active_dataset(csv_path)
+
+    state = STORE.reset(topic)
+    if dataset_summary:
+        state.dataset_summary = dataset_summary
+    state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
+    state.world_state["dataset_row_count"] = parsed_data["shape"][0]
+    created = create_agents_from_user(topic, agents_raw)
+    state = STORE.add_agents(created)
+    snapshot = state.model_dump()
+    await manager.broadcast({"type": "state", "state_snapshot": snapshot})
+    response: dict = {
+        "added": [agent.model_dump() for agent in created],
+        "state": snapshot,
+    }
+    response["parsed"] = {
+        "filename": parsed_data["filename"],
+        "shape": parsed_data["shape"],
+        "columns": parsed_data["columns"],
+        "sample_rows": parsed_data["sample_rows"],
+    }
     return response
 
 

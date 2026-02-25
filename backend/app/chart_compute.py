@@ -18,12 +18,19 @@ logger = logging.getLogger(__name__)
 
 _df_cache: dict[str, pd.DataFrame] = {}
 _DEFAULT_CSV = Path(__file__).resolve().parent.parent / "ExampleDataset.csv"
+_active_csv: Path | None = None
+
+
+def set_active_dataset(csv_path: str | Path) -> None:
+    """Set the active dataset CSV path used by compute_chart_data."""
+    global _active_csv
+    _active_csv = Path(csv_path)
 
 
 def load_dataframe(csv_path: str | Path | None = None) -> pd.DataFrame:
     """Load and cache the dataset DataFrame."""
     if csv_path is None:
-        csv_path = _DEFAULT_CSV
+        csv_path = _active_csv or _DEFAULT_CSV
     key = str(csv_path)
     if key not in _df_cache:
         _df_cache[key] = pd.read_csv(csv_path)

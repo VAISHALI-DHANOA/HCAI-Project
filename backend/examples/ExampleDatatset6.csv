@@ -1,0 +1,101 @@
+Country_ID,Country_Name,Region,Renewable_Energy_pct,Climate_Policy_Score_0_100,Fossil_Fuel_Subsidy_USD_M,Green_Investment_USD_M,Carbon_Emissions_per_Capita,Grid_Reliability_Score_0_100,Transition_Tier
+1,Mexico,Central Europe,49.23,47.1,3171.8,707.2,3.39,86.9,Emerging
+2,Finland,North America,52.13,66.6,2412.3,3004.8,4.05,85.1,Emerging
+3,Denmark,Nordic,79.31,93.5,0.0,3297.6,0.6,53.5,Accelerating
+4,South Korea,Southern Europe,34.42,59.6,661.2,2126.0,8.05,72.0,Emerging
+5,Ireland,Southern Europe,36.64,68.5,2546.8,4947.7,8.77,73.3,Emerging
+6,Poland,Central Europe,31.67,50.1,2837.2,2179.0,5.12,86.1,Emerging
+7,Sweden,Asia-Pacific,10.39,50.3,2904.4,1706.5,11.87,93.1,Needs Support
+8,Ireland,Central Europe,3.0,37.6,3383.6,931.9,11.02,97.5,Needs Support
+9,South Korea,Latin America,16.15,64.6,2732.6,1171.9,6.93,85.6,Needs Support
+10,Portugal,Central Europe,53.44,78.3,1804.1,3697.5,7.02,72.1,Emerging
+11,Mexico,Nordic,48.45,60.0,2589.1,3342.4,0.6,71.4,Emerging
+12,Chile,Asia-Pacific,84.03,84.6,1848.1,3062.7,2.31,72.7,Leading
+13,Australia,Latin America,47.77,67.8,3243.3,3758.7,6.38,86.4,Emerging
+14,Kenya,North America,48.63,64.5,1625.2,2001.0,5.05,91.5,Emerging
+15,Australia,Africa,70.54,72.2,2915.2,855.1,10.36,61.7,Accelerating
+16,Finland,Central Europe,27.89,71.8,2749.8,1844.1,7.56,85.5,Emerging
+17,Mexico,Latin America,33.06,81.1,1789.1,1896.8,7.13,88.4,Emerging
+18,South Korea,Nordic,21.42,53.8,2047.8,1372.7,2.8,82.3,Needs Support
+19,Norway,Nordic,11.37,33.0,3789.1,1247.8,7.34,99.0,Needs Support
+20,Spain,Latin America,73.0,66.6,3205.5,1361.2,1.8,84.3,Accelerating
+21,Finland,Latin America,29.03,56.4,1234.7,1667.4,13.14,80.1,Emerging
+22,Morocco,North America,62.5,64.6,2312.9,2287.3,3.24,85.9,Accelerating
+23,New Zealand,Latin America,48.25,88.3,1487.2,2513.8,5.42,75.8,Accelerating
+24,Ghana,Southern Europe,36.18,49.6,1972.0,611.8,9.56,68.8,Emerging
+25,Spain,Asia-Pacific,62.04,75.7,1107.1,2685.3,6.11,84.7,Accelerating
+26,Japan,Central Europe,65.06,78.2,0.0,3506.0,0.6,92.1,Accelerating
+27,Japan,Southern Europe,60.29,71.5,675.5,1872.4,6.03,77.9,Accelerating
+28,New Zealand,Nordic,42.47,80.7,0.0,2153.4,7.07,88.6,Emerging
+29,Norway,Western Europe,61.82,58.6,1709.7,1709.1,3.8,76.4,Emerging
+30,Czechia,Africa,51.19,55.5,1887.0,1956.6,6.4,94.8,Emerging
+31,South Korea,Central Europe,39.11,79.5,1066.4,2290.8,5.77,82.4,Emerging
+32,Mexico,Africa,54.85,75.1,2318.3,2278.1,0.78,85.2,Accelerating
+33,South Korea,Southern Europe,35.81,84.5,1318.6,2792.8,4.04,87.9,Emerging
+34,Italy,Nordic,43.87,68.0,1246.3,1281.5,5.3,67.2,Emerging
+35,Poland,Southern Europe,38.34,87.7,563.2,2988.1,3.59,79.5,Emerging
+36,Portugal,Southern Europe,51.45,61.1,1005.4,1443.2,6.34,96.1,Emerging
+37,Finland,Asia-Pacific,83.39,50.2,2509.2,2882.0,6.34,81.4,Accelerating
+38,Spain,Asia-Pacific,42.49,36.5,2966.3,376.0,6.67,91.0,Emerging
+39,Finland,Asia-Pacific,35.73,49.6,4712.2,1842.5,5.66,87.9,Emerging
+40,Germany,Southern Europe,28.2,76.5,3664.9,2982.2,10.98,64.7,Emerging
+41,Mexico,Central Europe,23.47,44.5,4716.3,195.9,7.9,84.6,Needs Support
+42,Czechia,North America,47.44,58.7,4941.7,716.0,7.23,69.0,Emerging
+43,Norway,North America,63.71,94.5,0.0,3051.2,1.41,83.6,Accelerating
+44,Italy,Central Europe,50.05,76.9,2617.7,3254.8,4.65,77.7,Emerging
+45,France,Western Europe,25.86,90.1,2260.7,2737.4,9.59,81.1,Emerging
+46,South Korea,Latin America,10.21,51.1,3282.3,909.8,10.05,78.3,Needs Support
+47,Mexico,North America,3.0,30.6,5982.4,150.0,8.51,80.3,Needs Support
+48,Denmark,Africa,82.72,86.2,4527.4,2723.2,4.02,76.9,Leading
+49,Poland,Africa,29.21,45.2,4094.5,1513.6,7.56,67.5,Needs Support
+50,Italy,Africa,51.96,66.3,2964.2,2582.5,2.47,71.7,Emerging
+51,Morocco,Africa,41.91,68.0,771.7,2648.0,4.65,89.1,Emerging
+52,Ireland,North America,4.98,51.7,1345.5,1232.1,5.99,94.8,Needs Support
+53,Finland,Southern Europe,57.51,86.7,2304.5,2898.7,0.62,83.2,Accelerating
+54,Germany,Western Europe,46.67,86.7,1375.1,3850.1,5.57,89.7,Accelerating
+55,Poland,Nordic,31.69,72.7,358.1,2350.3,5.24,89.3,Emerging
+56,Japan,Africa,37.07,64.6,2090.6,150.0,1.5,65.9,Emerging
+57,Portugal,Southern Europe,43.72,67.7,2563.2,3163.6,3.27,64.5,Emerging
+58,Italy,Nordic,19.21,49.7,3885.1,464.7,7.22,78.0,Needs Support
+59,South Korea,Nordic,24.83,61.7,2212.9,3212.1,0.6,64.4,Needs Support
+60,Spain,Southern Europe,23.48,63.5,1953.4,3583.6,7.19,79.4,Emerging
+61,Morocco,Africa,30.72,53.1,2650.0,2274.3,7.23,67.1,Needs Support
+62,Germany,Southern Europe,71.58,76.9,2016.5,3473.7,5.82,76.1,Accelerating
+63,Ghana,Nordic,3.0,45.0,1528.2,2898.3,5.91,74.3,Needs Support
+64,Kenya,Asia-Pacific,18.17,58.7,3447.1,847.4,3.14,83.6,Needs Support
+65,Morocco,Nordic,4.66,33.5,5957.3,934.2,10.85,73.2,Needs Support
+66,Chile,Central Europe,39.88,72.0,2958.6,2653.2,1.87,70.5,Emerging
+67,Czechia,Nordic,39.79,75.4,123.3,1722.4,6.75,80.3,Emerging
+68,Japan,Nordic,83.53,73.7,2034.0,4327.0,1.15,99.0,Leading
+69,Germany,Southern Europe,74.84,98.0,0.0,3087.4,0.6,85.7,Leading
+70,Portugal,Nordic,35.36,78.2,0.0,2058.9,6.23,62.7,Emerging
+71,Poland,Latin America,3.0,51.8,3477.7,1772.5,11.66,80.7,Needs Support
+72,Ghana,North America,64.0,98.0,1163.2,4538.0,3.58,99.0,Leading
+73,Chile,Africa,56.56,52.1,1851.4,1004.3,3.95,80.6,Emerging
+74,Canada,Central Europe,55.23,76.0,0.0,2082.3,0.6,91.7,Accelerating
+75,Japan,North America,10.37,75.4,338.1,3046.9,9.4,91.2,Emerging
+76,Italy,North America,3.0,52.7,2850.7,287.7,8.32,89.0,Needs Support
+77,Italy,Central Europe,55.97,84.5,1579.6,2308.7,3.82,89.9,Accelerating
+78,Kenya,North America,59.16,70.0,2878.9,1594.0,8.78,82.2,Accelerating
+79,Denmark,North America,43.05,73.0,3773.3,2093.8,1.36,78.6,Emerging
+80,Portugal,Africa,35.01,55.5,2149.0,1571.2,4.52,77.2,Emerging
+81,Ireland,Southern Europe,74.5,83.2,2149.5,4605.4,3.76,84.0,Accelerating
+82,Australia,Africa,53.76,52.9,2481.5,2399.2,4.16,84.4,Emerging
+83,Italy,Western Europe,8.36,40.1,2500.9,1024.3,0.6,67.6,Needs Support
+84,Spain,Western Europe,63.58,85.0,1232.9,2820.6,5.14,78.5,Accelerating
+85,Sweden,Southern Europe,15.53,59.0,3587.0,2643.1,7.51,80.5,Needs Support
+86,France,Africa,23.94,65.6,969.6,2537.9,9.34,81.7,Emerging
+87,Norway,Western Europe,69.43,91.9,2652.1,4138.4,10.31,79.6,Accelerating
+88,Australia,Latin America,24.03,80.9,3440.9,4083.9,6.5,89.6,Emerging
+89,Italy,North America,47.83,73.9,1957.9,1616.2,6.38,78.8,Emerging
+90,France,Asia-Pacific,52.94,80.0,2006.6,771.5,5.71,75.4,Accelerating
+91,Czechia,Nordic,50.58,54.8,887.3,1647.0,5.25,68.6,Emerging
+92,Poland,Asia-Pacific,20.13,75.5,4688.6,2671.0,7.26,73.9,Emerging
+93,Poland,Nordic,56.11,80.5,2855.8,3082.4,6.18,83.4,Accelerating
+94,Canada,North America,44.09,75.6,2061.6,2062.0,8.86,81.3,Emerging
+95,Japan,Latin America,63.11,62.1,2394.0,1787.0,1.93,61.6,Emerging
+96,Germany,Africa,3.0,20.0,4341.2,602.9,14.26,87.0,Needs Support
+97,Finland,Africa,28.3,72.8,1170.4,3027.4,7.64,74.9,Emerging
+98,New Zealand,Western Europe,50.56,66.6,2508.6,3395.3,6.15,73.5,Emerging
+99,Morocco,Latin America,19.53,59.8,1297.8,150.0,0.6,88.2,Emerging
+100,Canada,North America,20.84,75.9,2440.5,1131.4,6.91,89.7,Emerging

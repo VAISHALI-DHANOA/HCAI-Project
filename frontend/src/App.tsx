@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadDataDemo, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
+import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
@@ -72,7 +72,8 @@ export default function App() {
   const { speak, stop: stopTTS } = useTTS();
 
   const [isAdmin] = useState<boolean>(() => {
-    const key = new URLSearchParams(window.location.search).get("admin");
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get("adminKey") ?? params.get("admin");
     if (key) { setAdminKey(key); return true; }
     return false;
   });
@@ -270,14 +271,54 @@ export default function App() {
 
   // Initial state load + WebSocket
   useEffect(() => {
-    getState()
-      .then((data) => {
-        setStateValue(data);
-        setTopicInput(data.topic);
-      })
-      .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : "Failed to load state");
-      });
+    const params = new URLSearchParams(window.location.search);
+    const demoName = params.get("demo");
+
+    if (demoName) {
+      // Auto-load example dataset + agents from ?demo= param
+      loadExample(demoName)
+        .then((result) => {
+          setStateValue(result.state);
+          setTopicInput(result.state.topic);
+          if (result.parsed) {
+            setDatasetInfo(result.parsed);
+            setFullDatasetRows(result.parsed.sample_rows);
+          }
+          setFeed([]);
+          setActiveTurnIdx(-1);
+          setShowReactions(false);
+          setLiveTurns([]);
+          clearTurnQueue();
+          setSidePanelView("dashboard");
+          // Admin stays in setup so they can add/modify agents; non-admin goes to arena
+          const adminKey = params.get("adminKey") ?? params.get("admin");
+          if (adminKey) {
+            // Populate draft roster from demo agents so admin can review/add more
+            const userAgents = (result.state.agents ?? []).filter((a: Agent) => a.role !== "mediator");
+            setDraftAgents(userAgents.map((a: Agent) => ({
+              name: a.name,
+              persona_text: a.persona_text,
+              energy: a.energy,
+              mbti_type: a.mbti_type ?? "ENTJ",
+            })));
+            setInputMode("dataset");
+          } else {
+            setAppPhase("arena");
+          }
+        })
+        .catch((e: unknown) => {
+          setError(e instanceof Error ? e.message : `Failed to load example: ${demoName}`);
+        });
+    } else {
+      getState()
+        .then((data) => {
+          setStateValue(data);
+          setTopicInput(data.topic);
+        })
+        .catch((e: unknown) => {
+          setError(e instanceof Error ? e.message : "Failed to load state");
+        });
+    }
 
     const close = createWsClient(
       (event: WsEvent) => {
@@ -516,19 +557,25 @@ export default function App() {
   }
 
   async function launchArena() {
-    if ((!topicInput.trim() && !datasetInfo) || draftAgents.length === 0) return;
+    const hasBackendAgents = (state?.agents ?? []).filter(a => a.role !== "mediator").length > 0;
+    if ((!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && !hasBackendAgents)) return;
     setError("");
     try {
       // In dataset mode the topic was already set by the upload endpoint
       if (!datasetInfo) {
         await setTopic(topicInput.trim());
       }
-      const enrichedAgents = draftAgents.map((a) => ({
-        ...a,
-        persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
-      }));
-      const result = await addAgentsWithMBTI(enrichedAgents);
-      setStateValue(result.state);
+      // Only add agents that aren't already loaded on the backend (e.g. from ?demo=)
+      const existingNames = new Set((state?.agents ?? []).map(a => a.name));
+      const newDrafts = draftAgents.filter(a => !existingNames.has(a.name));
+      if (newDrafts.length > 0) {
+        const enrichedAgents = newDrafts.map((a) => ({
+          ...a,
+          persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
+        }));
+        const result = await addAgentsWithMBTI(enrichedAgents);
+        setStateValue(result.state);
+      }
       setFeed([]);
       if (datasetInfo) setSidePanelView("dashboard");
       setAppPhase("arena");
@@ -617,7 +664,7 @@ export default function App() {
   async function onLoadDataDemo() {
     setError("");
     try {
-      const result = await loadDataDemo();
+      const result = await loadExample("ExampleDataset1");
       setStateValue(result.state);
       setTopicInput(result.state.topic);
       setFeed([]);
@@ -924,7 +971,7 @@ export default function App() {
               <button
                 className="launch-button"
                 onClick={launchArena}
-                disabled={(!topicInput.trim() && !datasetInfo) || draftAgents.length === 0}
+                disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}
               >
                 Launch into Arena
               </button>
