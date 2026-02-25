@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from typing import Awaitable, Callable
 
+from app.auto_visual import (
+    compute_dashboard_narrative,
+    compute_dashboard_visual,
+    compute_table_action_and_visual,
+)
 from app.chart_compute import compute_chart_data
 from app.llm import (
     generate_agent_message,
     generate_chair_summary,
-    generate_dashboard_narrative,
-    generate_dashboard_visual,
-    generate_table_action_and_visual,
     generate_visual_spec,
     AGENT_COLORS,
 )
@@ -76,7 +78,7 @@ async def run_round(
     ):
         chair = next((a for a in state.agents if a.role == "mediator"), None)
         if chair:
-            narrative = await generate_dashboard_narrative(
+            narrative = compute_dashboard_narrative(
                 chair, state, state.public_history,
             )
             state.world_state["dashboard_narrative"] = narrative
@@ -98,7 +100,7 @@ async def run_round(
             if state.dataset_columns and state.round_number >= 3:
                 # Dashboard mode: LLM returns lightweight spec, backend computes real data
                 narrative = state.world_state.get("dashboard_narrative", "")
-                spec_data = await generate_dashboard_visual(
+                spec_data = compute_dashboard_visual(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
@@ -122,7 +124,7 @@ async def run_round(
                     (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
                 )
                 agent_color = AGENT_COLORS[speaker_idx % len(AGENT_COLORS)]
-                action_data = await generate_table_action_and_visual(
+                action_data = compute_table_action_and_visual(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
@@ -199,7 +201,7 @@ async def run_round(
         # At end of round 2, generate the dashboard narrative
         if state.round_number == 2 and state.dataset_summary:
             all_history = state.public_history + turns
-            narrative = await generate_dashboard_narrative(chair, state, all_history)
+            narrative = compute_dashboard_narrative(chair, state, all_history)
             state.world_state["dashboard_narrative"] = narrative
             state.world_state["narrative_human_request"] = state.human_request
 
