@@ -82,9 +82,11 @@ app = FastAPI(title="Creative Multi-Agent Playground API", version="2.0.0")
 manager = ConnectionManager()
 
 _cors_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
-_extra_origin = os.environ.get("CORS_ORIGIN")
-if _extra_origin:
-    _cors_origins.append(_extra_origin)
+_extra_origin = os.environ.get("CORS_ORIGIN", "")
+for origin in _extra_origin.split(","):
+    origin = origin.strip().rstrip("/")
+    if origin:
+        _cors_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
