@@ -2072,6 +2072,7 @@ button:disabled {
 /* Data Tables */
 .visual-table-wrap {
   overflow-x: auto;
+  min-width: 400px;
 }
 
 .visual-table {
@@ -2107,6 +2108,7 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 6px;
+  min-width: 400px;
 }
 
 .visual-stat-item {

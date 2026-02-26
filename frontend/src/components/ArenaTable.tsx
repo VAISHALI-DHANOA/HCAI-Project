@@ -146,31 +146,50 @@ export function ArenaTable({
       </table>
 
       {/* Agent overlay layer */}
-      {agents.map((agent) => {
-        const pos = agentPositions.get(agent.id);
-        const isSpeaking = currentSpeakerId === agent.id;
-        const isDimmed = currentSpeakerId !== null && !isSpeaking;
-        const color = agentColor(agent);
+      {(() => {
+        // Count agents per cell to compute horizontal offsets and avoid stacking
+        const cellCounts = new Map<string, number>();
+        const agentOffsets = new Map<string, number>();
+        for (const agent of agents) {
+          const pos = agentPositions.get(agent.id);
+          const r = pos?.row ?? 0;
+          const c = pos?.column ?? defaultColumn;
+          const key = `${r}-${c}`;
+          const idx = cellCounts.get(key) ?? 0;
+          agentOffsets.set(agent.id, idx);
+          cellCounts.set(key, idx + 1);
+        }
 
-        // If the agent has navigated somewhere, use that; otherwise top-left
-        const targetRow = pos?.row ?? 0;
-        const targetCol = pos?.column ?? defaultColumn;
+        return agents.map((agent) => {
+          const pos = agentPositions.get(agent.id);
+          const isSpeaking = currentSpeakerId === agent.id;
+          const isDimmed = currentSpeakerId !== null && !isSpeaking;
+          const color = agentColor(agent);
 
-        return (
-          <AgentOverlay
-            key={agent.id}
-            agent={agent}
-            isSpeaking={isSpeaking}
-            isDimmed={isDimmed}
-            color={color}
-            targetRow={targetRow}
-            targetCol={targetCol}
-            containerRef={containerRef}
-            currentTurn={isSpeaking ? currentTurn : null}
-            agentMap={agentMap}
-          />
-        );
-      })}
+          const targetRow = pos?.row ?? 0;
+          const targetCol = pos?.column ?? defaultColumn;
+          const cellKey = `${targetRow}-${targetCol}`;
+          const offsetIdx = agentOffsets.get(agent.id) ?? 0;
+          const totalAtCell = cellCounts.get(cellKey) ?? 1;
+
+          return (
+            <AgentOverlay
+              key={agent.id}
+              agent={agent}
+              isSpeaking={isSpeaking}
+              isDimmed={isDimmed}
+              color={color}
+              targetRow={targetRow}
+              targetCol={targetCol}
+              containerRef={containerRef}
+              currentTurn={isSpeaking ? currentTurn : null}
+              agentMap={agentMap}
+              offsetIndex={offsetIdx}
+              totalAtCell={totalAtCell}
+            />
+          );
+        });
+      })()}
     </div>
   );
 }
@@ -185,6 +204,8 @@ interface AgentOverlayProps {
   containerRef: React.RefObject<HTMLDivElement | null>;
   currentTurn: PublicTurn | null;
   agentMap: Map<string, Agent>;
+  offsetIndex: number;
+  totalAtCell: number;
 }
 
 function AgentOverlay({
@@ -197,6 +218,8 @@ function AgentOverlay({
   containerRef,
   currentTurn,
   agentMap,
+  offsetIndex,
+  totalAtCell,
 }: AgentOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -216,7 +239,10 @@ function AgentOverlay({
       const cellRect = cell.getBoundingClientRect();
 
       const top = cellRect.top - containerRect.top + container.scrollTop;
-      const left = cellRect.left - containerRect.left + container.scrollLeft + cellRect.width / 2;
+      const centerX = cellRect.left - containerRect.left + container.scrollLeft + cellRect.width / 2;
+      // Spread agents sharing the same cell horizontally (40px apart)
+      const groupOffset = totalAtCell > 1 ? (offsetIndex - (totalAtCell - 1) / 2) * 40 : 0;
+      const left = centerX + groupOffset;
 
       overlay.style.top = `${top}px`;
       overlay.style.left = `${left}px`;

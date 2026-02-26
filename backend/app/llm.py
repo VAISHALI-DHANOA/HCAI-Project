@@ -515,14 +515,14 @@ VISUAL_ROUND_HINTS = {
 
 # Agent-specific highlight colors (with alpha for overlay)
 AGENT_COLORS = [
-    "#38bdf844",  # sky blue
-    "#f97316cc",  # orange
-    "#a855f744",  # purple
-    "#22c55e44",  # green
-    "#ef444444",  # red
-    "#eab30844",  # yellow
-    "#ec489944",  # pink
-    "#06b6d444",  # cyan
+    "#38bdf888",  # sky blue
+    "#f9731688",  # orange
+    "#a855f788",  # purple
+    "#22c55e88",  # green
+    "#ef444488",  # red
+    "#eab30888",  # yellow
+    "#ec489988",  # pink
+    "#06b6d488",  # cyan
 ]
 
 
