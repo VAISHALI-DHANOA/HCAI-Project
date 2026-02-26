@@ -48,18 +48,22 @@ export function ArenaTable({
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Build highlight map: "row-col" -> color
-  const highlightMap = useMemo(() => {
+  // Also track which columns are highlighted for header styling
+  const { highlightMap, highlightedColumnColors } = useMemo(() => {
     const map = new Map<string, string>();
+    const colColors = new Map<string, string>();
     for (const h of accumulatedHighlights) {
       for (let r = h.row_start; r <= h.row_end; r++) {
         for (const col of h.columns) {
-          const key = `${r}-${col}`;
-          // Later highlights overwrite earlier ones
-          map.set(key, h.color);
+          map.set(`${r}-${col}`, h.color);
         }
       }
+      // Track latest color per highlighted column for headers
+      for (const col of h.columns) {
+        colColors.set(col, h.color);
+      }
     }
-    return map;
+    return { highlightMap: map, highlightedColumnColors: colColors };
   }, [accumulatedHighlights]);
 
   // Build annotation map: "row-col" -> annotation[]
@@ -101,9 +105,18 @@ export function ArenaTable({
         <thead>
           <tr>
             <th className="arena-table__row-index">#</th>
-            {columns.map((col) => (
-              <th key={col} className="arena-table__header-cell">{col}</th>
-            ))}
+            {columns.map((col) => {
+              const headerColor = highlightedColumnColors.get(col);
+              return (
+                <th
+                  key={col}
+                  className="arena-table__header-cell"
+                  style={headerColor ? { backgroundColor: headerColor, color: "#fff" } : undefined}
+                >
+                  {col}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>

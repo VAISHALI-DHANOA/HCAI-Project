@@ -402,9 +402,9 @@ def compute_table_action_and_visual(
     hl_cols = (mentioned or sel_num or sel_cat)[:2]
     if not hl_cols:
         hl_cols = [column_names[0]]
-    hl_half = 3
-    hl_start = max(0, nav_row - hl_half)
-    hl_end = min(row_count - 1, nav_row + hl_half)
+    # Highlight entire columns so the agent's focus area is clearly visible
+    hl_start = 0
+    hl_end = row_count - 1
 
     annotation_text = _generate_annotation_text(mentioned, sel_num, agent.name, round_number)
 
