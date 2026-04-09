@@ -219,7 +219,7 @@ def _compute_table(spec: dict, df: pd.DataFrame) -> dict | None:
     columns = _validate_columns(df, spec.get("columns", []))
     sort_by = spec.get("sort_by")
     sort_order = spec.get("sort_order", "desc")
-    head_n = min(spec.get("head_n", 10), 30)
+    head_n = min(spec.get("head_n", 3), 30)
 
     if not columns:
         columns = df.columns[:5].tolist()
