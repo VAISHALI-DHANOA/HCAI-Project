@@ -37,3 +37,6 @@ coverage/
 # Conversation logs
 backend/logs/
 
+# Per-session uploaded datasets
+backend/uploads/
+

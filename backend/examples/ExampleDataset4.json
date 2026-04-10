@@ -1,0 +1,167 @@
+{
+  "topic": "Analyze the uploaded dataset: WorkforceAIAdoption.csv",
+  "dataset_summary": "DATASET: WorkforceAIAdoption.csv\nShape: 100 rows x 10 columns\n\nCOLUMNS:\n  - Company_ID [int64]\n  - Industry [object]\n  - Company_Size [object]\n  - AI_Adoption_Level_0_100 [float64]\n  - Automation_Rate_pct [float64]\n  - Training_Hours_per_Employee [float64]\n  - Productivity_Growth_pct [float64]\n  - Layoff_Rate_pct [float64]\n  - Employee_Satisfaction_Score_0_100 [float64]\n  - AI_Tier [object]\n\nSAMPLE ROWS (first 5):\n  Row 1: Company_ID=1, Industry=Logistics, Company_Size=Large, AI_Adoption_Level_0_100=26.0, Automation_Rate_pct=22.0, Training_Hours_per_Employee=8.4, Productivity_Growth_pct=-0.42, Layoff_Rate_pct=11.9 ...\n  Row 2: Company_ID=2, Industry=Media, Company_Size=Large, AI_Adoption_Level_0_100=38.7, Automation_Rate_pct=2.0, Training_Hours_per_Employee=22.1, Productivity_Growth_pct=1.3, Layoff_Rate_pct=8.4 ...\n  Row 3: Company_ID=3, Industry=Energy, Company_Size=Large, AI_Adoption_Level_0_100=43.7, Automation_Rate_pct=31.2, Training_Hours_per_Employee=14.7, Productivity_Growth_pct=0.54, Layoff_Rate_pct=4.5 ...\n  Row 4: Company_ID=4, Industry=Education, Company_Size=Enterprise, AI_Adoption_Level_0_100=44.6, Automation_Rate_pct=25.4, Training_Hours_per_Employee=28.4, Productivity_Growth_pct=0.38, Layoff_Rate_pct=1.7 ...\n  Row 5: Company_ID=5, Industry=Logistics, Company_Size=Small, AI_Adoption_Level_0_100=86.9, Automation_Rate_pct=40.4, Training_Hours_per_Employee=26.9, Productivity_Growth_pct=4.72, Layoff_Rate_pct=3.2 ...\n\nNUMERIC COLUMN STATISTICS:\n  Company_ID: count=100.0, mean=50.5000, std=29.0115, min=1.0000, 25%=25.7500, 50%=50.5000, 75%=75.2500, max=100.0000\n  AI_Adoption_Level_0_100: count=100.0, mean=56.8720, std=19.5778, min=5.0000, 25%=44.0750, 50%=57.8000, 75%=68.6000, max=99.0000\n  Automation_Rate_pct: count=100.0, mean=30.6330, std=12.4860, min=2.0000, 25%=22.3250, 50%=31.4000, 75%=38.7500, max=65.1000\n  Training_Hours_per_Employee: count=100.0, mean=25.3970, std=10.6624, min=2.5000, 25%=18.7000, 50%=24.2000, 75%=31.9000, max=53.9000\n  Productivity_Growth_pct: count=100.0, mean=2.9612, std=2.4644, min=-2.5000, 25%=1.2575, 50%=2.8000, 75%=4.5275, max=9.3800\n  Layoff_Rate_pct: count=100.0, mean=6.3800, std=3.0670, min=0.0000, 25%=4.1000, 50%=6.6500, 75%=8.6000, max=12.9000\n  Employee_Satisfaction_Score_0_100: count=100.0, mean=67.3300, std=10.0034, min=48.4000, 25%=59.3500, 50%=66.1000, 75%=74.8000, max=95.0000",
+  "parsed_data": {
+    "filename": "WorkforceAIAdoption.csv",
+    "shape": [
+      100,
+      10
+    ],
+    "columns": [
+      {
+        "name": "Company_ID",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Industry",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Company_Size",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "AI_Adoption_Level_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Automation_Rate_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Training_Hours_per_Employee",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Productivity_Growth_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Layoff_Rate_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Employee_Satisfaction_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "AI_Tier",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      }
+    ],
+    "sample_rows": [
+      {
+        "Company_ID": "1",
+        "Industry": "Logistics",
+        "Company_Size": "Large",
+        "AI_Adoption_Level_0_100": "26.0",
+        "Automation_Rate_pct": "22.0",
+        "Training_Hours_per_Employee": "8.4",
+        "Productivity_Growth_pct": "-0.42",
+        "Layoff_Rate_pct": "11.9",
+        "Employee_Satisfaction_Score_0_100": "82.1",
+        "AI_Tier": "Early"
+      },
+      {
+        "Company_ID": "2",
+        "Industry": "Media",
+        "Company_Size": "Large",
+        "AI_Adoption_Level_0_100": "38.7",
+        "Automation_Rate_pct": "2.0",
+        "Training_Hours_per_Employee": "22.1",
+        "Productivity_Growth_pct": "1.3",
+        "Layoff_Rate_pct": "8.4",
+        "Employee_Satisfaction_Score_0_100": "69.7",
+        "AI_Tier": "Early"
+      },
+      {
+        "Company_ID": "3",
+        "Industry": "Energy",
+        "Company_Size": "Large",
+        "AI_Adoption_Level_0_100": "43.7",
+        "Automation_Rate_pct": "31.2",
+        "Training_Hours_per_Employee": "14.7",
+        "Productivity_Growth_pct": "0.54",
+        "Layoff_Rate_pct": "4.5",
+        "Employee_Satisfaction_Score_0_100": "60.0",
+        "AI_Tier": "Early"
+      },
+      {
+        "Company_ID": "4",
+        "Industry": "Education",
+        "Company_Size": "Enterprise",
+        "AI_Adoption_Level_0_100": "44.6",
+        "Automation_Rate_pct": "25.4",
+        "Training_Hours_per_Employee": "28.4",
+        "Productivity_Growth_pct": "0.38",
+        "Layoff_Rate_pct": "1.7",
+        "Employee_Satisfaction_Score_0_100": "56.5",
+        "AI_Tier": "Early"
+      },
+      {
+        "Company_ID": "5",
+        "Industry": "Logistics",
+        "Company_Size": "Small",
+        "AI_Adoption_Level_0_100": "86.9",
+        "Automation_Rate_pct": "40.4",
+        "Training_Hours_per_Employee": "26.9",
+        "Productivity_Growth_pct": "4.72",
+        "Layoff_Rate_pct": "3.2",
+        "Employee_Satisfaction_Score_0_100": "58.0",
+        "AI_Tier": "Scaling"
+      }
+    ]
+  },
+  "agents": [
+    {
+      "name": "Harper Nguyen",
+      "persona_text": "Workforce analytics lead focused on whether training cushions automation impacts and improves retention.",
+      "energy": 0.66,
+      "mbti_type": "ENFJ"
+    },
+    {
+      "name": "Ibrahim Khan",
+      "persona_text": "Data QA engineer who checks metric definitions and hunts inconsistent ranges across companies.",
+      "energy": 0.74,
+      "mbti_type": "ISTJ"
+    },
+    {
+      "name": "Selin Y\u0131lmaz",
+      "persona_text": "Quant researcher who tests moderation effects (training vs layoffs) and avoids causal overreach.",
+      "energy": 0.58,
+      "mbti_type": "INTP"
+    },
+    {
+      "name": "Ethan Brooks",
+      "persona_text": "Visualization specialist who builds dashboards for execs: tiers, risk flags, and driver charts.",
+      "energy": 0.82,
+      "mbti_type": "ENFP"
+    },
+    {
+      "name": "Dr. Keiko Tanaka",
+      "persona_text": "Innovation strategist who balances productivity gains with human outcomes like satisfaction.",
+      "energy": 0.6,
+      "mbti_type": "INTJ"
+    }
+  ]
+}

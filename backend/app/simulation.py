@@ -1,10 +1,25 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Awaitable, Callable
 
-from app.llm import generate_agent_message, generate_chair_summary
+from app.auto_visual import (
+    compute_dashboard_narrative,
+    compute_dashboard_visual,
+    compute_table_action_and_visual,
+)
+from app.chart_compute import compute_chart_data
+from app.llm import (
+    generate_agent_message,
+    generate_chair_summary,
+    generate_visual_spec,
+    AGENT_COLORS,
+)
 from app.metrics import compute_emergent_metrics
-from app.models import Agent, PublicTurn, Reaction, RoundResult, State
+from app.models import (
+    Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
+    RoundResult, State, TableAction, VisualSpec,
+)
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
 
@@ -48,9 +63,28 @@ def _drift_stance(agent: Agent, topic: str, round_number: int) -> None:
 async def run_round(
     state: State,
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
+    csv_path: str | Path | None = None,
 ) -> RoundResult:
     speakers = select_speakers(state.agents)
     state.round_number += 1
+
+    # Re-generate the dashboard narrative if the human request changed since
+    # it was last produced.  This ensures dashboard visuals align with what
+    # the human actually asked for, even when the intervention happens after
+    # round 2 (when the narrative is normally created).
+    if (
+        state.round_number >= 3
+        and state.dataset_summary
+        and state.human_request
+        and state.human_request != state.world_state.get("narrative_human_request", "")
+    ):
+        chair = next((a for a in state.agents if a.role == "mediator"), None)
+        if chair:
+            narrative = compute_dashboard_narrative(
+                chair, state, state.public_history,
+            )
+            state.world_state["dashboard_narrative"] = narrative
+            state.world_state["narrative_human_request"] = state.human_request
 
     turns: list[PublicTurn] = []
     for speaker in speakers:
@@ -60,8 +94,92 @@ async def run_round(
             active_turns=turns,
         )
         message = enforce_civility(raw_message)
-        message = truncate_to_words(message, 100)
-        turn = PublicTurn(speaker_id=speaker.id, message=message)
+        message = truncate_to_words(message, 40)
+
+        visual = None
+        table_action = None
+        if state.dataset_summary and speaker.role == "user":
+            if state.dataset_columns and state.round_number >= 3:
+                # Dashboard mode: LLM returns lightweight spec, backend computes real data
+                narrative = state.world_state.get("dashboard_narrative", "")
+                spec_data = compute_dashboard_visual(
+                    speaker, state, message,
+                    round_number=state.round_number,
+                    column_names=state.dataset_columns,
+                    dashboard_narrative=narrative,
+                )
+                if spec_data and isinstance(spec_data, dict) and spec_data.get("visual_type"):
+                    computed = compute_chart_data(spec_data, csv_path=csv_path)
+                    if computed:
+                        try:
+                            visual = VisualSpec(
+                                visual_type=spec_data["visual_type"],
+                                title=spec_data.get("title", ""),
+                                data=computed,
+                                description=spec_data.get("description", ""),
+                            )
+                        except Exception:
+                            pass
+            elif state.dataset_columns:
+                # Rounds 1-2: table action + lightweight visual spec
+                speaker_idx = next(
+                    (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
+                )
+                agent_color = AGENT_COLORS[speaker_idx % len(AGENT_COLORS)]
+                action_data = compute_table_action_and_visual(
+                    speaker, state, message,
+                    round_number=state.round_number,
+                    column_names=state.dataset_columns,
+                    row_count=state.world_state.get("dataset_row_count", 200),
+                )
+                try:
+                    ta_raw = action_data.get("table_action")
+                    if ta_raw:
+                        highlights = []
+                        for h in ta_raw.get("highlights", []):
+                            highlights.append(CellHighlight(
+                                row_start=h["row_start"],
+                                row_end=h["row_end"],
+                                columns=h["columns"],
+                                color=agent_color,
+                                agent_id=speaker.id,
+                            ))
+                        annotations = []
+                        for a in ta_raw.get("annotations", []):
+                            annotations.append(CellAnnotation(
+                                row=a["row"],
+                                column=a["column"],
+                                text=str(a["text"])[:40],
+                                agent_id=speaker.id,
+                            ))
+                        table_action = TableAction(
+                            navigate_to=ta_raw.get("navigate_to", {"row": 0, "column": state.dataset_columns[0]}),
+                            highlights=highlights,
+                            annotations=annotations,
+                        )
+                    # Compute real chart data from the lightweight spec
+                    vis_raw = action_data.get("visual")
+                    if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
+                        computed = compute_chart_data(vis_raw, csv_path=csv_path)
+                        if computed:
+                            visual = VisualSpec(
+                                visual_type=vis_raw["visual_type"],
+                                title=vis_raw.get("title", ""),
+                                data=computed,
+                                description=vis_raw.get("description", ""),
+                            )
+                except Exception:
+                    pass
+            else:
+                # Fallback: no dataset columns, use original visual generation
+                visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
+                if visual_data:
+                    try:
+                        visual = VisualSpec(**visual_data)
+                    except Exception:
+                        visual = None
+
+        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual, table_action=table_action)
         turns.append(turn)
         if on_turn:
             await on_turn(turn, state.round_number)
@@ -81,6 +199,13 @@ async def run_round(
         turns.append(summary_turn)
         if on_turn:
             await on_turn(summary_turn, state.round_number)
+
+        # At end of round 2, generate the dashboard narrative
+        if state.round_number == 2 and state.dataset_summary:
+            all_history = state.public_history + turns
+            narrative = compute_dashboard_narrative(chair, state, all_history)
+            state.world_state["dashboard_narrative"] = narrative
+            state.world_state["narrative_human_request"] = state.human_request
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

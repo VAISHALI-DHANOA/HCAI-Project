@@ -1,0 +1,167 @@
+{
+  "topic": "Analyze the uploaded dataset: RenewableTransitionDataset.csv",
+  "dataset_summary": "DATASET: RenewableTransitionDataset.csv\nShape: 100 rows x 10 columns\n\nCOLUMNS:\n  - Country_ID [int64]\n  - Country_Name [object]\n  - Region [object]\n  - Renewable_Energy_pct [float64]\n  - Climate_Policy_Score_0_100 [float64]\n  - Fossil_Fuel_Subsidy_USD_M [float64]\n  - Green_Investment_USD_M [float64]\n  - Carbon_Emissions_per_Capita [float64]\n  - Grid_Reliability_Score_0_100 [float64]\n  - Transition_Tier [object]\n\nSAMPLE ROWS (first 5):\n  Row 1: Country_ID=1, Country_Name=Mexico, Region=Central Europe, Renewable_Energy_pct=49.23, Climate_Policy_Score_0_100=47.1, Fossil_Fuel_Subsidy_USD_M=3171.8, Green_Investment_USD_M=707.2, Carbon_Emissions_per_Capita=3.39 ...\n  Row 2: Country_ID=2, Country_Name=Finland, Region=North America, Renewable_Energy_pct=52.13, Climate_Policy_Score_0_100=66.6, Fossil_Fuel_Subsidy_USD_M=2412.3, Green_Investment_USD_M=3004.8, Carbon_Emissions_per_Capita=4.05 ...\n  Row 3: Country_ID=3, Country_Name=Denmark, Region=Nordic, Renewable_Energy_pct=79.31, Climate_Policy_Score_0_100=93.5, Fossil_Fuel_Subsidy_USD_M=0.0, Green_Investment_USD_M=3297.6, Carbon_Emissions_per_Capita=0.6 ...\n  Row 4: Country_ID=4, Country_Name=South Korea, Region=Southern Europe, Renewable_Energy_pct=34.42, Climate_Policy_Score_0_100=59.6, Fossil_Fuel_Subsidy_USD_M=661.2, Green_Investment_USD_M=2126.0, Carbon_Emissions_per_Capita=8.05 ...\n  Row 5: Country_ID=5, Country_Name=Ireland, Region=Southern Europe, Renewable_Energy_pct=36.64, Climate_Policy_Score_0_100=68.5, Fossil_Fuel_Subsidy_USD_M=2546.8, Green_Investment_USD_M=4947.7, Carbon_Emissions_per_Capita=8.77 ...\n\nNUMERIC COLUMN STATISTICS:\n  Country_ID: count=100.0, mean=50.5000, std=29.0115, min=1.0000, 25%=25.7500, 50%=50.5000, 75%=75.2500, max=100.0000\n  Renewable_Energy_pct: count=100.0, mean=41.0034, std=21.3800, min=3.0000, 25%=24.6300, 50%=42.4800, 75%=55.4150, max=84.0300\n  Climate_Policy_Score_0_100: count=100.0, mean=66.4610, std=16.0238, min=20.0000, 25%=54.5500, 50%=67.7500, 75%=77.2250, max=98.0000\n  Fossil_Fuel_Subsidy_USD_M: count=100.0, mean=2246.6200, std=1308.1924, min=0.0000, 25%=1313.4000, 50%=2236.8000, 75%=2926.0500, max=5982.4000\n  Green_Investment_USD_M: count=100.0, mean=2187.9360, std=1105.6661, min=150.0000, 25%=1369.8250, 50%=2166.2000, 75%=2992.2750, max=4947.7000\n  Carbon_Emissions_per_Capita: count=100.0, mean=5.7022, std=3.1329, min=0.6000, 25%=3.5875, 50%=5.9500, 75%=7.3825, max=14.2600\n  Grid_Reliability_Score_0_100: count=100.0, mean=80.6060, std=9.3919, min=53.5000, 25%=74.2000, 50%=81.2000, 75%=87.2250, max=99.0000",
+  "parsed_data": {
+    "filename": "RenewableTransitionDataset.csv",
+    "shape": [
+      100,
+      10
+    ],
+    "columns": [
+      {
+        "name": "Country_ID",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Country_Name",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Region",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Renewable_Energy_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Climate_Policy_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Fossil_Fuel_Subsidy_USD_M",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Green_Investment_USD_M",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Carbon_Emissions_per_Capita",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Grid_Reliability_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Transition_Tier",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      }
+    ],
+    "sample_rows": [
+      {
+        "Country_ID": "1",
+        "Country_Name": "Mexico",
+        "Region": "Central Europe",
+        "Renewable_Energy_pct": "49.23",
+        "Climate_Policy_Score_0_100": "47.1",
+        "Fossil_Fuel_Subsidy_USD_M": "3171.8",
+        "Green_Investment_USD_M": "707.2",
+        "Carbon_Emissions_per_Capita": "3.39",
+        "Grid_Reliability_Score_0_100": "86.9",
+        "Transition_Tier": "Emerging"
+      },
+      {
+        "Country_ID": "2",
+        "Country_Name": "Finland",
+        "Region": "North America",
+        "Renewable_Energy_pct": "52.13",
+        "Climate_Policy_Score_0_100": "66.6",
+        "Fossil_Fuel_Subsidy_USD_M": "2412.3",
+        "Green_Investment_USD_M": "3004.8",
+        "Carbon_Emissions_per_Capita": "4.05",
+        "Grid_Reliability_Score_0_100": "85.1",
+        "Transition_Tier": "Emerging"
+      },
+      {
+        "Country_ID": "3",
+        "Country_Name": "Denmark",
+        "Region": "Nordic",
+        "Renewable_Energy_pct": "79.31",
+        "Climate_Policy_Score_0_100": "93.5",
+        "Fossil_Fuel_Subsidy_USD_M": "0.0",
+        "Green_Investment_USD_M": "3297.6",
+        "Carbon_Emissions_per_Capita": "0.6",
+        "Grid_Reliability_Score_0_100": "53.5",
+        "Transition_Tier": "Accelerating"
+      },
+      {
+        "Country_ID": "4",
+        "Country_Name": "South Korea",
+        "Region": "Southern Europe",
+        "Renewable_Energy_pct": "34.42",
+        "Climate_Policy_Score_0_100": "59.6",
+        "Fossil_Fuel_Subsidy_USD_M": "661.2",
+        "Green_Investment_USD_M": "2126.0",
+        "Carbon_Emissions_per_Capita": "8.05",
+        "Grid_Reliability_Score_0_100": "72.0",
+        "Transition_Tier": "Emerging"
+      },
+      {
+        "Country_ID": "5",
+        "Country_Name": "Ireland",
+        "Region": "Southern Europe",
+        "Renewable_Energy_pct": "36.64",
+        "Climate_Policy_Score_0_100": "68.5",
+        "Fossil_Fuel_Subsidy_USD_M": "2546.8",
+        "Green_Investment_USD_M": "4947.7",
+        "Carbon_Emissions_per_Capita": "8.77",
+        "Grid_Reliability_Score_0_100": "73.3",
+        "Transition_Tier": "Emerging"
+      }
+    ]
+  },
+  "agents": [
+    {
+      "name": "Elena Rossi",
+      "persona_text": "Energy economist who tests whether subsidies and prices slow the shift to renewables, and flags perverse incentives.",
+      "energy": 0.62,
+      "mbti_type": "INTJ"
+    },
+    {
+      "name": "Kwame Mensah",
+      "persona_text": "Data quality engineer who checks units, ranges, and suspicious outliers across investment and emissions fields.",
+      "energy": 0.72,
+      "mbti_type": "ISTJ"
+    },
+    {
+      "name": "Mina Okada",
+      "persona_text": "Quant analyst who probes correlations and confounders before anyone claims \u2018policy causes X\u2019.",
+      "energy": 0.58,
+      "mbti_type": "INTP"
+    },
+    {
+      "name": "Santiago Alvarez",
+      "persona_text": "Visualization designer who builds dashboards that compare tiers and reveal trade-offs clearly.",
+      "energy": 0.82,
+      "mbti_type": "ENFP"
+    },
+    {
+      "name": "Aisha Rahman",
+      "persona_text": "Climate strategist connecting transition progress to a hopeful story of improvement and jobs.",
+      "energy": 0.6,
+      "mbti_type": "INFJ"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+{
+  "topic": "Analyze the uploaded dataset: RevenueDataset.csv",
+  "dataset_summary": "DATASET: RevenueDataset.csv\nShape: 200 rows x 27 columns\n\nCOLUMNS:\n  - order_id [int64]\n  - customer_id [int64]\n  - order_date [str]\n  - region [str]\n  - product_id [str]\n  - quantity [int64]\n  - price_usd [int64]\n  - discount_pct [int64]\n  - returned [int64]\n  - product [str]\n  - category [str]\n  - brand [str]\n  - color_or_size [str]\n  - cost_usd [float64]\n  - profit_usd [float64]\n  - supplier [str]\n  - warehouse [str]\n  - defective [int64]\n  - support_ticket_id [str] (164 nulls, 82.0%)\n  - support_issue_type [str] (164 nulls, 82.0%)\n  - support_issue_text [str] (164 nulls, 82.0%)\n  - response_time_min [int64]\n  - resolved [int64]\n  - support_cost_usd [float64]\n  - delivery_days [int64]\n  - shipping_speed [str]\n  - return_reason [str] (187 nulls, 93.5%)\n\nSAMPLE ROWS (first 5):\n  Row 1: order_id=1, customer_id=1023, order_date=2024-01-24, region=East, product_id=P400, quantity=1, price_usd=107, discount_pct=0, returned=0, product=Backpack, category=Accessories, brand=Brand B, color_or_size=Blue, cost_usd=61.96, profit_usd=45.04, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n  Row 2: order_id=2, customer_id=1090, order_date=2024-02-27, region=West, product_id=P300, quantity=2, price_usd=67, discount_pct=20, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=31.07, profit_usd=76.13, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=4, shipping_speed=Standard, return_reason=NULL\n  Row 3: order_id=3, customer_id=1017, order_date=2024-01-03, region=North, product_id=P300, quantity=3, price_usd=29, discount_pct=5, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=16.98, profit_usd=65.67, supplier=Supplier A, warehouse=C, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n  Row 4: order_id=4, customer_id=1007, order_date=2024-02-16, region=West, product_id=P400, quantity=2, price_usd=103, discount_pct=20, returned=0, product=Backpack, category=Accessories, brand=Brand B, color_or_size=Blue, cost_usd=53.11, profit_usd=111.69, supplier=Supplier A, warehouse=A, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=4, shipping_speed=Standard, return_reason=NULL\n  Row 5: order_id=5, customer_id=1099, order_date=2024-01-18, region=North, product_id=P300, quantity=2, price_usd=95, discount_pct=0, returned=0, product=Running Shoes, category=Apparel, brand=Brand R, color_or_size=Size 42, cost_usd=50.12, profit_usd=139.88, supplier=Supplier A, warehouse=B, defective=0, support_ticket_id=NULL, support_issue_type=NULL, support_issue_text=NULL, response_time_min=0, resolved=1, support_cost_usd=0.0, delivery_days=5, shipping_speed=Standard, return_reason=NULL\n\nNUMERIC COLUMN STATISTICS:\n  order_id: count=200.0, mean=100.5, std=57.88, min=1.0, 25%=50.75, 50%=100.5, 75%=150.25, max=200.0\n  customer_id: count=200.0, mean=1047.76, std=28.02, min=1000.0, 25%=1025.0, 50%=1043.0, 75%=1071.0, max=1099.0\n  quantity: count=200.0, mean=1.97, std=0.8, min=1.0, 25%=1.0, 50%=2.0, 75%=3.0, max=3.0\n  price_usd: count=200.0, mean=81.4, std=37.56, min=15.0, 25%=50.75, 50%=78.5, 75%=113.0, max=148.0\n  discount_pct: count=200.0, mean=7.92, std=7.41, min=0.0, 25%=0.0, 50%=5.0, 75%=15.0, max=20.0\n  returned: count=200.0, mean=0.06, std=0.25, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=1.0\n  cost_usd: count=200.0, mean=44.4, std=21.59, min=7.09, 25%=26.76, 50%=44.24, 75%=58.84, max=102.26\n  profit_usd: count=200.0, mean=101.96, std=82.43, min=3.96, 25%=34.07, 50%=79.51, 75%=157.3, max=337.73\n  defective: count=200.0, mean=0.02, std=0.12, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=1.0\n  response_time_min: count=200.0, mean=29.96, std=74.77, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=299.0\n  resolved: count=200.0, mean=0.98, std=0.14, min=0.0, 25%=1.0, 50%=1.0, 75%=1.0, max=1.0\n  support_cost_usd: count=200.0, mean=2.62, std=6.0, min=0.0, 25%=0.0, 50%=0.0, 75%=0.0, max=24.36\n  delivery_days: count=200.0, mean=3.94, std=2.36, min=1.0, 25%=2.0, 50%=4.0, 75%=5.0, max=9.0",
+  "parsed_data": {
+    "filename": "RevenueDataset.csv",
+    "shape": [200, 27],
+    "columns": [
+      { "name": "order_id", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "customer_id", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "order_date", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "region", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "product_id", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "quantity", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "price_usd", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "discount_pct", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "returned", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "product", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "category", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "brand", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "color_or_size", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "cost_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
+      { "name": "profit_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
+      { "name": "supplier", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "warehouse", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "defective", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "support_ticket_id", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
+      { "name": "support_issue_type", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
+      { "name": "support_issue_text", "dtype": "str", "null_count": 164, "null_pct": 82.0 },
+      { "name": "response_time_min", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "resolved", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "support_cost_usd", "dtype": "float64", "null_count": 0, "null_pct": 0 },
+      { "name": "delivery_days", "dtype": "int64", "null_count": 0, "null_pct": 0 },
+      { "name": "shipping_speed", "dtype": "str", "null_count": 0, "null_pct": 0 },
+      { "name": "return_reason", "dtype": "str", "null_count": 187, "null_pct": 93.5 }
+    ],
+    "sample_rows": [
+      { "order_id": 1, "customer_id": 1023, "order_date": "2024-01-24", "region": "East", "product_id": "P400", "quantity": 1, "price_usd": 107, "discount_pct": 0, "returned": 0, "product": "Backpack", "category": "Accessories", "brand": "Brand B", "color_or_size": "Blue", "cost_usd": 61.96, "profit_usd": 45.04, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" },
+      { "order_id": 2, "customer_id": 1090, "order_date": "2024-02-27", "region": "West", "product_id": "P300", "quantity": 2, "price_usd": 67, "discount_pct": 20, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 31.07, "profit_usd": 76.13, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 4, "shipping_speed": "Standard", "return_reason": "NULL" },
+      { "order_id": 3, "customer_id": 1017, "order_date": "2024-01-03", "region": "North", "product_id": "P300", "quantity": 3, "price_usd": 29, "discount_pct": 5, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 16.98, "profit_usd": 65.67, "supplier": "Supplier A", "warehouse": "C", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" },
+      { "order_id": 4, "customer_id": 1007, "order_date": "2024-02-16", "region": "West", "product_id": "P400", "quantity": 2, "price_usd": 103, "discount_pct": 20, "returned": 0, "product": "Backpack", "category": "Accessories", "brand": "Brand B", "color_or_size": "Blue", "cost_usd": 53.11, "profit_usd": 111.69, "supplier": "Supplier A", "warehouse": "A", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 4, "shipping_speed": "Standard", "return_reason": "NULL" },
+      { "order_id": 5, "customer_id": 1099, "order_date": "2024-01-18", "region": "North", "product_id": "P300", "quantity": 2, "price_usd": 95, "discount_pct": 0, "returned": 0, "product": "Running Shoes", "category": "Apparel", "brand": "Brand R", "color_or_size": "Size 42", "cost_usd": 50.12, "profit_usd": 139.88, "supplier": "Supplier A", "warehouse": "B", "defective": 0, "support_ticket_id": "NULL", "support_issue_type": "NULL", "support_issue_text": "NULL", "response_time_min": 0, "resolved": 1, "support_cost_usd": 0.0, "delivery_days": 5, "shipping_speed": "Standard", "return_reason": "NULL" }
+    ]
+  },
+  "agents": [
+    {
+      "name": "Raj Patel",
+      "persona_text": "Senior data quality engineer obsessed with pipeline integrity. Checks for nulls, duplicates, type mismatches, and suspicious patterns before anyone touches the data. Specializes in e-commerce data validation and cleaning strategies.",
+      "energy": 0.75,
+      "mbti_type": "ISTJ"
+    },
+    {
+      "name": "Sofia Chen",
+      "persona_text": "Revenue and pricing analyst who lives for descriptive statistics and correlation hunting. First instinct is to run distributions on profit margins, discount patterns, and regional breakdowns. Finds revenue leaks others miss.",
+      "energy": 0.65,
+      "mbti_type": "INTP"
+    },
+    {
+      "name": "Marcus Williams",
+      "persona_text": "Visualization expert who believes every insight needs a picture. Advocates for the right chart type to show revenue trends, category comparisons, and support cost breakdowns. Passionate about making data speak through graphics.",
+      "energy": 0.80,
+      "mbti_type": "ENFP"
+    },
+    {
+      "name": "Dr. Anika Johansson",
+      "persona_text": "Supply chain and operations analyst who thinks about supplier performance, warehouse efficiency, defect rates, and delivery logistics. Wants to optimize the end-to-end order fulfillment pipeline using data-driven decisions.",
+      "energy": 0.55,
+      "mbti_type": "INTJ"
+    },
+    {
+      "name": "Kai Nakamura",
+      "persona_text": "Business storyteller who translates numbers into narratives. Focuses on customer behavior patterns, return drivers, and actionable recommendations for leadership. Makes data accessible to non-technical stakeholders.",
+      "energy": 0.70,
+      "mbti_type": "ENFJ"
+    }
+  ]
+}

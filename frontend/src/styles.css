@@ -476,9 +476,9 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 360px;
-  max-width: 50%;
-  max-height: 55%;
+  width: 420px;
+  max-width: 55%;
+  max-height: 65%;
   z-index: 5;
   pointer-events: none;
   display: flex;
@@ -495,6 +495,8 @@ body {
   box-shadow: 0 0 40px rgba(56, 189, 248, 0.1);
   width: 100%;
   pointer-events: auto;
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .center-stage__speaker {
@@ -2020,4 +2022,876 @@ button:disabled {
 .mbti-questionnaire::-webkit-scrollbar-thumb:hover,
 .test-chat-modal__messages::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.4);
+}
+
+/* ================================================================
+   VISUAL CONTRIBUTION CARDS (Data Analysis Dashboard)
+   ================================================================ */
+
+.visual-card {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  border-left: 3px solid var(--agent-color, #38bdf8);
+}
+
+.visual-card__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.visual-card__agent {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--agent-color, #38bdf8);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.visual-card__title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.visual-card__body {
+  margin-bottom: 6px;
+}
+
+.visual-card__description {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Data Tables */
+.visual-table-wrap {
+  overflow-x: auto;
+  min-width: 400px;
+}
+
+.visual-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.visual-table th {
+  background: rgba(30, 41, 59, 0.8);
+  color: #38bdf8;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 5px 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+  font-size: 0.68rem;
+}
+
+.visual-table td {
+  padding: 4px 8px;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.visual-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Stat Cards */
+.visual-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 6px;
+  min-width: 400px;
+}
+
+.visual-stat-item {
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(56, 189, 248, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+  text-align: center;
+}
+
+.visual-stat-item__label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  margin-bottom: 2px;
+}
+
+.visual-stat-item__value {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+/* Dashboard panel in side panel */
+.dashboard-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.dashboard-round-group {
+  margin-bottom: 6px;
+}
+
+.dashboard-round-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fbbf24;
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(251, 191, 36, 0.15);
+}
+
+/* Dataset preview in setup */
+.dataset-preview {
+  margin-top: 6px;
+}
+
+.dataset-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+/* ================================================
+   Data Preview Table (arena dashboard)
+   ================================================ */
+.data-preview-table {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(56, 189, 248, 0.15);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.data-preview-table__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.data-preview-table__filename {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #4ade80;
+  letter-spacing: 0.04em;
+}
+
+.data-preview-table__shape {
+  font-size: 0.68rem;
+  color: #94a3b8;
+}
+
+.data-preview-table__scroll {
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.data-preview-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+
+.data-preview-table__th {
+  background: rgba(30, 41, 59, 0.8);
+  color: #38bdf8;
+  font-weight: 700;
+  text-align: left;
+  padding: 5px 8px;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  transition: background 0.3s ease, box-shadow 0.3s ease, color 0.3s ease;
+}
+
+.data-preview-table__col-name {
+  font-size: 0.7rem;
+}
+
+.data-preview-table__col-dtype {
+  font-size: 0.58rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.data-preview-table__td {
+  padding: 4px 8px;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+.data-preview-table__table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Column highlighting when agents mention columns */
+.data-preview-table__th--highlighted {
+  background: rgba(56, 189, 248, 0.2);
+  box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.15), 0 0 8px rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+}
+
+.data-preview-table__th--highlighted .data-preview-table__col-dtype {
+  color: #94a3b8;
+}
+
+.data-preview-table__td--highlighted {
+  background: rgba(56, 189, 248, 0.08);
+  box-shadow: inset 0 0 8px rgba(56, 189, 248, 0.06);
+  color: #e2e8f0;
+}
+
+/* ================================================
+   Center Stage: Inline Visualization
+   ================================================ */
+.center-stage__visual {
+  margin-top: 10px;
+  border-top: 1px solid rgba(56, 189, 248, 0.1);
+  padding-top: 8px;
+}
+
+.center-stage__visual .visual-card {
+  margin: 0;
+}
+
+.center-stage__visual .visual-card__body {
+  max-height: 180px;
+}
+
+/* ================================================
+   Intervention Bar
+   ================================================ */
+.intervention-bar {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  width: min(90%, 500px);
+  z-index: 20;
+  background: rgba(17, 24, 39, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+  padding: 6px 8px;
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+}
+
+.intervention-bar__input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.intervention-bar__input:focus {
+  border-color: #10b981;
+}
+
+.intervention-bar__input::placeholder {
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.intervention-bar__send {
+  background: #10b981;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  white-space: nowrap;
+}
+
+.intervention-bar__send:hover:not(:disabled) {
+  background: #059669;
+}
+
+.intervention-bar__send:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ================================================
+   Human Turn Styling (Center Stage)
+   ================================================ */
+.center-stage__speaker--human {
+  border-left: 3px solid #10b981;
+  padding-left: 6px;
+}
+
+.center-stage__human-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid #10b981;
+  color: #10b981;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.center-stage__past-turn--human {
+  border-left: 2px solid #10b981;
+  padding-left: 6px;
+  color: #6ee7b7;
+}
+
+/* ================================================
+   Human Turn Styling (Chat Log)
+   ================================================ */
+.chat-log__entry--human {
+  background: rgba(16, 185, 129, 0.08);
+  border-left: 3px solid #10b981;
+  border-radius: var(--radius-sm);
+  padding-left: 6px;
+}
+
+.chat-log__human-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(16, 185, 129, 0.2);
+  border: 2px solid #10b981;
+  color: #10b981;
+  font-size: 0.6rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ================================================================
+   DATA TABLE ARENA
+   ================================================================ */
+
+.arena-viewport--table {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-deep);
+}
+
+.arena-viewport--table::before,
+.arena-viewport--table::after {
+  display: none;
+}
+
+.arena-viewport--table .intervention-bar {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  transform: none;
+  width: 100%;
+  flex-shrink: 0;
+  border-radius: 0;
+  border-top: 1px solid rgba(16, 185, 129, 0.3);
+  border-left: none;
+  border-right: none;
+  border-bottom: none;
+}
+
+.arena-table-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: var(--bg-deep);
+  /* Reserve space around table for agent avatars + speech bubbles */
+  padding: 80px 20px 20px 20px;
+}
+
+.arena-table {
+  border-collapse: collapse;
+  min-width: max-content;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.arena-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.arena-table th {
+  background: var(--bg-panel);
+  color: var(--accent-primary);
+  font-weight: 700;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  border: 1px solid var(--border-dim);
+  white-space: nowrap;
+  position: relative;
+}
+
+.arena-table__header-cell {
+  min-width: 80px;
+}
+
+.arena-table__row-index {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.65rem;
+  text-align: center;
+  padding: 4px 6px;
+  border: 1px solid var(--border-dim);
+  min-width: 36px;
+}
+
+thead .arena-table__row-index {
+  z-index: 11;
+}
+
+.arena-table__cell {
+  padding: 4px 8px;
+  border: 1px solid rgba(56, 189, 248, 0.08);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background-color 0.4s ease;
+  position: relative;
+}
+
+.arena-table tbody tr:hover .arena-table__cell {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+/* ---- Annotation markers ---- */
+.arena-table__annotation-marker {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 10px 10px 0;
+  border-color: transparent var(--accent-gold) transparent transparent;
+  cursor: pointer;
+}
+
+.arena-table__annotation-tooltip {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--accent-gold);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  min-width: 160px;
+  max-width: 260px;
+  z-index: 30;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  white-space: normal;
+}
+
+.arena-table__annotation-marker:hover .arena-table__annotation-tooltip {
+  display: block;
+}
+
+.arena-table__annotation-line {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.arena-table__annotation-line strong {
+  color: var(--accent-gold);
+}
+
+/* ---- Agent overlays on the table ---- */
+.arena-table-agent {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 4px));
+  transition: top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 15;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.arena-table-agent--dimmed {
+  opacity: 0.35;
+  transition: opacity 0.4s, top 0.8s cubic-bezier(0.4, 0, 0.2, 1),
+              left 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.arena-table-agent--speaking {
+  z-index: 20;
+}
+
+.arena-table-agent__avatar {
+  border-radius: 50%;
+  border: 2px solid var(--agent-color, var(--accent-primary));
+  background: var(--bg-panel);
+  transition: width 0.3s, height 0.3s, box-shadow 0.3s;
+}
+
+.arena-table-agent--speaking .arena-table-agent__avatar {
+  box-shadow: 0 0 16px var(--agent-color, var(--accent-primary)),
+              0 0 32px rgba(56, 189, 248, 0.2);
+  animation: speakingPulseTable 2s ease-in-out infinite;
+}
+
+@keyframes speakingPulseTable {
+  0%, 100% { box-shadow: 0 0 12px var(--agent-color, var(--accent-primary)); }
+  50% { box-shadow: 0 0 24px var(--agent-color, var(--accent-primary)), 0 0 40px rgba(56, 189, 248, 0.3); }
+}
+
+.arena-table-agent__name {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+  text-align: center;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.arena-table-agent__role-badge {
+  font-size: 0.5rem;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Speech bubble ---- */
+.speech-bubble {
+  position: absolute;
+  top: 0;
+  left: calc(100% + 14px);
+  background: rgba(17, 24, 39, 0.94);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--agent-color, var(--border-active));
+  border-radius: var(--radius-md);
+  padding: 14px 18px;
+  max-width: 420px;
+  min-width: 220px;
+  z-index: 25;
+  animation: fadeInRight 0.35s ease-out;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
+              0 0 12px rgba(56, 189, 248, 0.1);
+  white-space: normal;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.speech-bubble::after {
+  content: "";
+  position: absolute;
+  top: 16px;
+  right: 100%;
+  border: 6px solid transparent;
+  border-right-color: rgba(17, 24, 39, 0.94);
+}
+
+@keyframes fadeInRight {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.speech-bubble__message {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--text-bright);
+  line-height: 1.5;
+}
+
+.speech-bubble__visual {
+  margin-top: 8px;
+  border-top: 1px solid rgba(56, 189, 248, 0.1);
+  padding-top: 6px;
+}
+
+.speech-bubble__visual .visual-card {
+  margin: 0;
+}
+
+.speech-bubble__visual .visual-card__body {
+  max-height: 140px;
+}
+
+/* ================================================================
+   DASHBOARD TRANSITION & CANVAS
+   ================================================================ */
+
+/* Transition overlay */
+.dashboard-transition-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.85);
+  backdrop-filter: blur(8px);
+  animation: dashboardOverlayIn 0.4s ease-out;
+}
+
+@keyframes dashboardOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.dashboard-transition-overlay__spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid rgba(56, 189, 248, 0.15);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-transition-overlay__text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+  letter-spacing: 0.04em;
+}
+
+/* Dashboard viewport */
+.arena-viewport--dashboard {
+  display: flex;
+  flex-direction: column;
+}
+
+.arena-viewport--dashboard::before,
+.arena-viewport--dashboard::after {
+  display: none;
+}
+
+/* Dashboard canvas */
+.dashboard-canvas {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.dashboard-canvas__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+  padding: 0 8px 16px;
+}
+
+.dashboard-canvas__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+.dashboard-canvas__empty p {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.95rem;
+}
+
+/* Dashboard narrative header */
+.dashboard-canvas__narrative {
+  padding: 20px 24px 16px;
+  text-align: center;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+  margin-bottom: 8px;
+}
+
+.dashboard-canvas__narrative-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #38bdf8;
+  text-shadow: 0 0 20px rgba(56, 189, 248, 0.25);
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+/* Dashboard cards */
+.dashboard-card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  padding: 16px;
+  position: relative;
+  animation: dashboardCardIn 0.5s ease-out both;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@keyframes dashboardCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dashboard-card--active {
+  border-color: var(--agent-color, #38bdf8);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.2), inset 0 0 24px rgba(56, 189, 248, 0.04);
+}
+
+/* Agent badge on card */
+.dashboard-card__agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dashboard-card__agent--speaking {
+  animation: agentPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes agentPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.dashboard-card__avatar {
+  border-radius: 50%;
+  border: 2px solid var(--agent-color, #38bdf8);
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.dashboard-card__agent-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--agent-color, #38bdf8);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Ensure charts within dashboard cards stay contained */
+.dashboard-card .visual-card {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.dashboard-card .visual-card__body {
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.dashboard-card .recharts-wrapper {
+  max-width: 100% !important;
+}
+
+/* Speech / message below chart */
+.dashboard-card__speech {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  flex-shrink: 0;
+}
+
+.dashboard-card__message {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  font-style: italic;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Round badge */
+.dashboard-card__round-badge {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  letter-spacing: 0.04em;
+}
+
+/* Large visual card variant */
+.visual-card--large {
+  padding: 14px 16px;
+}
+
+.visual-card--large .visual-card__title {
+  font-size: 0.88rem;
+}
+
+.visual-card--large .visual-card__description {
+  font-size: 0.8rem;
 }

@@ -1,10 +1,21 @@
-import type { State } from "./types";
+import type { DatasetInfo, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+
+// Unique session ID per browser tab — isolates state across tabs
+const _sessionId: string = crypto.randomUUID();
+export function getSessionId(): string {
+  return _sessionId;
+}
 
 let _adminKey: string | null = null;
 export function setAdminKey(key: string | null) {
   _adminKey = key;
+}
+
+function withSession(path: string): string {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}session=${_sessionId}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -12,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (_adminKey) {
     headers["X-Admin-Key"] = _adminKey;
   }
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await fetch(`${API_BASE}${withSession(path)}`, {
     headers,
     ...init
   });
@@ -61,6 +72,42 @@ export async function loadDemo(): Promise<{ state: State }> {
   return request<{ state: State }>("/demo", { method: "POST" });
 }
 
+export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; state: State }> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const headers: Record<string, string> = {};
+  if (_adminKey) {
+    headers["X-Admin-Key"] = _adminKey;
+  }
+
+  const response = await fetch(`${API_BASE}${withSession("/upload-dataset")}`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Upload failed: ${response.status}`);
+  }
+  return (await response.json()) as { parsed: DatasetInfo; state: State };
+}
+
+export async function loadDataDemo(): Promise<{ state: State; parsed?: DatasetInfo }> {
+  return request<{ state: State; parsed?: DatasetInfo }>("/demo-data", { method: "POST" });
+}
+
+export async function loadExample(name: string): Promise<{ state: State; parsed?: DatasetInfo }> {
+  return request<{ state: State; parsed?: DatasetInfo }>(`/load-example?name=${encodeURIComponent(name)}`, { method: "POST" });
+}
+
+export async function intervene(message: string): Promise<{ state: State }> {
+  return request<{ state: State }>("/intervene", {
+    method: "POST",
+    body: JSON.stringify({ message }),
+  });
+}
+
 export async function addAgentsWithMBTI(
   agents: Array<{ name: string; persona_text: string; energy: number; mbti_type: string }>
 ): Promise<{ state: State }> {
@@ -98,7 +145,7 @@ export async function downloadLogs(): Promise<void> {
   if (_adminKey) {
     headers["X-Admin-Key"] = _adminKey;
   }
-  const response = await fetch(`${API_BASE}/logs/download`, { headers });
+  const response = await fetch(`${API_BASE}${withSession("/logs/download")}`, { headers });
   if (!response.ok) {
     throw new Error(`Download failed: ${response.status}`);
   }
@@ -118,6 +165,6 @@ export async function downloadLogs(): Promise<void> {
 
 export function getWebSocketUrl(): string {
   const explicit = import.meta.env.VITE_WS_URL;
-  if (explicit) return explicit;
-  return API_BASE.replace(/^http/, "ws") + "/ws";
+  const base = explicit ?? API_BASE.replace(/^http/, "ws") + "/ws";
+  return `${base}?session=${_sessionId}`;
 }

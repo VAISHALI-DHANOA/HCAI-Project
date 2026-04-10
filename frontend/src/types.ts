@@ -25,9 +25,46 @@ export interface ChatMessage {
 
 export type AppPhase = "setup" | "arena";
 
+export interface VisualSpec {
+  visual_type: "bar_chart" | "table" | "scatter" | "line_chart" | "stat_card" | "heatmap";
+  title: string;
+  data: any;
+  description?: string;
+}
+
+export interface CellHighlight {
+  row_start: number;
+  row_end: number;
+  columns: string[];
+  color: string;
+  agent_id: string;
+}
+
+export interface CellAnnotation {
+  row: number;
+  column: string;
+  text: string;
+  agent_id: string;
+}
+
+export interface TableAction {
+  navigate_to: { row: number; column: string };
+  highlights: CellHighlight[];
+  annotations: CellAnnotation[];
+}
+
 export interface PublicTurn {
   speaker_id: string;
   message: string;
+  visual?: VisualSpec | null;
+  table_action?: TableAction | null;
+}
+
+export interface DatasetInfo {
+  filename: string;
+  shape: [number, number];
+  columns: Array<{ name: string; dtype: string; null_count: number; null_pct: number }>;
+  sample_rows: Record<string, any>[];
 }
 
 export interface Reaction {
@@ -59,6 +96,8 @@ export interface State {
   public_history: PublicTurn[];
   reactions: Reaction[];
   world_state: Record<string, unknown>;
+  dataset_summary?: string;
+  dataset_columns?: string[];
 }
 
 export interface WsRoundEvent {
@@ -80,3 +119,13 @@ export interface WsStateEvent {
 }
 
 export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;
+
+export interface DashboardVisual {
+  id: string;
+  roundNumber: number;
+  speakerId: string;
+  agentName: string;
+  agentColor: string;
+  visual: VisualSpec;
+  message: string;
+}

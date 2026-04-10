@@ -1,0 +1,167 @@
+{
+  "topic": "Analyze the uploaded dataset: SustainableAgriculture.csv",
+  "dataset_summary": "DATASET: SustainableAgriculture.csv\nShape: 100 rows x 10 columns\n\nCOLUMNS:\n  - Farm_ID [int64]\n  - Country [object]\n  - Crop_Type [object]\n  - Organic_Practices_pct [float64]\n  - Soil_Health_Score_0_100 [float64]\n  - Water_Usage_per_Hectare_m3 [int64]\n  - Yield_per_Hectare_Tons [float64]\n  - Fertilizer_Usage_kg_per_Hectare [float64]\n  - Biodiversity_Index_0_1 [float64]\n  - Sustainability_Tier [object]\n\nSAMPLE ROWS (first 5):\n  Row 1: Farm_ID=1, Country=Portugal, Crop_Type=Fruit, Organic_Practices_pct=4.6, Soil_Health_Score_0_100=80.0, Water_Usage_per_Hectare_m3=4326, Yield_per_Hectare_Tons=5.87, Fertilizer_Usage_kg_per_Hectare=36.7 ...\n  Row 2: Farm_ID=2, Country=Kenya, Crop_Type=Rice, Organic_Practices_pct=0.0, Soil_Health_Score_0_100=52.3, Water_Usage_per_Hectare_m3=3688, Yield_per_Hectare_Tons=7.99, Fertilizer_Usage_kg_per_Hectare=77.7 ...\n  Row 3: Farm_ID=3, Country=Ireland, Crop_Type=Fruit, Organic_Practices_pct=43.7, Soil_Health_Score_0_100=68.2, Water_Usage_per_Hectare_m3=3957, Yield_per_Hectare_Tons=9.95, Fertilizer_Usage_kg_per_Hectare=114.2 ...\n  Row 4: Farm_ID=4, Country=Norway, Crop_Type=Maize, Organic_Practices_pct=0.0, Soil_Health_Score_0_100=49.2, Water_Usage_per_Hectare_m3=1519, Yield_per_Hectare_Tons=6.24, Fertilizer_Usage_kg_per_Hectare=152.8 ...\n  Row 5: Farm_ID=5, Country=Norway, Crop_Type=Legumes, Organic_Practices_pct=0.0, Soil_Health_Score_0_100=55.9, Water_Usage_per_Hectare_m3=3652, Yield_per_Hectare_Tons=7.58, Fertilizer_Usage_kg_per_Hectare=135.7 ...\n\nNUMERIC COLUMN STATISTICS:\n  Farm_ID: count=100.0, mean=50.5000, std=29.0115, min=1.0000, 25%=25.7500, 50%=50.5000, 75%=75.2500, max=100.0000\n  Organic_Practices_pct: count=100.0, mean=45.7880, std=26.9622, min=0.0000, 25%=24.5250, 50%=46.9000, 75%=63.1500, max=98.0000\n  Soil_Health_Score_0_100: count=100.0, mean=68.9810, std=12.3634, min=42.0000, 25%=60.7250, 50%=69.9000, 75%=76.6250, max=96.0000\n  Water_Usage_per_Hectare_m3: count=100.0, mean=3844.7200, std=1300.9946, min=900.0000, 25%=2932.7500, 50%=3938.5000, 75%=4759.0000, max=6508.0000\n  Yield_per_Hectare_Tons: count=100.0, mean=6.6828, std=1.4081, min=3.0700, 25%=5.8350, 50%=6.7150, 75%=7.6650, max=9.9500\n  Fertilizer_Usage_kg_per_Hectare: count=100.0, mean=93.2570, std=53.6157, min=10.0000, 25%=49.1500, 50%=95.7500, 75%=131.5000, max=228.5000\n  Biodiversity_Index_0_1: count=100.0, mean=0.5987, std=0.1526, min=0.2100, 25%=0.4875, 50%=0.5750, 75%=0.7050, max=0.9000",
+  "parsed_data": {
+    "filename": "SustainableAgriculture.csv",
+    "shape": [
+      100,
+      10
+    ],
+    "columns": [
+      {
+        "name": "Farm_ID",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Country",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Crop_Type",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Organic_Practices_pct",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Soil_Health_Score_0_100",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Water_Usage_per_Hectare_m3",
+        "dtype": "int64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Yield_per_Hectare_Tons",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Fertilizer_Usage_kg_per_Hectare",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Biodiversity_Index_0_1",
+        "dtype": "float64",
+        "null_count": 0,
+        "null_pct": 0.0
+      },
+      {
+        "name": "Sustainability_Tier",
+        "dtype": "object",
+        "null_count": 0,
+        "null_pct": 0.0
+      }
+    ],
+    "sample_rows": [
+      {
+        "Farm_ID": "1",
+        "Country": "Portugal",
+        "Crop_Type": "Fruit",
+        "Organic_Practices_pct": "4.6",
+        "Soil_Health_Score_0_100": "80.0",
+        "Water_Usage_per_Hectare_m3": "4326",
+        "Yield_per_Hectare_Tons": "5.87",
+        "Fertilizer_Usage_kg_per_Hectare": "36.7",
+        "Biodiversity_Index_0_1": "0.55",
+        "Sustainability_Tier": "Needs Support"
+      },
+      {
+        "Farm_ID": "2",
+        "Country": "Kenya",
+        "Crop_Type": "Rice",
+        "Organic_Practices_pct": "0.0",
+        "Soil_Health_Score_0_100": "52.3",
+        "Water_Usage_per_Hectare_m3": "3688",
+        "Yield_per_Hectare_Tons": "7.99",
+        "Fertilizer_Usage_kg_per_Hectare": "77.7",
+        "Biodiversity_Index_0_1": "0.54",
+        "Sustainability_Tier": "Needs Support"
+      },
+      {
+        "Farm_ID": "3",
+        "Country": "Ireland",
+        "Crop_Type": "Fruit",
+        "Organic_Practices_pct": "43.7",
+        "Soil_Health_Score_0_100": "68.2",
+        "Water_Usage_per_Hectare_m3": "3957",
+        "Yield_per_Hectare_Tons": "9.95",
+        "Fertilizer_Usage_kg_per_Hectare": "114.2",
+        "Biodiversity_Index_0_1": "0.51",
+        "Sustainability_Tier": "Improving"
+      },
+      {
+        "Farm_ID": "4",
+        "Country": "Norway",
+        "Crop_Type": "Maize",
+        "Organic_Practices_pct": "0.0",
+        "Soil_Health_Score_0_100": "49.2",
+        "Water_Usage_per_Hectare_m3": "1519",
+        "Yield_per_Hectare_Tons": "6.24",
+        "Fertilizer_Usage_kg_per_Hectare": "152.8",
+        "Biodiversity_Index_0_1": "0.47",
+        "Sustainability_Tier": "Needs Support"
+      },
+      {
+        "Farm_ID": "5",
+        "Country": "Norway",
+        "Crop_Type": "Legumes",
+        "Organic_Practices_pct": "0.0",
+        "Soil_Health_Score_0_100": "55.9",
+        "Water_Usage_per_Hectare_m3": "3652",
+        "Yield_per_Hectare_Tons": "7.58",
+        "Fertilizer_Usage_kg_per_Hectare": "135.7",
+        "Biodiversity_Index_0_1": "0.36",
+        "Sustainability_Tier": "Needs Support"
+      }
+    ]
+  },
+  "agents": [
+    {
+      "name": "Dr. Lila S\u00f8rensen",
+      "persona_text": "Agroecology researcher linking soil health and biodiversity to resilient yields.",
+      "energy": 0.58,
+      "mbti_type": "INTJ"
+    },
+    {
+      "name": "Mateus Ribeiro",
+      "persona_text": "Supply-chain thinker who cares about practical efficiency and farm viability.",
+      "energy": 0.7,
+      "mbti_type": "ENTJ"
+    },
+    {
+      "name": "Ananya Gupta",
+      "persona_text": "Data quality specialist checking unit consistency and outliers that could mislead conclusions.",
+      "energy": 0.73,
+      "mbti_type": "ISTJ"
+    },
+    {
+      "name": "Chloe Bennett",
+      "persona_text": "Visualization designer who builds tiered sustainability dashboards with clear trade-offs.",
+      "energy": 0.82,
+      "mbti_type": "ENFP"
+    },
+    {
+      "name": "Samuel Kofi",
+      "persona_text": "Food security analyst highlighting where support can create fast, hopeful improvements.",
+      "energy": 0.62,
+      "mbti_type": "INFJ"
+    }
+  ]
+}

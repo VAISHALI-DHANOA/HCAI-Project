@@ -36,9 +36,40 @@ class Agent(BaseModel):
         return cleaned
 
 
+class VisualSpec(BaseModel):
+    """A visual contribution from an agent, rendered in the dashboard."""
+    visual_type: str  # bar_chart, table, scatter, line_chart, stat_card, heatmap
+    title: str
+    data: dict | list
+    description: str = ""
+
+
+class CellHighlight(BaseModel):
+    row_start: int
+    row_end: int
+    columns: list[str]
+    color: str  # hex with alpha, e.g. "#38bdf844"
+    agent_id: str
+
+
+class CellAnnotation(BaseModel):
+    row: int
+    column: str
+    text: str = Field(max_length=40)
+    agent_id: str
+
+
+class TableAction(BaseModel):
+    navigate_to: dict  # {"row": int, "column": str}
+    highlights: list[CellHighlight] = Field(default_factory=list)
+    annotations: list[CellAnnotation] = Field(default_factory=list)
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
+    visual: VisualSpec | None = None
+    table_action: TableAction | None = None
 
 
 class Reaction(BaseModel):
@@ -72,6 +103,9 @@ class State(BaseModel):
     public_history: list[PublicTurn] = Field(default_factory=list)
     reactions: list[Reaction] = Field(default_factory=list)
     world_state: dict = Field(default_factory=dict)
+    dataset_summary: str = ""
+    dataset_columns: list[str] = Field(default_factory=list)
+    human_request: str = ""
 
 
 class UserAgentInput(BaseModel):
@@ -108,6 +142,10 @@ class ChatRequest(BaseModel):
 
 class ResetRequest(BaseModel):
     topic: str | None = None
+
+
+class InterveneRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
 
 
 class TTSRequest(BaseModel):

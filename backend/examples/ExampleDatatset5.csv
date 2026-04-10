@@ -1,0 +1,101 @@
+Farm_ID,Country,Crop_Type,Organic_Practices_pct,Soil_Health_Score_0_100,Water_Usage_per_Hectare_m3,Yield_per_Hectare_Tons,Fertilizer_Usage_kg_per_Hectare,Biodiversity_Index_0_1,Sustainability_Tier
+1,Portugal,Fruit,4.6,80.0,4326,5.87,36.7,0.55,Needs Support
+2,Kenya,Rice,0.0,52.3,3688,7.99,77.7,0.54,Needs Support
+3,Ireland,Fruit,43.7,68.2,3957,9.95,114.2,0.51,Improving
+4,Norway,Maize,0.0,49.2,1519,6.24,152.8,0.47,Needs Support
+5,Norway,Legumes,0.0,55.9,3652,7.58,135.7,0.36,Needs Support
+6,Ireland,Fruit,5.6,53.9,2297,4.22,191.2,0.47,Needs Support
+7,Spain,Fruit,55.1,63.4,2677,9.73,174.9,0.55,Improving
+8,Italy,Fruit,49.0,75.6,4000,7.71,86.3,0.62,Improving
+9,Canada,Coffee,42.1,61.1,4152,8.22,105.0,0.81,Improving
+10,South Korea,Wheat,83.9,71.8,5304,6.79,131.8,0.51,Improving
+11,Canada,Legumes,53.6,57.2,4078,4.04,137.5,0.73,Improving
+12,Mexico,Vegetables,89.9,92.7,2750,8.41,10.0,0.72,Leading
+13,Germany,Soy,45.0,90.6,4735,7.29,19.0,0.61,Improving
+14,Portugal,Soy,67.7,96.0,1287,9.02,10.0,0.39,Strong
+15,Finland,Legumes,80.6,84.6,5917,5.85,70.7,0.79,Strong
+16,South Korea,Coffee,91.4,77.5,900,3.07,31.2,0.55,Improving
+17,Germany,Maize,34.5,55.6,4845,5.93,60.2,0.45,Needs Support
+18,Denmark,Legumes,9.0,50.6,4881,5.5,26.6,0.49,Needs Support
+19,New Zealand,Legumes,41.6,66.2,3030,7.6,91.5,0.53,Improving
+20,Denmark,Soy,75.1,60.8,2953,5.4,10.0,0.56,Improving
+21,Germany,Rice,80.9,85.4,2933,7.03,24.3,0.87,Strong
+22,Spain,Vegetables,53.4,73.0,3908,6.33,67.0,0.69,Improving
+23,Italy,Legumes,49.7,51.8,4546,5.18,115.8,0.89,Improving
+24,Portugal,Soy,81.3,72.3,2768,7.65,72.3,0.57,Improving
+25,Denmark,Legumes,44.6,76.7,4425,6.2,131.4,0.46,Improving
+26,Portugal,Maize,57.5,84.3,4685,6.52,80.8,0.87,Strong
+27,Chile,Coffee,64.0,74.9,2588,5.95,56.7,0.47,Improving
+28,Ireland,Fruit,44.3,75.9,5025,6.31,74.0,0.62,Improving
+29,Spain,Soy,18.0,68.0,4681,8.62,57.4,0.5,Needs Support
+30,Canada,Fruit,98.0,73.0,3500,6.56,61.8,0.68,Strong
+31,Australia,Maize,24.9,63.8,5063,5.02,170.5,0.33,Needs Support
+32,Germany,Wheat,12.4,61.8,4521,6.19,153.0,0.4,Needs Support
+33,South Korea,Wheat,33.4,57.5,2897,7.57,139.4,0.79,Improving
+34,Portugal,Legumes,44.1,70.2,2925,6.73,113.5,0.59,Improving
+35,Norway,Fruit,57.6,69.9,4036,7.36,97.2,0.81,Improving
+36,Spain,Coffee,31.6,69.8,5480,7.2,105.5,0.47,Improving
+37,Poland,Coffee,53.0,71.6,4010,7.89,26.7,0.64,Improving
+38,Kenya,Soy,84.5,77.5,2954,7.6,10.0,0.79,Strong
+39,New Zealand,Maize,31.4,45.4,3988,4.08,46.8,0.65,Needs Support
+40,Finland,Rice,41.1,93.2,3705,7.0,166.3,0.52,Improving
+41,Italy,Maize,76.2,83.9,5175,6.16,37.7,0.68,Strong
+42,Sweden,Maize,13.9,66.1,6048,7.21,145.7,0.64,Needs Support
+43,Italy,Coffee,9.0,83.9,6441,8.6,49.5,0.56,Improving
+44,Finland,Legumes,22.0,75.9,5244,5.9,90.2,0.31,Needs Support
+45,Norway,Soy,37.1,73.9,2932,7.93,41.9,0.51,Improving
+46,South Korea,Maize,63.3,78.4,3484,7.32,119.2,0.47,Improving
+47,Mexico,Legumes,0.0,75.8,3616,5.97,228.5,0.21,Needs Support
+48,Finland,Legumes,22.5,68.9,4592,8.63,36.2,0.66,Improving
+49,New Zealand,Legumes,11.0,44.8,5963,4.95,128.4,0.64,Needs Support
+50,Czechia,Rice,0.0,42.0,2243,4.87,92.7,0.39,Needs Support
+51,Italy,Rice,6.5,75.2,6188,5.01,174.6,0.43,Needs Support
+52,Japan,Maize,59.4,65.8,4040,8.0,176.7,0.84,Improving
+53,Germany,Maize,42.6,74.9,4217,5.74,64.3,0.57,Improving
+54,France,Coffee,44.1,65.2,4742,5.19,148.6,0.55,Improving
+55,Japan,Rice,56.0,75.2,4003,8.3,99.2,0.65,Improving
+56,New Zealand,Legumes,51.4,60.5,5066,6.93,48.1,0.79,Improving
+57,Germany,Maize,51.1,75.6,4205,6.65,67.1,0.67,Improving
+58,Mexico,Rice,89.6,47.2,4664,4.72,150.8,0.8,Improving
+59,Australia,Soy,57.5,66.5,3734,6.75,109.1,0.48,Improving
+60,France,Maize,0.0,43.1,3564,4.33,115.6,0.59,Needs Support
+61,Japan,Soy,54.8,70.3,3853,6.95,77.7,0.6,Improving
+62,Spain,Fruit,75.2,76.2,4377,7.03,40.3,0.57,Improving
+63,Portugal,Vegetables,63.0,68.6,1876,6.76,118.8,0.69,Improving
+64,Poland,Vegetables,34.3,64.0,3410,6.73,220.1,0.85,Improving
+65,Sweden,Fruit,23.1,42.8,3330,6.7,97.1,0.56,Needs Support
+66,Spain,Legumes,41.2,56.0,3787,3.92,37.5,0.73,Needs Support
+67,Denmark,Coffee,57.7,67.2,3309,5.11,107.1,0.57,Improving
+68,Chile,Vegetables,72.7,77.0,1129,8.04,106.7,0.44,Improving
+69,Denmark,Wheat,0.0,60.2,4811,5.79,180.9,0.53,Needs Support
+70,Kenya,Soy,48.8,50.2,5434,7.07,23.3,0.49,Needs Support
+71,New Zealand,Rice,73.4,87.9,4104,9.48,112.9,0.61,Strong
+72,Italy,Soy,60.1,70.8,3911,9.16,36.7,0.9,Strong
+73,Ireland,Rice,98.0,94.7,3920,8.5,158.9,0.44,Strong
+74,Japan,Rice,21.8,69.4,5767,6.35,169.8,0.55,Needs Support
+75,Ireland,Fruit,18.3,76.6,3721,8.49,98.8,0.59,Improving
+76,Sweden,Maize,63.1,79.7,5185,6.16,14.2,0.7,Improving
+77,Spain,Vegetables,89.3,67.7,2677,6.83,173.9,0.58,Improving
+78,Japan,Rice,13.6,58.0,6450,5.5,123.9,0.53,Needs Support
+79,Kenya,Fruit,51.2,77.8,2756,6.16,140.6,0.46,Improving
+80,Finland,Fruit,56.2,67.9,2967,6.02,10.0,0.84,Improving
+81,Mexico,Coffee,51.0,45.9,3910,6.52,97.3,0.62,Needs Support
+82,Ireland,Coffee,72.8,71.8,1313,5.0,120.4,0.81,Strong
+83,Sweden,Coffee,98.0,82.5,2150,4.77,10.0,0.7,Strong
+84,Kenya,Coffee,25.1,68.6,5117,7.82,120.8,0.65,Improving
+85,New Zealand,Rice,31.9,70.6,4456,6.98,192.7,0.61,Improving
+86,Finland,Maize,0.9,85.3,2285,8.36,37.1,0.36,Needs Support
+87,Finland,Wheat,60.3,52.9,1685,6.45,76.9,0.83,Improving
+88,New Zealand,Legumes,10.6,82.5,4190,7.84,94.4,0.86,Improving
+89,Poland,Coffee,43.3,76.9,3037,6.44,59.0,0.73,Improving
+90,Sweden,Maize,52.1,69.9,3813,5.87,53.9,0.44,Improving
+91,New Zealand,Wheat,74.7,58.7,900,5.21,25.1,0.57,Improving
+92,New Zealand,Coffee,38.7,68.4,2729,9.06,53.9,0.3,Needs Support
+93,Ireland,Coffee,27.3,71.3,2844,5.33,100.1,0.44,Needs Support
+94,Sweden,Rice,23.4,62.0,6508,8.32,130.4,0.76,Improving
+95,Spain,Wheat,65.6,68.1,4844,5.1,10.0,0.8,Improving
+96,Denmark,Soy,31.0,58.6,4810,4.85,67.7,0.44,Needs Support
+97,Denmark,Soy,41.5,57.1,1010,8.13,100.7,0.41,Needs Support
+98,Sweden,Maize,59.8,76.1,4835,7.33,151.0,0.51,Improving
+99,Sweden,Vegetables,83.7,80.0,5136,7.43,137.2,0.8,Strong
+100,South Korea,Vegetables,80.0,85.9,2379,6.16,70.4,0.74,Strong
