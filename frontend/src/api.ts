@@ -3,7 +3,8 @@ import type { DatasetInfo, State } from "./types";
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 // Unique session ID per browser tab — isolates state across tabs
-const _sessionId: string = crypto.randomUUID();
+const params = new URLSearchParams(window.location.search);
+const _sessionId: string = params.get("session") ?? crypto.randomUUID();
 export function getSessionId(): string {
   return _sessionId;
 }
