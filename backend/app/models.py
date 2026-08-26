@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.personality import AgentPersonality
+
 Role = Literal["user", "mediator"]
 
 
@@ -16,6 +18,7 @@ class Agent(BaseModel):
     energy: float = Field(ge=0.0, le=1.0)
     role: Role
     mbti_type: str | None = None
+    personality: AgentPersonality | None = None
 
     @field_validator("stance")
     @classmethod
@@ -113,6 +116,7 @@ class UserAgentInput(BaseModel):
     persona_text: str = Field(min_length=1, max_length=500)
     energy: float = Field(default=0.6, ge=0.0, le=1.0)
     mbti_type: str | None = None
+    personality: AgentPersonality | None = None
 
 
 class TopicRequest(BaseModel):
@@ -136,6 +140,7 @@ class ChatRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=80)
     agent_persona: str = Field(min_length=1, max_length=500)
     mbti_type: str = Field(default="", max_length=4)
+    personality: AgentPersonality | None = None
     messages: list[ChatMessageInput] = Field(default_factory=list)
     user_message: str = Field(min_length=1, max_length=500)
 

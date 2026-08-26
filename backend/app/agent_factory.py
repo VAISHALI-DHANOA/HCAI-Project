@@ -4,6 +4,7 @@ import re
 
 from app.ids import deterministic_agent_id
 from app.models import Agent, UserAgentInput
+from app.personality import normalize_personality
 
 QUIRK_FALLBACKS = [
     "asks unusual questions",
@@ -71,10 +72,20 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
             payload = raw
         else:
             payload = UserAgentInput.model_validate(raw)
+        personality = normalize_personality(
+            payload.personality,
+            payload.persona_text,
+            payload.mbti_type,
+        )
         quirks = extract_quirks(payload.persona_text)
         created.append(
             Agent(
-                id=deterministic_agent_id("user", payload.name, payload.persona_text, idx),
+                id=deterministic_agent_id(
+                    "user",
+                    payload.name,
+                    f"{payload.persona_text}|{personality.model_dump_json()}",
+                    idx,
+                ),
                 name=payload.name.strip(),
                 persona_text=payload.persona_text.strip(),
                 quirks=quirks,
@@ -82,6 +93,7 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
                 energy=payload.energy,
                 role="user",
                 mbti_type=payload.mbti_type,
+                personality=personality,
             )
         )
     return created

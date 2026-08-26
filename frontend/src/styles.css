@@ -1580,6 +1580,81 @@ button:disabled {
   border-radius: 4px;
 }
 
+.personality-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+
+.personality-summary p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.personality-summary small {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.personality-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--accent-secondary);
+  background: rgba(167, 139, 250, 0.12);
+  border: 1px solid rgba(167, 139, 250, 0.3);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+.personality-badge--small {
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.ocean-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-dim);
+  border-radius: var(--radius-md);
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.ocean-trait {
+  display: grid;
+  grid-template-columns: minmax(108px, 1fr) minmax(90px, 1.4fr) 24px;
+  align-items: center;
+  gap: 8px;
+}
+
+.ocean-trait__label {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ocean-trait__value {
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: right;
+}
+
 /* ================================================================
    DRAFT AGENT ROSTER
    ================================================================ */

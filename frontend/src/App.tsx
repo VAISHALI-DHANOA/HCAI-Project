@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
@@ -7,7 +7,7 @@ import { VisualCard } from "./components/VisualCard";
 import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
-import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
+import { createPersonalityFromPreset, getPersonalityPreset, OCEAN_SCALE, OCEAN_TRAITS, PERSONALITY_PRESETS } from "./personality";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
 
@@ -53,9 +53,9 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [mbtiMode, setMbtiMode] = useState<"pick" | "quiz">("pick");
-  const [mbtiPicks, setMbtiPicks] = useState<string[]>(["E", "S", "T", "J"]);
-  const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
+  const [personalityPresetId, setPersonalityPresetId] = useState("explorer");
+  const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset("explorer"));
+  const [personalityAdvancedOpen, setPersonalityAdvancedOpen] = useState(true);
   const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -299,7 +299,8 @@ export default function App() {
               name: a.name,
               persona_text: a.persona_text,
               energy: a.energy,
-              mbti_type: a.mbti_type ?? "ENTJ",
+              mbti_type: a.mbti_type,
+              personality: a.personality ?? createPersonalityFromPreset("custom"),
             })));
             setInputMode("dataset");
           } else {
@@ -413,12 +414,10 @@ export default function App() {
 
   const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
 
-  const currentMbtiType = useMemo(() => {
-    if (mbtiMode === "pick") return mbtiPicks.join("");
-    const allAnswered = quizAnswers.every((a) => a !== null);
-    if (!allAnswered) return "";
-    return scoreQuestionnaire(quizAnswers as number[]);
-  }, [mbtiMode, mbtiPicks, quizAnswers]);
+  const selectedPersonalityPreset = useMemo(
+    () => getPersonalityPreset(personalityPresetId),
+    [personalityPresetId],
+  );
 
   const chatLogEndRef = useRef<HTMLDivElement>(null);
 
@@ -439,39 +438,58 @@ export default function App() {
     }
   }
 
+  function updatePersonalityPreset(presetId: string) {
+    setPersonalityPresetId(presetId);
+    setPersonalityConfig(createPersonalityFromPreset(presetId));
+  }
+
+  function updateOceanTrait(trait: keyof typeof personalityConfig.ocean, value: number) {
+    setPersonalityConfig((prev) => ({
+      ...prev,
+      ocean: { ...prev.ocean, [trait]: value },
+    }));
+  }
+
+  function updateCustomInstructions(value: string) {
+    setPersonalityConfig((prev) => ({ ...prev, custom_instructions: value }));
+  }
+
+  function resetPersonalityDefaults() {
+    setPersonalityConfig((prev) => createPersonalityFromPreset(prev.preset_id, {
+      custom_instructions: prev.custom_instructions,
+    }));
+  }
+
   function onAddDraftAgent(event: FormEvent) {
     event.preventDefault();
-    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
+    if (!nameInput.trim() || !personaInput.trim()) return;
     setDraftAgents((prev) => [
       ...prev,
       {
         name: nameInput.trim(),
         persona_text: personaInput.trim(),
         energy: energyInput,
-        mbti_type: currentMbtiType,
+        personality: personalityConfig,
       },
     ]);
     setNameInput("");
     setPersonaInput("");
     setEnergyInput(0.6);
-    setMbtiPicks(["E", "S", "T", "J"]);
-    setQuizAnswers(Array(8).fill(null));
-    setMbtiMode("pick");
+    setPersonalityPresetId("explorer");
+    setPersonalityConfig(createPersonalityFromPreset("explorer"));
   }
 
   async function onSubmitAgent(event: FormEvent) {
     event.preventDefault();
-    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
+    if (!nameInput.trim() || !personaInput.trim()) return;
     setError("");
     try {
-      const enriched = enrichPersonaWithMBTI(personaInput.trim(), currentMbtiType);
-      await addAgentsWithMBTI([{ name: nameInput.trim(), persona_text: enriched, energy: energyInput, mbti_type: currentMbtiType }]);
+      await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), energy: energyInput, personality: personalityConfig }]);
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
-      setMbtiPicks(["E", "S", "T", "J"]);
-      setQuizAnswers(Array(8).fill(null));
-      setMbtiMode("pick");
+      setPersonalityPresetId("explorer");
+      setPersonalityConfig(createPersonalityFromPreset("explorer"));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit agent");
     }
@@ -503,11 +521,10 @@ export default function App() {
     setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     setChatLoading(true);
     try {
-      const enrichedPersona = enrichPersonaWithMBTI(testChatAgent.persona_text, testChatAgent.mbti_type);
       const result = await testChat(
         testChatAgent.name,
-        enrichedPersona,
-        testChatAgent.mbti_type,
+        testChatAgent.persona_text,
+        testChatAgent.personality,
         chatMessages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content })),
         userMsg
       );
@@ -569,11 +586,7 @@ export default function App() {
       const existingNames = new Set((state?.agents ?? []).map(a => a.name));
       const newDrafts = draftAgents.filter(a => !existingNames.has(a.name));
       if (newDrafts.length > 0) {
-        const enrichedAgents = newDrafts.map((a) => ({
-          ...a,
-          persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
-        }));
-        const result = await addAgentsWithMBTI(enrichedAgents);
+        const result = await addAgents(newDrafts);
         setStateValue(result.state);
       }
       setFeed([]);
@@ -649,15 +662,31 @@ export default function App() {
       const result = await loadDemo();
       setStateValue(result.state);
       setTopicInput(result.state.topic);
+      setDraftAgents(result.added.map((agent) => ({
+        name: agent.name,
+        persona_text: agent.persona_text,
+        energy: agent.energy,
+        mbti_type: agent.mbti_type,
+        personality: agent.personality ?? createPersonalityFromPreset("custom"),
+      })));
       setFeed([]);
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
       setDatasetInfo(null);
-      setAppPhase("arena");
+      setFullDatasetRows([]);
+      setAccumulatedHighlights([]);
+      setAccumulatedAnnotations([]);
+      setAgentTablePositions(new Map());
+      setDashboardMode(false);
+      setDashboardTransitioning(false);
+      setDashboardVisuals([]);
+      setInputMode("topic");
+      setSidePanelView("controls");
+      setAppPhase("setup");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load demo");
+      setError(e instanceof Error ? e.message : "Failed to load debate preset");
     }
   }
 
@@ -814,67 +843,57 @@ export default function App() {
                   onChange={(e) => setEnergyInput(Number(e.target.value))}
                 />
 
-                {/* MBTI Mode Tabs */}
-                <label className="form-label">Personality Type (MBTI)</label>
-                <div className="mbti-tabs">
-                  <button type="button" className={`mbti-tab${mbtiMode === "pick" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("pick")}>
-                    Pick MBTI
-                  </button>
-                  <button type="button" className={`mbti-tab${mbtiMode === "quiz" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("quiz")}>
-                    Questionnaire
-                  </button>
+                <label className="form-label">Personality</label>
+                <select value={personalityPresetId} onChange={(e) => updatePersonalityPreset(e.target.value)}>
+                  {PERSONALITY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.name}</option>
+                  ))}
+                  <option value="custom">Custom</option>
+                </select>
+
+                <div className="personality-summary">
+                  <span className="personality-badge">{personalityConfig.role_name}</span>
+                  <p>{selectedPersonalityPreset.description}</p>
+                  <small>{personalityConfig.role_goal}</small>
                 </div>
 
-                {mbtiMode === "pick" ? (
-                  <div className="mbti-picker">
-                    {MBTI_DIMENSIONS.map((dim, di) => (
-                      <div className="mbti-dimension" key={di}>
-                        <span className="mbti-dimension__label">{dim.label}</span>
-                        <div className="mbti-toggle-pair">
-                          {dim.options.map((opt, oi) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              className={`mbti-toggle__option${mbtiPicks[di] === opt ? " mbti-toggle__option--active" : ""}`}
-                              onClick={() => setMbtiPicks((prev) => { const next = [...prev]; next[di] = opt; return next; })}
-                              title={dim.descriptions[oi]}
-                            >
-                              {dim.fullLabels[oi]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setPersonalityAdvancedOpen((open) => !open)}
+                >
+                  {personalityAdvancedOpen ? "Hide OCEAN Traits" : "Edit OCEAN Traits"}
+                </button>
+
+                {personalityAdvancedOpen && (
+                  <div className="ocean-panel">
+                    {OCEAN_TRAITS.map((trait) => (
+                      <label className="ocean-trait" key={trait.key}>
+                        <span className="ocean-trait__label">{trait.label}</span>
+                        <input
+                          type="range"
+                          min={OCEAN_SCALE.min}
+                          max={OCEAN_SCALE.max}
+                          step={1}
+                          value={personalityConfig.ocean[trait.key]}
+                          onChange={(e) => updateOceanTrait(trait.key, Number(e.target.value))}
+                        />
+                        <span className="ocean-trait__value">{personalityConfig.ocean[trait.key]}</span>
+                      </label>
                     ))}
-                  </div>
-                ) : (
-                  <div className="mbti-questionnaire">
-                    {MBTI_QUESTIONS.map((q, qi) => (
-                      <div className="mbti-question" key={qi}>
-                        <p className="mbti-question__text">{q.question}</p>
-                        <div className="mbti-question__choices">
-                          <button
-                            type="button"
-                            className={`mbti-choice${quizAnswers[qi] === 0 ? " mbti-choice--selected" : ""}`}
-                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 0; return next; })}
-                          >
-                            {q.choiceA}
-                          </button>
-                          <button
-                            type="button"
-                            className={`mbti-choice${quizAnswers[qi] === 1 ? " mbti-choice--selected" : ""}`}
-                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 1; return next; })}
-                          >
-                            {q.choiceB}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                    <button type="button" onClick={resetPersonalityDefaults}>Reset to preset defaults</button>
                   </div>
                 )}
 
-                {currentMbtiType && <div className="mbti-badge">{currentMbtiType}</div>}
+                <label className="form-label">Additional Instructions (optional)</label>
+                <textarea
+                  value={personalityConfig.custom_instructions}
+                  onChange={(e) => updateCustomInstructions(e.target.value)}
+                  rows={2}
+                  placeholder="Add behavior notes for this agent..."
+                />
 
-                <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim() || !currentMbtiType}>
+                <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim()}>
                   {isAdmin ? "Add to Roster" : "Submit Agent"}
                 </button>
               </form>
@@ -907,7 +926,7 @@ export default function App() {
                         <div className="draft-agent-card__info">
                           <div className="draft-agent-card__header">
                             <span className="draft-agent-card__name">{agent.name}</span>
-                            <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>
+                            <span className="personality-badge personality-badge--small">{agent.personality.role_name}</span>
                           </div>
                           <p className="draft-agent-card__persona">{agent.persona_text}</p>
                           <div className="draft-agent-card__energy-bar">
@@ -947,7 +966,7 @@ export default function App() {
                         <div className="draft-agent-card__info">
                           <div className="draft-agent-card__header">
                             <span className="draft-agent-card__name">{agent.name}</span>
-                            {agent.mbti_type && <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>}
+                            {agent.personality && <span className="personality-badge personality-badge--small">{agent.personality.role_name}</span>}
                           </div>
                           <div className="draft-agent-card__energy-bar">
                             <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
@@ -966,7 +985,7 @@ export default function App() {
             {/* Action Buttons (admin only) */}
             {isAdmin && (
             <div className="setup-actions">
-              <button className="btn-demo" onClick={onLoadDemo}>Load Debate Demo</button>
+              <button className="btn-demo" onClick={onLoadDemo}>Load Debate Preset</button>
               <button className="btn-demo" onClick={onLoadDataDemo}>Load Data Analysis Demo</button>
               <button
                 className="launch-button"
@@ -1087,7 +1106,7 @@ export default function App() {
                         <div className="arena-node__avatar-wrap">
                           <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
                           {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
-                          {agent.mbti_type && <span className="arena-node__mbti-badge">{agent.mbti_type}</span>}
+                          {agent.personality && <span className="arena-node__mbti-badge">{agent.personality.role_name}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
                         <div className="arena-node__energy-bar">
@@ -1550,7 +1569,7 @@ export default function App() {
                 />
                 <div>
                   <div className="test-chat-modal__name">{testChatAgent.name}</div>
-                  <span className="mbti-badge mbti-badge--small">{testChatAgent.mbti_type}</span>
+                  <span className="personality-badge personality-badge--small">{testChatAgent.personality.role_name}</span>
                 </div>
               </div>
               <button className="test-chat-modal__close" onClick={closeTestChat}>X</button>

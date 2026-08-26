@@ -214,7 +214,6 @@ async def load_demo(session_id: str = Depends(get_session_id)) -> dict:
     store = SESSIONS.get_store(session_id)
     state = store.reset(topic)
     created = create_agents_from_user(topic, agents_raw)
-    state = store.add_agents(created)
     snapshot = state.model_dump()
     await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {
@@ -400,6 +399,7 @@ async def test_chat(payload: ChatRequest) -> dict:
         agent_name=payload.agent_name,
         agent_persona=payload.agent_persona,
         mbti_type=payload.mbti_type,
+        personality=payload.personality,
         messages=payload.messages,
         user_message=payload.user_message,
     )

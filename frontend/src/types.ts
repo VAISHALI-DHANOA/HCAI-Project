@@ -9,13 +9,44 @@ export interface Agent {
   energy: number;
   role: Role;
   mbti_type?: string;
+  personality?: AgentPersonality | null;
 }
 
 export interface DraftAgent {
   name: string;
   persona_text: string;
   energy: number;
-  mbti_type: string;
+  mbti_type?: string;
+  personality: AgentPersonality;
+}
+
+export interface OceanTraits {
+  openness: number;
+  conscientiousness: number;
+  extraversion: number;
+  agreeableness: number;
+  neuroticism: number;
+}
+
+export interface AgentPersonality {
+  preset_id: string;
+  role_name: string;
+  role_goal: string;
+  ocean: OceanTraits;
+  behavioral_rules: string[];
+  custom_instructions: string;
+  scale_version: string;
+  preset_version: string;
+  prompt_mapping_version: string;
+}
+
+export interface PersonalityPreset {
+  id: string;
+  name: string;
+  description: string;
+  role_goal: string;
+  ocean: OceanTraits;
+  behavioral_rules: string[];
 }
 
 export interface ChatMessage {

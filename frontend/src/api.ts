@@ -1,4 +1,4 @@
-import type { DatasetInfo, State } from "./types";
+import type { Agent, AgentPersonality, DatasetInfo, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -69,8 +69,8 @@ export async function reset(topic?: string): Promise<{ state: State }> {
   });
 }
 
-export async function loadDemo(): Promise<{ state: State }> {
-  return request<{ state: State }>("/demo", { method: "POST" });
+export async function loadDemo(): Promise<{ added: Agent[]; state: State }> {
+  return request<{ added: Agent[]; state: State }>("/demo", { method: "POST" });
 }
 
 export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; state: State }> {
@@ -109,8 +109,8 @@ export async function intervene(message: string): Promise<{ state: State }> {
   });
 }
 
-export async function addAgentsWithMBTI(
-  agents: Array<{ name: string; persona_text: string; energy: number; mbti_type: string }>
+export async function addAgents(
+  agents: Array<{ name: string; persona_text: string; energy: number; personality?: AgentPersonality; mbti_type?: string }>
 ): Promise<{ state: State }> {
   return request<{ state: State }>("/agents", {
     method: "POST",
@@ -121,13 +121,13 @@ export async function addAgentsWithMBTI(
 export async function testChat(
   agent_name: string,
   agent_persona: string,
-  mbti_type: string,
+  personality: AgentPersonality,
   messages: Array<{ role: string; content: string }>,
   user_message: string,
 ): Promise<{ reply: string }> {
   return request<{ reply: string }>("/chat", {
     method: "POST",
-    body: JSON.stringify({ agent_name, agent_persona, mbti_type, messages, user_message }),
+    body: JSON.stringify({ agent_name, agent_persona, personality, messages, user_message }),
   });
 }
 

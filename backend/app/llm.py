@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from app.models import Agent, PublicTurn, State
+from app.personality import build_personality_prompt, normalize_personality
 
 logger = logging.getLogger(__name__)
 
@@ -47,26 +48,6 @@ def _extract_json(text: str) -> dict | list | None:
         except json.JSONDecodeError:
             pass
     return None
-
-MBTI_DESCRIPTIONS = {
-    "E": "extraverted, energized by interaction",
-    "I": "introverted, energized by reflection",
-    "S": "sensing, focused on concrete facts",
-    "N": "intuitive, focused on patterns and possibilities",
-    "T": "thinking, logic-driven decisions",
-    "F": "feeling, values-driven decisions",
-    "J": "judging, prefers structure and planning",
-    "P": "perceiving, prefers flexibility and openness",
-}
-
-
-def _mbti_line(mbti_type: str | None) -> str:
-    if not mbti_type:
-        return ""
-    traits = [MBTI_DESCRIPTIONS.get(c, "") for c in mbti_type if c in MBTI_DESCRIPTIONS]
-    if not traits:
-        return ""
-    return f"\nYour MBTI type: {mbti_type} ({', '.join(traits)})\n"
 
 _client: Optional[anthropic.AsyncAnthropic] = None
 
@@ -140,36 +121,13 @@ def _build_chair_system_prompt(
     return base
 
 
-def _mbti_behavior(mbti_type: str | None) -> str:
-    if not mbti_type or len(mbti_type) != 4:
-        return ""
-    behaviors = []
-    if mbti_type[0] == "E":
-        behaviors.append("You speak up eagerly, react to others directly, and think out loud")
-    else:
-        behaviors.append("You pause before responding, choose words carefully, and reflect internally before sharing")
-    if mbti_type[1] == "S":
-        behaviors.append("You ground arguments in concrete examples, data, and real-world evidence")
-    else:
-        behaviors.append("You explore abstract possibilities, analogies, and big-picture implications")
-    if mbti_type[2] == "T":
-        behaviors.append("You prioritize logical consistency and point out flaws in reasoning")
-    else:
-        behaviors.append("You prioritize how ideas affect people and appeal to shared values")
-    if mbti_type[3] == "J":
-        behaviors.append("You push for decisions, closure, and clear action items")
-    else:
-        behaviors.append("You keep options open, explore alternatives, and resist premature conclusions")
-    return "\n".join(f"- {b}" for b in behaviors)
-
-
 def _build_user_system_prompt(
     agent: Agent, topic: str, round_number: int,
     dataset_context: str = "", human_request: str = "",
 ) -> str:
     active_quirk = agent.quirks[round_number % 3]
-    mbti = _mbti_line(agent.mbti_type)
-    mbti_behavior = _mbti_behavior(agent.mbti_type)
+    personality = normalize_personality(agent.personality, agent.persona_text, agent.mbti_type)
+    personality_prompt = build_personality_prompt(personality)
 
     human_directive = ""
     if human_request:
@@ -186,7 +144,6 @@ def _build_user_system_prompt(
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
         f"\n"
         f"Your persona: {agent.persona_text}\n"
-        f"{mbti}"
         f"Your traits: {', '.join(agent.quirks)}\n"
         f"Your current stance: {agent.stance}\n"
         f"Your energy level: {agent.energy}/1.0 (higher = more assertive and action-oriented; "
@@ -194,11 +151,10 @@ def _build_user_system_prompt(
         f"This is round {round_number} of the discussion.\n"
         f"{human_directive}"
         f"\n"
-        f"YOUR COMMUNICATION STYLE (follow these closely):\n"
-        f"{mbti_behavior}\n"
+        f"{personality_prompt}\n"
         f"\n"
         f"YOUR ROLE:\n"
-        f"- Stay true to your communication style above — it defines HOW you speak\n"
+        f"- Stay true to your functional role and personality expression above; they define HOW you speak\n"
         f"- Respond to what others have said; build on, challenge, or refine their ideas\n"
         f"- Your energy level should influence your tone: high energy = decisive and "
         f"action-oriented; low energy = reflective and cautious\n"
@@ -709,13 +665,17 @@ async def generate_dashboard_visual(
 
 
 def _build_test_chat_system_prompt(
-    agent_name: str, agent_persona: str, mbti_type: str,
+    agent_name: str,
+    agent_persona: str,
+    mbti_type: str,
+    personality: dict | None = None,
 ) -> str:
-    mbti = _mbti_line(mbti_type) if mbti_type else ""
+    agent_personality = normalize_personality(personality, agent_persona, mbti_type)
+    personality_prompt = build_personality_prompt(agent_personality)
     return (
         f'You are "{agent_name}", having a casual one-on-one conversation.\n'
         f"\nYour persona: {agent_persona}"
-        f"{mbti}\n"
+        f"\n\n{personality_prompt}\n"
         f"\nCONSTRAINTS:\n"
         f"- Stay in character at all times\n"
         f"- Respond in 1-2 short sentences maximum\n"
@@ -729,12 +689,13 @@ async def generate_test_chat_message(
     agent_name: str,
     agent_persona: str,
     mbti_type: str,
+    personality: dict | None,
     messages: list,
     user_message: str,
 ) -> str:
     try:
         client = get_client()
-        system_prompt = _build_test_chat_system_prompt(agent_name, agent_persona, mbti_type)
+        system_prompt = _build_test_chat_system_prompt(agent_name, agent_persona, mbti_type, personality)
 
         formatted_messages = []
         for msg in messages:
