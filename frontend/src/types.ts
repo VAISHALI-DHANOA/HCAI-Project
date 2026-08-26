@@ -126,9 +126,11 @@ export interface State {
   agents: Agent[];
   public_history: PublicTurn[];
   reactions: Reaction[];
+  rounds?: RoundResult[];
   world_state: Record<string, unknown>;
   dataset_summary?: string;
   dataset_columns?: string[];
+  moderator_strategy_id?: string;
 }
 
 export interface WsRoundEvent {
@@ -159,4 +161,12 @@ export interface DashboardVisual {
   agentColor: string;
   visual: VisualSpec;
   message: string;
+}
+
+export interface ModeratorStrategy {
+  id: string;
+  name: string;
+  description: string;
+  prompt_rules: string[];
+  version: string;
 }

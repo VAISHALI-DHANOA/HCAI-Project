@@ -1,4 +1,4 @@
-import type { Agent, AgentPersonality, DatasetInfo, State } from "./types";
+import type { Agent, AgentPersonality, DatasetInfo, ModeratorStrategy, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -71,6 +71,17 @@ export async function reset(topic?: string): Promise<{ state: State }> {
 
 export async function loadDemo(): Promise<{ added: Agent[]; state: State }> {
   return request<{ added: Agent[]; state: State }>("/demo", { method: "POST" });
+}
+
+export async function getModeratorStrategies(): Promise<{ strategies: ModeratorStrategy[] }> {
+  return request<{ strategies: ModeratorStrategy[] }>("/moderator-strategies");
+}
+
+export async function setModeratorStrategy(strategy_id: string): Promise<{ state: State }> {
+  return request<{ state: State }>("/moderator-strategy", {
+    method: "POST",
+    body: JSON.stringify({ strategy_id }),
+  });
 }
 
 export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; state: State }> {

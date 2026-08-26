@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from app.models import Agent, PublicTurn, State
+from app.moderator import build_moderator_strategy_prompt
 from app.personality import build_personality_prompt, normalize_personality
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,7 @@ DEFAULT_ROUND_PROMPT = "Continue exploring the data, building on all previous fi
 def _build_chair_system_prompt(
     agent: Agent, topic: str, round_number: int,
     dataset_context: str = "", human_request: str = "",
+    moderator_strategy_id: str = "baseline",
 ) -> str:
     human_directive = ""
     if human_request:
@@ -116,6 +118,7 @@ def _build_chair_system_prompt(
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
         f"- Write in a natural conversational tone as if speaking aloud in a meeting"
     )
+    base += build_moderator_strategy_prompt(moderator_strategy_id)
     if dataset_context:
         base += f"\n\nDATASET CONTEXT (the team is analyzing this data):\n{dataset_context}\n"
     return base
@@ -176,9 +179,12 @@ def _build_user_system_prompt(
 def build_system_prompt(
     agent: Agent, topic: str, round_number: int,
     dataset_context: str = "", human_request: str = "",
+    moderator_strategy_id: str = "baseline",
 ) -> str:
     if agent.role == "mediator":
-        return _build_chair_system_prompt(agent, topic, round_number, dataset_context, human_request)
+        return _build_chair_system_prompt(
+            agent, topic, round_number, dataset_context, human_request, moderator_strategy_id
+        )
     return _build_user_system_prompt(agent, topic, round_number, dataset_context, human_request)
 
 
@@ -275,6 +281,7 @@ async def generate_agent_message(
             agent, state.topic, state.round_number,
             dataset_context=state.dataset_summary,
             human_request=state.human_request,
+            moderator_strategy_id=state.moderator_strategy_id,
         )
         messages = _format_conversation_history(state, active_turns, agent)
 

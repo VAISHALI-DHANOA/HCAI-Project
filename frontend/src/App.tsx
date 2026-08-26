@@ -1,8 +1,8 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getModeratorStrategies, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
@@ -27,6 +27,20 @@ function agentColor(agent: Agent): string {
 
 function metricValue(value: number): string {
   return value.toFixed(3);
+}
+
+function authoritativeRoundCount(state: State | null): number {
+  return state?.rounds?.length ?? state?.round_number ?? 0;
+}
+
+function draftFromAgent(agent: Agent): DraftAgent {
+  return {
+    name: agent.name,
+    persona_text: agent.persona_text,
+    energy: agent.energy,
+    mbti_type: agent.mbti_type,
+    personality: agent.personality ?? createPersonalityFromPreset("custom"),
+  };
 }
 
 export default function App() {
@@ -59,6 +73,11 @@ export default function App() {
   const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
+  const [agentSettingsOpen, setAgentSettingsOpen] = useState(true);
+  const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
+  const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
+  const [chairSaving, setChairSaving] = useState(false);
   const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
@@ -85,17 +104,34 @@ export default function App() {
   const historyRef = useRef<HTMLDivElement>(null);
   const appPhaseRef = useRef(appPhase);
   appPhaseRef.current = appPhase;
-  const dashboardModeRef = useRef(false);
-  dashboardModeRef.current = dashboardMode;
-
+  const stateRef = useRef<State | null>(state);
+  stateRef.current = state;
   // Turn queue: incoming turns are queued and revealed one at a time
   // with 20s display + 3s gap between each message.
   const turnQueueRef = useRef<{ turn: PublicTurn; roundNumber: number }[]>([]);
   const pendingRoundRef = useRef<WsRoundEvent | null>(null);
+  const pendingRoundEventsRef = useRef<WsRoundEvent[]>([]);
   const displayTimerRef = useRef<number | null>(null);
 
   const processQueue = useCallback(() => {
     if (displayTimerRef.current !== null) return; // timer already active
+
+    const finalizeRoundDisplay = (roundNumber: number) => {
+      const idx = pendingRoundEventsRef.current.findIndex(
+        (event) => event.round_result.round_number === roundNumber,
+      );
+      if (idx < 0) return;
+      const [ev] = pendingRoundEventsRef.current.splice(idx, 1);
+      pendingRoundRef.current = null;
+      setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
+      setActiveTurnIdx(ev.round_result.turns.length - 1);
+      setShowReactions(true);
+      setFeed((prev) => (
+        prev.some((item) => item.round_result.round_number === ev.round_result.round_number)
+          ? prev
+          : [...prev, ev]
+      ));
+    };
 
     const queued = turnQueueRef.current.shift();
     if (queued) {
@@ -131,20 +167,15 @@ export default function App() {
 
       // Accumulate dashboard visuals for rounds 3+
       if (isDashboardRound && next.visual && next.speaker_id !== "human") {
-        // Ensure dashboard mode is active when we start receiving round 3+ turns
-        if (!dashboardModeRef.current) {
-          setDashboardTransitioning(false);
-          setDashboardMode(true);
-        }
         const speakerId = next.speaker_id;
         // Skip mediator/chair agents — they don't get dashboard cards
-        const speakerAgent = pendingRoundRef.current?.state_snapshot?.agents?.find(
+        const speakerAgent = stateRef.current?.agents?.find(
           (a: Agent) => a.id === speakerId
         );
         if (speakerAgent?.role !== "mediator") {
           setDashboardVisuals((prev) => {
             // Look up agent info from the state snapshot in the pending round
-            const agents = pendingRoundRef.current?.state_snapshot?.agents ?? [];
+            const agents = stateRef.current?.agents ?? [];
             const agent = agents.find((a: Agent) => a.id === speakerId);
             const color = agent ? agentColor(agent) : "#38bdf8";
             const dv: DashboardVisual = {
@@ -164,29 +195,23 @@ export default function App() {
 
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
+        const nextQueued = turnQueueRef.current[0];
+        if (nextQueued && nextQueued.roundNumber !== turnRoundNum) {
+          finalizeRoundDisplay(turnRoundNum);
+          displayTimerRef.current = window.setTimeout(() => {
+            displayTimerRef.current = null;
+            processQueue();
+          }, 12000);
+          return;
+        }
         processQueue();
       }, 12000); // 15s display + 3s gap
-    } else if (pendingRoundRef.current) {
+    } else if (pendingRoundEventsRef.current.length > 0) {
       // All turns displayed — finalize round after 15s for last turn
-      const ev = pendingRoundRef.current;
+      const ev = pendingRoundEventsRef.current[0];
       displayTimerRef.current = window.setTimeout(() => {
         displayTimerRef.current = null;
-        pendingRoundRef.current = null;
-        // Preserve human intervention turns across round boundaries
-        setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
-        setActiveTurnIdx(ev.round_result.turns.length - 1);
-        setShowReactions(true);
-        setFeed((prev) => [...prev, ev]);
-        setStateValue(ev.state_snapshot);
-
-        // Trigger dashboard transition after round 2 completes
-        if (ev.round_result.round_number === 2 && !dashboardModeRef.current) {
-          setDashboardTransitioning(true);
-          setTimeout(() => {
-            setDashboardTransitioning(false);
-            setDashboardMode(true);
-          }, 2000);
-        }
+        finalizeRoundDisplay(ev.round_result.round_number);
       }, 12000); // 15s display for last turn
     }
   }, []);
@@ -194,19 +219,41 @@ export default function App() {
   function clearTurnQueue() {
     turnQueueRef.current = [];
     pendingRoundRef.current = null;
+    pendingRoundEventsRef.current = [];
     if (displayTimerRef.current !== null) {
       clearTimeout(displayTimerRef.current);
       displayTimerRef.current = null;
     }
   }
 
+  const roundHistory: WsRoundEvent[] = useMemo(() => {
+    if (!state) return [];
+    return (state.rounds ?? []).map((round) => ({
+      type: "round",
+      round_result: round,
+      metrics: round.metrics,
+      state_snapshot: state,
+    }));
+  }, [state]);
+
+  const visibleModeratorStrategies = useMemo<ModeratorStrategy[]>(() => {
+    if (moderatorStrategies.length > 0) return moderatorStrategies;
+    return [{
+      id: "baseline",
+      name: "Current Chair",
+      description: "Existing Chair behavior used as the baseline condition.",
+      prompt_rules: [],
+      version: "moderator-strategies-v1",
+    }];
+  }, [moderatorStrategies]);
+
   const metrics: Metrics | null = useMemo(() => {
-    const roundMetric = feed[feed.length - 1]?.metrics;
+    const roundMetric = roundHistory[roundHistory.length - 1]?.metrics;
     if (roundMetric) return roundMetric;
     const snapshot = state?.world_state?.metrics;
     if (snapshot && typeof snapshot === "object") return snapshot as Metrics;
     return null;
-  }, [feed, state]);
+  }, [roundHistory, state]);
 
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
@@ -214,9 +261,36 @@ export default function App() {
     return map;
   }, [state]);
 
+  const storedDashboardVisuals = useMemo<DashboardVisual[]>(() => {
+    return roundHistory.flatMap((roundEvent) =>
+      roundEvent.round_result.turns
+        .filter((turn) => turn.visual && turn.speaker_id !== "human")
+        .map((turn) => {
+          const agent = agentMap.get(turn.speaker_id);
+          return {
+            id: `${roundEvent.round_result.round_number}-${turn.speaker_id}`,
+            roundNumber: roundEvent.round_result.round_number,
+            speakerId: turn.speaker_id,
+            agentName: agent?.name ?? "Unknown",
+            agentColor: agent ? agentColor(agent) : "#38bdf8",
+            visual: turn.visual!,
+            message: turn.message,
+          };
+        }),
+    );
+  }, [agentMap, roundHistory]);
+
+  const visibleDashboardVisuals = useMemo(() => {
+    const storedIds = new Set(storedDashboardVisuals.map((visual) => visual.id));
+    return [
+      ...storedDashboardVisuals,
+      ...dashboardVisuals.filter((visual) => !storedIds.has(visual.id)),
+    ];
+  }, [dashboardVisuals, storedDashboardVisuals]);
+
   const latestRound = useMemo(() => {
-    return feed.length > 0 ? feed[feed.length - 1] : null;
-  }, [feed]);
+    return roundHistory.length > 0 ? roundHistory[roundHistory.length - 1] : null;
+  }, [roundHistory]);
 
   const latestTurns = useMemo(() => {
     return latestRound?.round_result.turns ?? [];
@@ -289,19 +363,12 @@ export default function App() {
           setShowReactions(false);
           setLiveTurns([]);
           clearTurnQueue();
-          setSidePanelView("dashboard");
           // Admin stays in setup so they can add/modify agents; non-admin goes to arena
           const adminKey = params.get("adminKey") ?? params.get("admin");
           if (adminKey) {
             // Populate draft roster from demo agents so admin can review/add more
             const userAgents = (result.state.agents ?? []).filter((a: Agent) => a.role !== "mediator");
-            setDraftAgents(userAgents.map((a: Agent) => ({
-              name: a.name,
-              persona_text: a.persona_text,
-              energy: a.energy,
-              mbti_type: a.mbti_type,
-              personality: a.personality ?? createPersonalityFromPreset("custom"),
-            })));
+            setDraftAgents(userAgents.map(draftFromAgent));
             setInputMode("dataset");
           } else {
             setAppPhase("arena");
@@ -320,6 +387,10 @@ export default function App() {
           setError(e instanceof Error ? e.message : "Failed to load state");
         });
     }
+
+    getModeratorStrategies()
+      .then((data) => setModeratorStrategies(data.strategies))
+      .catch(() => setModeratorStrategies([]));
 
     const close = createWsClient(
       (event: WsEvent) => {
@@ -342,6 +413,8 @@ export default function App() {
         }
         // event.type === "round" — save for finalization after queue drains
         pendingRoundRef.current = event;
+        pendingRoundEventsRef.current.push(event);
+        applyRoundStateSnapshot(event.state_snapshot);
         processQueue();
       },
       (status) => setConnection(status)
@@ -382,15 +455,6 @@ export default function App() {
     speak(currentTurn.message, agentVoiceParams(speaker));
   }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
 
-  // Auto-advance: after the round finishes (summary shown), start the next round
-  useEffect(() => {
-    if (!showReactions || running) return;
-    const timer = setTimeout(() => {
-      onRun(1);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, [showReactions, running]);
-
   // Auto-scroll center stage history to bottom so recent turns are visible
   useEffect(() => {
     if (historyRef.current) {
@@ -398,21 +462,15 @@ export default function App() {
     }
   }, [liveTurns.length, activeTurnIdx]);
 
-  // Auto-scroll chat log when feed updates
+  // Auto-scroll chat log when stored round history updates
   useEffect(() => {
     if (sidebarCollapsed && chatLogRef.current) {
       chatLogRef.current.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" });
     }
-  }, [feed, sidebarCollapsed]);
-
-  // Auto-switch side panel to dashboard when dataset is present
-  useEffect(() => {
-    if (state?.dataset_summary) {
-      setSidePanelView("dashboard");
-    }
-  }, [state?.dataset_summary]);
+  }, [roundHistory, sidebarCollapsed]);
 
   const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
+  const completedRoundCount = authoritativeRoundCount(state);
 
   const selectedPersonalityPreset = useMemo(
     () => getPersonalityPreset(personalityPresetId),
@@ -420,6 +478,12 @@ export default function App() {
   );
 
   const chatLogEndRef = useRef<HTMLDivElement>(null);
+
+  function applyRoundStateSnapshot(snapshot: State) {
+    setStateValue((prev) => {
+      return authoritativeRoundCount(snapshot) >= authoritativeRoundCount(prev) ? snapshot : prev;
+    });
+  }
 
   // Scroll test chat to bottom when messages change
   useEffect(() => {
@@ -460,23 +524,38 @@ export default function App() {
     }));
   }
 
+  async function onChairStrategyChange(strategyId: string) {
+    setError("");
+    setChairSaving(true);
+    try {
+      const result = await setModeratorStrategy(strategyId);
+      applyRoundStateSnapshot(result.state);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update Chair strategy");
+    } finally {
+      setChairSaving(false);
+    }
+  }
+
   function onAddDraftAgent(event: FormEvent) {
     event.preventDefault();
     if (!nameInput.trim() || !personaInput.trim()) return;
-    setDraftAgents((prev) => [
-      ...prev,
-      {
-        name: nameInput.trim(),
-        persona_text: personaInput.trim(),
-        energy: energyInput,
-        personality: personalityConfig,
-      },
-    ]);
+    const draft = {
+      name: nameInput.trim(),
+      persona_text: personaInput.trim(),
+      energy: energyInput,
+      personality: personalityConfig,
+    };
+    setDraftAgents((prev) => {
+      if (editingDraftIndex === null) return [...prev, draft];
+      return prev.map((agent, idx) => idx === editingDraftIndex ? draft : agent);
+    });
     setNameInput("");
     setPersonaInput("");
     setEnergyInput(0.6);
     setPersonalityPresetId("explorer");
     setPersonalityConfig(createPersonalityFromPreset("explorer"));
+    setEditingDraftIndex(null);
   }
 
   async function onSubmitAgent(event: FormEvent) {
@@ -497,6 +576,28 @@ export default function App() {
 
   function removeDraftAgent(idx: number) {
     setDraftAgents((prev) => prev.filter((_, i) => i !== idx));
+    if (editingDraftIndex === idx) {
+      setEditingDraftIndex(null);
+      setNameInput("");
+      setPersonaInput("");
+      setEnergyInput(0.6);
+      setPersonalityPresetId("explorer");
+      setPersonalityConfig(createPersonalityFromPreset("explorer"));
+    } else if (editingDraftIndex !== null && editingDraftIndex > idx) {
+      setEditingDraftIndex(editingDraftIndex - 1);
+    }
+  }
+
+  function editDraftAgent(idx: number) {
+    const agent = draftAgents[idx];
+    if (!agent) return;
+    setEditingDraftIndex(idx);
+    setNameInput(agent.name);
+    setPersonaInput(agent.persona_text);
+    setEnergyInput(agent.energy);
+    setPersonalityPresetId(agent.personality.preset_id);
+    setPersonalityConfig(agent.personality);
+    setAgentSettingsOpen(true);
   }
 
   function openTestChat(agent: DraftAgent) {
@@ -590,7 +691,6 @@ export default function App() {
         setStateValue(result.state);
       }
       setFeed([]);
-      if (datasetInfo) setSidePanelView("dashboard");
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
@@ -601,7 +701,8 @@ export default function App() {
     setError("");
     try {
       setRunning(true);
-      await runRounds(rounds);
+      const result = await runRounds(rounds);
+      setStateValue(result.state);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Run failed");
     } finally {
@@ -705,7 +806,6 @@ export default function App() {
         setDatasetInfo(result.parsed);
         setFullDatasetRows(result.parsed.sample_rows);
       }
-      setSidePanelView("dashboard");
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load data demo");
@@ -748,7 +848,7 @@ export default function App() {
           )}
           <div className="round-counter">
             <span className="round-counter__label">Round</span>
-            <span className="round-counter__value">{state?.round_number ?? 0}</span>
+            <span className="round-counter__value">{completedRoundCount}</span>
           </div>
           <div className={`status ${connection}`}>
             <span className="status__dot" />
@@ -825,7 +925,15 @@ export default function App() {
 
             {/* Agent Creator */}
             <div className="section-block">
-              <h2 className="section-title">Create Agent</h2>
+              <div className="settings-header">
+                <h2 className="section-title">{editingDraftIndex === null ? "Add / Edit Agents" : "Edit Agent"}</h2>
+                {isAdmin && (
+                  <button type="button" className="settings-toggle" onClick={() => setAgentSettingsOpen((open) => !open)}>
+                    {agentSettingsOpen ? "Hide" : "Show"}
+                  </button>
+                )}
+              </div>
+              {agentSettingsOpen && (
               <form onSubmit={isAdmin ? onAddDraftAgent : onSubmitAgent} className="stacked-form">
                 <label className="form-label">Agent Name</label>
                 <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
@@ -894,10 +1002,59 @@ export default function App() {
                 />
 
                 <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim()}>
-                  {isAdmin ? "Add to Roster" : "Submit Agent"}
+                  {isAdmin ? (editingDraftIndex === null ? "Add to Roster" : "Save Agent") : "Submit Agent"}
                 </button>
+                {isAdmin && editingDraftIndex !== null && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingDraftIndex(null);
+                      setNameInput("");
+                      setPersonaInput("");
+                      setEnergyInput(0.6);
+                      setPersonalityPresetId("explorer");
+                      setPersonalityConfig(createPersonalityFromPreset("explorer"));
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
               </form>
+              )}
             </div>
+
+            {isAdmin && (
+              <div className="section-block">
+                <div className="settings-header">
+                  <h2 className="section-title">Chair Settings</h2>
+                  <button type="button" className="settings-toggle" onClick={() => setChairSettingsOpen((open) => !open)}>
+                    {chairSettingsOpen ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {chairSettingsOpen && (
+                  <div className="stacked-form">
+                    <label className="form-label">Chair Strategy</label>
+                    <select
+                      value={state?.moderator_strategy_id ?? "baseline"}
+                      onChange={(e) => onChairStrategyChange(e.target.value)}
+                      disabled={chairSaving}
+                    >
+                      {visibleModeratorStrategies.map((strategy) => (
+                        <option key={strategy.id} value={strategy.id}>{strategy.name}</option>
+                      ))}
+                    </select>
+                    {visibleModeratorStrategies
+                      .filter((strategy) => strategy.id === (state?.moderator_strategy_id ?? "baseline"))
+                      .map((strategy) => (
+                        <div className="personality-summary" key={strategy.id}>
+                          <span className="personality-badge">{strategy.name}</span>
+                          <p>{strategy.description}</p>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           {/* ---- RIGHT COLUMN: Roster ---- */}
@@ -934,6 +1091,7 @@ export default function App() {
                           </div>
                         </div>
                         <div className="draft-agent-card__actions">
+                          <button className="btn-test" onClick={() => editDraftAgent(idx)}>Edit</button>
                           <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
                           <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
                         </div>
@@ -1005,6 +1163,23 @@ export default function App() {
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
           <section className={`arena-viewport${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+            <div className="arena-view-switch">
+              <button
+                type="button"
+                className={`mbti-tab${!dashboardMode ? " mbti-tab--active" : ""}`}
+                onClick={() => setDashboardMode(false)}
+              >
+                Discussion
+              </button>
+              <button
+                type="button"
+                className={`mbti-tab${dashboardMode ? " mbti-tab--active" : ""}`}
+                onClick={() => setDashboardMode(true)}
+              >
+                Dashboard
+              </button>
+            </div>
+
             {/* Dashboard transition overlay */}
             {dashboardTransitioning && (
               <div className="dashboard-transition-overlay">
@@ -1017,7 +1192,7 @@ export default function App() {
               /* ---- DASHBOARD CANVAS ---- */
               <>
                 <DashboardCanvas
-                  visuals={dashboardVisuals}
+                  visuals={visibleDashboardVisuals}
                   agents={state?.agents ?? []}
                   agentMap={agentMap}
                   currentTurn={currentTurn}
@@ -1227,10 +1402,10 @@ export default function App() {
                 <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
               </div>
               <div className="chat-log" ref={chatLogRef}>
-                {feed.length === 0 && liveTurns.length === 0 && (
+                {roundHistory.length === 0 && liveTurns.length === 0 && (
                   <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                 )}
-                {feed.map((roundEvent) => (
+                {roundHistory.map((roundEvent) => (
                   <div key={roundEvent.round_result.round_number}>
                     <div className="chat-log__round-divider">
                       <span className="chat-log__round-divider-line" />
@@ -1266,7 +1441,7 @@ export default function App() {
                   <div>
                     <div className="chat-log__round-divider">
                       <span className="chat-log__round-divider-line" />
-                      <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
+                      <span className="chat-log__round-divider-text">Round {completedRoundCount || roundHistory.length + 1}</span>
                       <span className="chat-log__round-divider-line" />
                     </div>
                     {liveTurns.map((turn, ti) => {
@@ -1341,6 +1516,18 @@ export default function App() {
                         <label className="form-label">Interval (ms)</label>
                         <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
                       </div>
+                      <div className="control-row">
+                        <label className="form-label">Chair Strategy</label>
+                        <select
+                          value={state?.moderator_strategy_id ?? "baseline"}
+                          onChange={(e) => onChairStrategyChange(e.target.value)}
+                          disabled={chairSaving || running}
+                        >
+                          {visibleModeratorStrategies.map((strategy) => (
+                            <option key={strategy.id} value={strategy.id}>{strategy.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   )}
 
@@ -1391,7 +1578,7 @@ export default function App() {
                     <div className="info-grid">
                       <div className="info-item">
                         <span className="info-label">Round</span>
-                        <span className="info-value">{state?.round_number ?? 0}</span>
+                        <span className="info-value">{completedRoundCount}</span>
                       </div>
                       <div className="info-item">
                         <span className="info-label">Agents</span>
@@ -1408,13 +1595,13 @@ export default function App() {
                   <div className="section-block section-block--log">
                     <h2 className="section-title">
                       Conversation Log
-                      <span className="section-title__count">{feed.length}</span>
+                      <span className="section-title__count">{roundHistory.length}</span>
                     </h2>
                     <div className="chat-log" ref={chatLogRef}>
-                      {feed.length === 0 && liveTurns.length === 0 && (
+                      {roundHistory.length === 0 && liveTurns.length === 0 && (
                         <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                       )}
-                      {feed.map((roundEvent) => (
+                      {roundHistory.map((roundEvent) => (
                         <div key={roundEvent.round_result.round_number}>
                           <div className="chat-log__round-divider">
                             <span className="chat-log__round-divider-line" />
@@ -1450,7 +1637,7 @@ export default function App() {
                         <div>
                           <div className="chat-log__round-divider">
                             <span className="chat-log__round-divider-line" />
-                            <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
+                            <span className="chat-log__round-divider-text">Round {completedRoundCount || roundHistory.length + 1}</span>
                             <span className="chat-log__round-divider-line" />
                           </div>
                           {liveTurns.map((turn, ti) => {
@@ -1501,10 +1688,10 @@ export default function App() {
                     />
                   )}
                   <div className="dashboard-section">
-                    {feed.length === 0 ? (
+                    {roundHistory.length === 0 ? (
                       <div className="chat-log__empty">No analysis yet. Run a round to begin.</div>
                     ) : (
-                      feed.map((roundEvent) => {
+                      roundHistory.map((roundEvent) => {
                         const visuals = roundEvent.round_result.turns.filter(t => t.visual);
                         return (
                           <div className="dashboard-round-group" key={roundEvent.round_result.round_number}>

@@ -14,7 +14,8 @@ from fastapi.responses import JSONResponse, Response
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from app.agent_factory import create_agents_from_user
-from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
+from app.moderator import MODERATOR_STRATEGIES
+from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ModeratorStrategyRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
 from app.models import PublicTurn
 from app.simulation import run_round
 from app.state import SESSIONS
@@ -113,6 +114,25 @@ async def websocket_endpoint(websocket: WebSocket, session: str = Query(...)) ->
 async def set_topic(payload: TopicRequest, session_id: str = Depends(get_session_id)) -> dict:
     store = SESSIONS.get_store(session_id)
     state = store.set_topic(payload.topic.strip())
+    snapshot = state.model_dump()
+    await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
+    return {"state": snapshot}
+
+
+@app.get("/moderator-strategies")
+async def list_moderator_strategies() -> dict:
+    return {"strategies": [strategy.model_dump() for strategy in MODERATOR_STRATEGIES.values()]}
+
+
+@app.post("/moderator-strategy", dependencies=[Depends(verify_admin)])
+async def set_moderator_strategy(
+    payload: ModeratorStrategyRequest,
+    session_id: str = Depends(get_session_id),
+) -> dict:
+    if payload.strategy_id not in MODERATOR_STRATEGIES:
+        raise HTTPException(status_code=400, detail="Unknown moderator strategy")
+    store = SESSIONS.get_store(session_id)
+    state = store.set_moderator_strategy(payload.strategy_id)
     snapshot = state.model_dump()
     await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {"state": snapshot}

@@ -43,7 +43,7 @@ export function DashboardCanvas({
     return (
       <div className="dashboard-canvas">
         <div className="dashboard-canvas__empty">
-          <p>Dashboard is ready. Visuals will appear as agents create them.</p>
+          <p>No visual contributions have been generated for this discussion.</p>
         </div>
       </div>
     );

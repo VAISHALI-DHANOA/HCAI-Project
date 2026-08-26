@@ -105,10 +105,12 @@ class State(BaseModel):
     agents: list[Agent] = Field(default_factory=list)
     public_history: list[PublicTurn] = Field(default_factory=list)
     reactions: list[Reaction] = Field(default_factory=list)
+    rounds: list[RoundResult] = Field(default_factory=list)
     world_state: dict = Field(default_factory=dict)
     dataset_summary: str = ""
     dataset_columns: list[str] = Field(default_factory=list)
     human_request: str = ""
+    moderator_strategy_id: str = "baseline"
 
 
 class UserAgentInput(BaseModel):
@@ -129,6 +131,10 @@ class AddAgentsRequest(BaseModel):
 
 class RunRequest(BaseModel):
     rounds: int = Field(default=1, ge=1, le=50)
+
+
+class ModeratorStrategyRequest(BaseModel):
+    strategy_id: str = Field(min_length=1, max_length=80)
 
 
 class ChatMessageInput(BaseModel):

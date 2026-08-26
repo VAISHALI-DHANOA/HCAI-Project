@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import RLock
 
 from app.agent_factory import create_mediators
+from app.moderator import BASELINE_MODERATOR_STRATEGY_ID
 from app.models import Agent, RoundResult, State
 
 LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
@@ -19,6 +20,7 @@ class InMemoryStateStore:
             topic="Untitled classroom inquiry",
             agents=create_mediators(),
             world_state={"round": 0},
+            moderator_strategy_id=BASELINE_MODERATOR_STRATEGY_ID,
         )
         self._session_id: str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         self._round_log: list[dict] = []
@@ -33,6 +35,7 @@ class InMemoryStateStore:
             self._state.round_number = 0
             self._state.public_history.clear()
             self._state.reactions.clear()
+            self._state.rounds.clear()
             self._state.world_state = {"round": 0}
             for agent in self._state.agents:
                 if agent.role == "user":
@@ -46,6 +49,7 @@ class InMemoryStateStore:
             self._state.round_number = 0
             self._state.public_history.clear()
             self._state.reactions.clear()
+            self._state.rounds.clear()
             self._state.world_state = {"round": 0}
             return self._state
 
@@ -57,6 +61,7 @@ class InMemoryStateStore:
                 agents=create_mediators(),
                 world_state={"round": 0},
                 dataset_summary="",
+                moderator_strategy_id=BASELINE_MODERATOR_STRATEGY_ID,
             )
             self._session_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
             self._round_log = []
@@ -73,8 +78,17 @@ class InMemoryStateStore:
     def save_round(self, result: RoundResult) -> None:
         """Persist a round result to the session log and write to disk."""
         with self._lock:
-            self._round_log.append(result.model_dump())
+            existing = {round_result.round_number for round_result in self._state.rounds}
+            if result.round_number not in existing:
+                self._state.rounds.append(result)
+            self._round_log = [round_result.model_dump() for round_result in self._state.rounds]
             self._write_log_file()
+
+    def set_moderator_strategy(self, strategy_id: str) -> State:
+        with self._lock:
+            self._state.moderator_strategy_id = strategy_id
+            self._state.world_state["moderator_strategy_id"] = strategy_id
+            return self._state
 
     def get_full_log(self) -> dict:
         """Return the full conversation log for the current session."""
@@ -83,8 +97,9 @@ class InMemoryStateStore:
                 "session_id": self._session_id,
                 "exported_at": datetime.now(timezone.utc).isoformat(),
                 "topic": self._state.topic,
+                "moderator_strategy_id": self._state.moderator_strategy_id,
                 "agents": [a.model_dump() for a in self._state.agents],
-                "rounds": list(self._round_log),
+                "rounds": [round_result.model_dump() for round_result in self._state.rounds],
             }
 
     def _write_log_file(self) -> None:
@@ -92,8 +107,9 @@ class InMemoryStateStore:
         data = {
             "session_id": self._session_id,
             "topic": self._state.topic,
+            "moderator_strategy_id": self._state.moderator_strategy_id,
             "agents": [a.model_dump() for a in self._state.agents],
-            "rounds": list(self._round_log),
+            "rounds": [round_result.model_dump() for round_result in self._state.rounds],
         }
         log_path.write_text(json.dumps(data, indent=2, default=str))
 
