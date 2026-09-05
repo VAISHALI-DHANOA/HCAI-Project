@@ -14,6 +14,8 @@ from fastapi.responses import JSONResponse, Response
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from app.agent_factory import create_agents_from_user
+from app.config import TTS_MODEL
+from app.personality import get_personality_catalog
 from app.moderator import MODERATOR_STRATEGIES
 from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ModeratorStrategyRequest, ResetRequest, RunRequest, TopicRequest, TTSRequest
 from app.models import PublicTurn
@@ -122,6 +124,11 @@ async def set_topic(payload: TopicRequest, session_id: str = Depends(get_session
 @app.get("/moderator-strategies")
 async def list_moderator_strategies() -> dict:
     return {"strategies": [strategy.model_dump() for strategy in MODERATOR_STRATEGIES.values()]}
+
+
+@app.get("/personality-presets")
+async def list_personality_presets() -> dict:
+    return get_personality_catalog()
 
 
 @app.post("/moderator-strategy", dependencies=[Depends(verify_admin)])
@@ -418,12 +425,11 @@ async def test_chat(payload: ChatRequest) -> dict:
     reply = await generate_test_chat_message(
         agent_name=payload.agent_name,
         agent_persona=payload.agent_persona,
-        mbti_type=payload.mbti_type,
         personality=payload.personality,
         messages=payload.messages,
         user_message=payload.user_message,
     )
-    return {"reply": reply}
+    return {"reply": reply.text, "generation": reply.generation.model_dump()}
 
 
 @app.post("/tts")
@@ -438,7 +444,7 @@ async def text_to_speech(payload: TTSRequest) -> Response:
     client = AsyncOpenAI(api_key=api_key)
     try:
         response = await client.audio.speech.create(
-            model="tts-1",
+            model=TTS_MODEL,
             voice=payload.voice,
             input=payload.text,
         )

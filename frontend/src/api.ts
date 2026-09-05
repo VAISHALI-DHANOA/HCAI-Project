@@ -1,4 +1,4 @@
-import type { Agent, AgentPersonality, DatasetInfo, ModeratorStrategy, State } from "./types";
+import type { Agent, AgentPersonality, DatasetInfo, ModeratorStrategy, PersonalityCatalog, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -46,13 +46,8 @@ export async function setTopic(topic: string): Promise<{ state: State }> {
   });
 }
 
-export async function addAgent(name: string, persona_text: string, energy: number): Promise<{ state: State }> {
-  return request<{ state: State }>("/agents", {
-    method: "POST",
-    body: JSON.stringify({
-      user_agents: [{ name, persona_text, energy }]
-    })
-  });
+export async function getPersonalityCatalog(): Promise<PersonalityCatalog> {
+  return request<PersonalityCatalog>("/personality-presets");
 }
 
 export async function runRounds(rounds: number): Promise<{ state: State }> {
@@ -105,10 +100,6 @@ export async function uploadDataset(file: File): Promise<{ parsed: DatasetInfo; 
   return (await response.json()) as { parsed: DatasetInfo; state: State };
 }
 
-export async function loadDataDemo(): Promise<{ state: State; parsed?: DatasetInfo }> {
-  return request<{ state: State; parsed?: DatasetInfo }>("/demo-data", { method: "POST" });
-}
-
 export async function loadExample(name: string): Promise<{ state: State; parsed?: DatasetInfo }> {
   return request<{ state: State; parsed?: DatasetInfo }>(`/load-example?name=${encodeURIComponent(name)}`, { method: "POST" });
 }
@@ -121,7 +112,7 @@ export async function intervene(message: string): Promise<{ state: State }> {
 }
 
 export async function addAgents(
-  agents: Array<{ name: string; persona_text: string; energy: number; personality?: AgentPersonality; mbti_type?: string }>
+  agents: Array<{ name: string; persona_text: string; energy: number; personality: AgentPersonality }>
 ): Promise<{ state: State }> {
   return request<{ state: State }>("/agents", {
     method: "POST",

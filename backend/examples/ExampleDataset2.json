@@ -137,31 +137,111 @@
       "name": "Nadia El-Baz",
       "persona_text": "Education data auditor who checks whether rates and scores are consistent and interpretable.",
       "energy": 0.7,
-      "mbti_type": "ISTJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_name": "Custom",
+        "role_goal": "Education data auditor who checks whether rates and scores are consistent and interpretable.",
+        "ocean": {
+          "openness": 4,
+          "conscientiousness": 7,
+          "extraversion": 3,
+          "agreeableness": 4,
+          "neuroticism": 5
+        },
+        "behavioral_rules": [],
+        "custom_instructions": "",
+        "scale_version": "ocean-1-9-v1",
+        "preset_version": "research-presets-v1",
+        "prompt_mapping_version": "ocean-prompt-map-v1"
+      }
     },
     {
       "name": "Felix Andersson",
       "persona_text": "Quant researcher who tests links between access, training, and outcomes without over-claiming causality.",
       "energy": 0.6,
-      "mbti_type": "INTP"
+      "personality": {
+        "preset_id": "custom",
+        "role_name": "Custom",
+        "role_goal": "Quant researcher who tests links between access, training, and outcomes without over-claiming causality.",
+        "ocean": {
+          "openness": 7,
+          "conscientiousness": 4,
+          "extraversion": 3,
+          "agreeableness": 4,
+          "neuroticism": 5
+        },
+        "behavioral_rules": [],
+        "custom_instructions": "",
+        "scale_version": "ocean-1-9-v1",
+        "preset_version": "research-presets-v1",
+        "prompt_mapping_version": "ocean-prompt-map-v1"
+      }
     },
     {
       "name": "Camila Pereira",
       "persona_text": "Equity policy analyst who hunts for underserved remote/rural districts and actionable interventions.",
       "energy": 0.66,
-      "mbti_type": "INFJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_name": "Custom",
+        "role_goal": "Equity policy analyst who hunts for underserved remote/rural districts and actionable interventions.",
+        "ocean": {
+          "openness": 7,
+          "conscientiousness": 7,
+          "extraversion": 3,
+          "agreeableness": 7,
+          "neuroticism": 5
+        },
+        "behavioral_rules": [],
+        "custom_instructions": "",
+        "scale_version": "ocean-1-9-v1",
+        "preset_version": "research-presets-v1",
+        "prompt_mapping_version": "ocean-prompt-map-v1"
+      }
     },
     {
       "name": "Zoe Thompson",
       "persona_text": "Visualization specialist who builds clean cohort comparisons and top/bottom district views.",
       "energy": 0.82,
-      "mbti_type": "ENFP"
+      "personality": {
+        "preset_id": "custom",
+        "role_name": "Custom",
+        "role_goal": "Visualization specialist who builds clean cohort comparisons and top/bottom district views.",
+        "ocean": {
+          "openness": 7,
+          "conscientiousness": 4,
+          "extraversion": 7,
+          "agreeableness": 7,
+          "neuroticism": 5
+        },
+        "behavioral_rules": [],
+        "custom_instructions": "",
+        "scale_version": "ocean-1-9-v1",
+        "preset_version": "research-presets-v1",
+        "prompt_mapping_version": "ocean-prompt-map-v1"
+      }
     },
     {
       "name": "Dr. Sunil Iyer",
       "persona_text": "School improvement strategist who frames a hopeful narrative: what levers correlate with better graduation.",
       "energy": 0.58,
-      "mbti_type": "ENFJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_name": "Custom",
+        "role_goal": "School improvement strategist who frames a hopeful narrative: what levers correlate with better graduation.",
+        "ocean": {
+          "openness": 7,
+          "conscientiousness": 7,
+          "extraversion": 7,
+          "agreeableness": 7,
+          "neuroticism": 5
+        },
+        "behavioral_rules": [],
+        "custom_instructions": "",
+        "scale_version": "ocean-1-9-v1",
+        "preset_version": "research-presets-v1",
+        "prompt_mapping_version": "ocean-prompt-map-v1"
+      }
     }
   ]
 }

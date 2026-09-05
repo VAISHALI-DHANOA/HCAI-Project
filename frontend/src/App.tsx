@@ -1,13 +1,13 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
-import { createPersonalityFromPreset, getPersonalityPreset, OCEAN_SCALE, OCEAN_TRAITS, PERSONALITY_PRESETS } from "./personality";
+import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
 
@@ -34,22 +34,53 @@ function authoritativeRoundCount(state: State | null): number {
 }
 
 function draftFromAgent(agent: Agent): DraftAgent {
+  if (!agent.personality) throw new Error(`Missing personality configuration for ${agent.name}`);
   return {
     name: agent.name,
     persona_text: agent.persona_text,
     energy: agent.energy,
-    mbti_type: agent.mbti_type,
-    personality: agent.personality ?? createPersonalityFromPreset("custom"),
+    personality: agent.personality,
   };
 }
 
 export default function App() {
+  const [catalog, setCatalog] = useState<PersonalityCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setCatalogError("");
+    getPersonalityCatalog()
+      .then((data) => { if (active) setCatalog(data); })
+      .catch((error: unknown) => {
+        if (active) setCatalogError(error instanceof Error ? error.message : "Could not load personalities");
+      });
+    return () => { active = false; };
+  }, [attempt]);
+
+  if (!catalog) return (
+    <div className="app-shell">
+      <p role={catalogError ? "alert" : "status"}>{catalogError || "Loading personality settings…"}</p>
+      {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
+    </div>
+  );
+  return <Playground catalog={catalog} />;
+}
+
+function Playground({ catalog }: { catalog: PersonalityCatalog }) {
+  const OCEAN_SCALE = catalog.scale;
+  const OCEAN_TRAITS = catalog.traits;
+  const PERSONALITY_PRESETS = catalog.presets;
+  const getPersonalityPreset = (id: string) => findPreset(catalog, id);
+  const createPersonalityFromPreset = (
+    id: string,
+    overrides: Parameters<typeof clonePreset>[2] = {},
+  ) => clonePreset(catalog, id, overrides);
   const [state, setStateValue] = useState<State | null>(null);
   const [topicInput, setTopicInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [personaInput, setPersonaInput] = useState("");
   const [energyInput, setEnergyInput] = useState(0.6);
-  const [feed, setFeed] = useState<WsRoundEvent[]>([]);
   const [connection, setConnection] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState(false);
@@ -67,8 +98,8 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [personalityPresetId, setPersonalityPresetId] = useState("explorer");
-  const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset("explorer"));
+  const [personalityPresetId, setPersonalityPresetId] = useState(catalog.default_preset_id);
+  const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
   const [personalityAdvancedOpen, setPersonalityAdvancedOpen] = useState(true);
   const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
@@ -109,7 +140,6 @@ export default function App() {
   // Turn queue: incoming turns are queued and revealed one at a time
   // with 20s display + 3s gap between each message.
   const turnQueueRef = useRef<{ turn: PublicTurn; roundNumber: number }[]>([]);
-  const pendingRoundRef = useRef<WsRoundEvent | null>(null);
   const pendingRoundEventsRef = useRef<WsRoundEvent[]>([]);
   const displayTimerRef = useRef<number | null>(null);
 
@@ -122,15 +152,9 @@ export default function App() {
       );
       if (idx < 0) return;
       const [ev] = pendingRoundEventsRef.current.splice(idx, 1);
-      pendingRoundRef.current = null;
       setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
       setActiveTurnIdx(ev.round_result.turns.length - 1);
       setShowReactions(true);
-      setFeed((prev) => (
-        prev.some((item) => item.round_result.round_number === ev.round_result.round_number)
-          ? prev
-          : [...prev, ev]
-      ));
     };
 
     const queued = turnQueueRef.current.shift();
@@ -218,7 +242,6 @@ export default function App() {
 
   function clearTurnQueue() {
     turnQueueRef.current = [];
-    pendingRoundRef.current = null;
     pendingRoundEventsRef.current = [];
     if (displayTimerRef.current !== null) {
       clearTimeout(displayTimerRef.current);
@@ -236,16 +259,7 @@ export default function App() {
     }));
   }, [state]);
 
-  const visibleModeratorStrategies = useMemo<ModeratorStrategy[]>(() => {
-    if (moderatorStrategies.length > 0) return moderatorStrategies;
-    return [{
-      id: "baseline",
-      name: "Current Chair",
-      description: "Existing Chair behavior used as the baseline condition.",
-      prompt_rules: [],
-      version: "moderator-strategies-v1",
-    }];
-  }, [moderatorStrategies]);
+  const visibleModeratorStrategies = moderatorStrategies;
 
   const metrics: Metrics | null = useMemo(() => {
     const roundMetric = roundHistory[roundHistory.length - 1]?.metrics;
@@ -358,7 +372,6 @@ export default function App() {
             setDatasetInfo(result.parsed);
             setFullDatasetRows(result.parsed.sample_rows);
           }
-          setFeed([]);
           setActiveTurnIdx(-1);
           setShowReactions(false);
           setLiveTurns([]);
@@ -412,7 +425,6 @@ export default function App() {
           return;
         }
         // event.type === "round" — save for finalization after queue drains
-        pendingRoundRef.current = event;
         pendingRoundEventsRef.current.push(event);
         applyRoundStateSnapshot(event.state_snapshot);
         processQueue();
@@ -496,7 +508,6 @@ export default function App() {
     try {
       const result = await setTopic(topicInput.trim());
       setStateValue(result.state);
-      setFeed([]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to set topic");
     }
@@ -553,8 +564,8 @@ export default function App() {
     setNameInput("");
     setPersonaInput("");
     setEnergyInput(0.6);
-    setPersonalityPresetId("explorer");
-    setPersonalityConfig(createPersonalityFromPreset("explorer"));
+    setPersonalityPresetId(catalog.default_preset_id);
+    setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     setEditingDraftIndex(null);
   }
 
@@ -567,8 +578,8 @@ export default function App() {
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
-      setPersonalityPresetId("explorer");
-      setPersonalityConfig(createPersonalityFromPreset("explorer"));
+      setPersonalityPresetId(catalog.default_preset_id);
+      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit agent");
     }
@@ -581,8 +592,8 @@ export default function App() {
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
-      setPersonalityPresetId("explorer");
-      setPersonalityConfig(createPersonalityFromPreset("explorer"));
+      setPersonalityPresetId(catalog.default_preset_id);
+      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     } else if (editingDraftIndex !== null && editingDraftIndex > idx) {
       setEditingDraftIndex(editingDraftIndex - 1);
     }
@@ -690,7 +701,6 @@ export default function App() {
         const result = await addAgents(newDrafts);
         setStateValue(result.state);
       }
-      setFeed([]);
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
@@ -715,7 +725,6 @@ export default function App() {
     try {
       const result = await reset(topicInput.trim() || undefined);
       setStateValue(result.state);
-      setFeed([]);
       setAutoRun(false);
       setActiveTurnIdx(-1);
       setShowReactions(false);
@@ -763,14 +772,7 @@ export default function App() {
       const result = await loadDemo();
       setStateValue(result.state);
       setTopicInput(result.state.topic);
-      setDraftAgents(result.added.map((agent) => ({
-        name: agent.name,
-        persona_text: agent.persona_text,
-        energy: agent.energy,
-        mbti_type: agent.mbti_type,
-        personality: agent.personality ?? createPersonalityFromPreset("custom"),
-      })));
-      setFeed([]);
+      setDraftAgents(result.added.map(draftFromAgent));
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
@@ -797,7 +799,6 @@ export default function App() {
       const result = await loadExample("ExampleDataset1");
       setStateValue(result.state);
       setTopicInput(result.state.topic);
-      setFeed([]);
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
@@ -823,7 +824,6 @@ export default function App() {
       setTopicInput(result.state.topic);
       setDatasetInfo(result.parsed);
       setFullDatasetRows(result.parsed.sample_rows);
-      setFeed([]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to upload dataset");
     } finally {
@@ -870,12 +870,12 @@ export default function App() {
             {isAdmin && (
               <div className="section-block">
                 <h2 className="section-title">Mission Briefing</h2>
-                <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
-                  <button type="button" className={`mbti-tab${inputMode === "topic" ? " mbti-tab--active" : ""}`}
+                <div className="control-tabs" style={{ marginBottom: "8px" }}>
+                  <button type="button" className={`control-tab${inputMode === "topic" ? " control-tab--active" : ""}`}
                     onClick={() => setInputMode("topic")}>
                     Text Topic
                   </button>
-                  <button type="button" className={`mbti-tab${inputMode === "dataset" ? " mbti-tab--active" : ""}`}
+                  <button type="button" className={`control-tab${inputMode === "dataset" ? " control-tab--active" : ""}`}
                     onClick={() => setInputMode("dataset")}>
                     Upload Dataset
                   </button>
@@ -956,7 +956,6 @@ export default function App() {
                   {PERSONALITY_PRESETS.map((preset) => (
                     <option key={preset.id} value={preset.id}>{preset.name}</option>
                   ))}
-                  <option value="custom">Custom</option>
                 </select>
 
                 <div className="personality-summary">
@@ -1012,8 +1011,8 @@ export default function App() {
                       setNameInput("");
                       setPersonaInput("");
                       setEnergyInput(0.6);
-                      setPersonalityPresetId("explorer");
-                      setPersonalityConfig(createPersonalityFromPreset("explorer"));
+                      setPersonalityPresetId(catalog.default_preset_id);
+                      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
                     }}
                   >
                     Cancel Edit
@@ -1035,7 +1034,7 @@ export default function App() {
                   <div className="stacked-form">
                     <label className="form-label">Chair Strategy</label>
                     <select
-                      value={state?.moderator_strategy_id ?? "baseline"}
+                      value={state?.moderator_strategy_id ?? ""}
                       onChange={(e) => onChairStrategyChange(e.target.value)}
                       disabled={chairSaving}
                     >
@@ -1044,7 +1043,7 @@ export default function App() {
                       ))}
                     </select>
                     {visibleModeratorStrategies
-                      .filter((strategy) => strategy.id === (state?.moderator_strategy_id ?? "baseline"))
+                      .filter((strategy) => strategy.id === (state?.moderator_strategy_id ?? ""))
                       .map((strategy) => (
                         <div className="personality-summary" key={strategy.id}>
                           <span className="personality-badge">{strategy.name}</span>
@@ -1166,14 +1165,14 @@ export default function App() {
             <div className="arena-view-switch">
               <button
                 type="button"
-                className={`mbti-tab${!dashboardMode ? " mbti-tab--active" : ""}`}
+                className={`control-tab${!dashboardMode ? " control-tab--active" : ""}`}
                 onClick={() => setDashboardMode(false)}
               >
                 Discussion
               </button>
               <button
                 type="button"
-                className={`mbti-tab${dashboardMode ? " mbti-tab--active" : ""}`}
+                className={`control-tab${dashboardMode ? " control-tab--active" : ""}`}
                 onClick={() => setDashboardMode(true)}
               >
                 Dashboard
@@ -1281,7 +1280,7 @@ export default function App() {
                         <div className="arena-node__avatar-wrap">
                           <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
                           {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
-                          {agent.personality && <span className="arena-node__mbti-badge">{agent.personality.role_name}</span>}
+                          {agent.personality && <span className="arena-node__personality-badge">{agent.personality.role_name}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
                         <div className="arena-node__energy-bar">
@@ -1482,12 +1481,12 @@ export default function App() {
           ) : (
             <aside className="side-panel">
               {/* Tab selector */}
-              <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
-                <button type="button" className={`mbti-tab${sidePanelView === "controls" ? " mbti-tab--active" : ""}`}
+              <div className="control-tabs" style={{ marginBottom: "8px" }}>
+                <button type="button" className={`control-tab${sidePanelView === "controls" ? " control-tab--active" : ""}`}
                   onClick={() => setSidePanelView("controls")}>
                   Controls
                 </button>
-                <button type="button" className={`mbti-tab${sidePanelView === "dashboard" ? " mbti-tab--active" : ""}`}
+                <button type="button" className={`control-tab${sidePanelView === "dashboard" ? " control-tab--active" : ""}`}
                   onClick={() => setSidePanelView("dashboard")}>
                   Dashboard
                 </button>
@@ -1519,7 +1518,7 @@ export default function App() {
                       <div className="control-row">
                         <label className="form-label">Chair Strategy</label>
                         <select
-                          value={state?.moderator_strategy_id ?? "baseline"}
+                          value={state?.moderator_strategy_id ?? ""}
                           onChange={(e) => onChairStrategyChange(e.target.value)}
                           disabled={chairSaving || running}
                         >

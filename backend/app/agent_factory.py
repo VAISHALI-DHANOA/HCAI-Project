@@ -72,11 +72,7 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
             payload = raw
         else:
             payload = UserAgentInput.model_validate(raw)
-        personality = normalize_personality(
-            payload.personality,
-            payload.persona_text,
-            payload.mbti_type,
-        )
+        personality = normalize_personality(payload.personality)
         quirks = extract_quirks(payload.persona_text)
         created.append(
             Agent(
@@ -92,7 +88,6 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
                 stance=build_initial_stance(topic, quirks, payload.name.strip()),
                 energy=payload.energy,
                 role="user",
-                mbti_type=payload.mbti_type,
                 personality=personality,
             )
         )

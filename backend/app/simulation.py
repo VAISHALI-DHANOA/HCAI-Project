@@ -13,7 +13,6 @@ from app.llm import (
     generate_agent_message,
     generate_chair_summary,
     generate_visual_spec,
-    AGENT_COLORS,
 )
 from app.metrics import compute_emergent_metrics
 from app.models import (
@@ -22,6 +21,18 @@ from app.models import (
 )
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
+
+# Agent-specific highlight colors (with alpha for overlay)
+AGENT_COLORS = [
+    "#38bdf888",  # sky blue
+    "#f9731688",  # orange
+    "#a855f788",  # purple
+    "#22c55e88",  # green
+    "#ef444488",  # red
+    "#eab30888",  # yellow
+    "#ec489988",  # pink
+    "#06b6d488",  # cyan
+]
 
 EMOJIS = ["🙂", "🤔", "⚡", "📚", "🧩", "🌱", "🌀", "🛠️", "✨", "🧠"]
 
@@ -88,12 +99,12 @@ async def run_round(
 
     turns: list[PublicTurn] = []
     for speaker in speakers:
-        raw_message = await generate_agent_message(
+        generated = await generate_agent_message(
             agent=speaker,
             state=state,
             active_turns=turns,
         )
-        message = enforce_civility(raw_message)
+        message = enforce_civility(generated.text)
         message = truncate_to_words(message, 40)
 
         visual = None
@@ -179,7 +190,10 @@ async def run_round(
                     except Exception:
                         visual = None
 
-        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual, table_action=table_action)
+        turn = PublicTurn(
+            speaker_id=speaker.id, message=message, visual=visual,
+            table_action=table_action, generation=generated.generation,
+        )
         turns.append(turn)
         if on_turn:
             await on_turn(turn, state.round_number)
@@ -194,8 +208,10 @@ async def run_round(
 
     chair = next((a for a in state.agents if a.role == "mediator"), None)
     if chair:
-        summary_text = await generate_chair_summary(chair, state, turns)
-        summary_turn = PublicTurn(speaker_id=chair.id, message=summary_text)
+        summary = await generate_chair_summary(chair, state, turns)
+        summary_turn = PublicTurn(
+            speaker_id=chair.id, message=summary.text, generation=summary.generation,
+        )
         turns.append(summary_turn)
         if on_turn:
             await on_turn(summary_turn, state.round_number)

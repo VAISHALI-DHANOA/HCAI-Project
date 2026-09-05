@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import RLock
 
 from app.agent_factory import create_mediators
-from app.moderator import BASELINE_MODERATOR_STRATEGY_ID
+from app.moderator import DEFAULT_MODERATOR_STRATEGY_ID
 from app.models import Agent, RoundResult, State
 
 LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
@@ -20,10 +20,9 @@ class InMemoryStateStore:
             topic="Untitled classroom inquiry",
             agents=create_mediators(),
             world_state={"round": 0},
-            moderator_strategy_id=BASELINE_MODERATOR_STRATEGY_ID,
+            moderator_strategy_id=DEFAULT_MODERATOR_STRATEGY_ID,
         )
         self._session_id: str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        self._round_log: list[dict] = []
 
     def get_state(self) -> State:
         with self._lock:
@@ -61,10 +60,9 @@ class InMemoryStateStore:
                 agents=create_mediators(),
                 world_state={"round": 0},
                 dataset_summary="",
-                moderator_strategy_id=BASELINE_MODERATOR_STRATEGY_ID,
+                moderator_strategy_id=DEFAULT_MODERATOR_STRATEGY_ID,
             )
             self._session_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-            self._round_log = []
             return self._state
 
     def add_agents(self, new_agents: list[Agent]) -> State:
@@ -81,7 +79,6 @@ class InMemoryStateStore:
             existing = {round_result.round_number for round_result in self._state.rounds}
             if result.round_number not in existing:
                 self._state.rounds.append(result)
-            self._round_log = [round_result.model_dump() for round_result in self._state.rounds]
             self._write_log_file()
 
     def set_moderator_strategy(self, strategy_id: str) -> State:

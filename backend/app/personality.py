@@ -211,18 +211,6 @@ TRAIT_BEHAVIOR_MAP: dict[str, dict[Literal["low", "medium", "high"], list[str]]]
 }
 
 
-MBTI_TO_OCEAN_HINTS: dict[str, dict[str, int]] = {
-    "E": {"extraversion": 7},
-    "I": {"extraversion": 3},
-    "S": {"openness": 4},
-    "N": {"openness": 7},
-    "T": {"agreeableness": 4},
-    "F": {"agreeableness": 7},
-    "J": {"conscientiousness": 7},
-    "P": {"conscientiousness": 4},
-}
-
-
 def list_personality_presets() -> list[PersonalityPreset]:
     return list(PERSONALITY_PRESETS.values())
 
@@ -238,38 +226,29 @@ def personality_from_preset(preset_id: str) -> AgentPersonality:
     )
 
 
-def build_legacy_personality(persona_text: str, mbti_type: str | None = None) -> AgentPersonality:
-    values = OceanTraits().model_dump()
-    if mbti_type:
-        for letter in mbti_type:
-            values.update(MBTI_TO_OCEAN_HINTS.get(letter.upper(), {}))
-    return AgentPersonality(
-        preset_id="custom",
-        role_name="Custom",
-        role_goal=persona_text.strip()[:500] or CUSTOM_PERSONALITY.role_goal,
-        ocean=OceanTraits(**values),
-        custom_instructions=(
-            f"Legacy MBTI input: {mbti_type}. Preserve the user's persona text as the primary role context."
-            if mbti_type else ""
-        ),
-    )
-
-
-def normalize_personality(
-    raw: AgentPersonality | dict | None,
-    persona_text: str,
-    mbti_type: str | None = None,
-) -> AgentPersonality:
-    if raw is None:
-        return build_legacy_personality(persona_text, mbti_type)
+def normalize_personality(raw: AgentPersonality | dict) -> AgentPersonality:
+    """Validate the effective configuration; never infer personality from labels."""
     personality = raw if isinstance(raw, AgentPersonality) else AgentPersonality.model_validate(raw)
     preset = PERSONALITY_PRESETS.get(personality.preset_id)
-    if preset:
-        if not personality.role_name:
-            personality.role_name = preset.name
-        if not personality.role_goal:
-            personality.role_goal = preset.role_goal
+    if preset and not personality.role_goal:
+        return personality.model_copy(update={"role_goal": preset.role_goal})
     return personality
+
+
+def get_personality_catalog() -> dict:
+    presets = [*list_personality_presets(), CUSTOM_PERSONALITY]
+    return {
+        "default_preset_id": "explorer",
+        "traits": [{"key": trait, "label": trait.capitalize()} for trait in OCEAN_TRAITS],
+        "scale": {
+            "min": OCEAN_SCALE_MIN, "max": OCEAN_SCALE_MAX,
+            "mid": OCEAN_SCALE_MID, "version": OCEAN_SCALE_VERSION,
+        },
+        "presets": [
+            {**preset.model_dump(), "personality": personality_from_preset(preset.id).model_dump()}
+            for preset in presets
+        ],
+    }
 
 
 def _intensity(value: int) -> Literal["low", "medium", "high"]:

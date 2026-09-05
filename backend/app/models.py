@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.personality import AgentPersonality
+from app.moderator import DEFAULT_MODERATOR_STRATEGY_ID
 
 Role = Literal["user", "mediator"]
 
@@ -17,7 +18,6 @@ class Agent(BaseModel):
     stance: str
     energy: float = Field(ge=0.0, le=1.0)
     role: Role
-    mbti_type: str | None = None
     personality: AgentPersonality | None = None
 
     @field_validator("stance")
@@ -68,11 +68,22 @@ class TableAction(BaseModel):
     annotations: list[CellAnnotation] = Field(default_factory=list)
 
 
+class GenerationMetadata(BaseModel):
+    source: Literal["llm", "fallback"]
+    operation: Literal["discussion", "summary", "chat"]
+    model: str
+    max_tokens: int
+    temperature: float
+    timeout_seconds: float
+    error_type: str | None = None
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
     visual: VisualSpec | None = None
     table_action: TableAction | None = None
+    generation: GenerationMetadata | None = None
 
 
 class Reaction(BaseModel):
@@ -110,15 +121,16 @@ class State(BaseModel):
     dataset_summary: str = ""
     dataset_columns: list[str] = Field(default_factory=list)
     human_request: str = ""
-    moderator_strategy_id: str = "baseline"
+    moderator_strategy_id: str = DEFAULT_MODERATOR_STRATEGY_ID
 
 
 class UserAgentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(min_length=1, max_length=80)
     persona_text: str = Field(min_length=1, max_length=500)
     energy: float = Field(default=0.6, ge=0.0, le=1.0)
-    mbti_type: str | None = None
-    personality: AgentPersonality | None = None
+    personality: AgentPersonality
 
 
 class TopicRequest(BaseModel):
@@ -143,10 +155,11 @@ class ChatMessageInput(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     agent_name: str = Field(min_length=1, max_length=80)
     agent_persona: str = Field(min_length=1, max_length=500)
-    mbti_type: str = Field(default="", max_length=4)
-    personality: AgentPersonality | None = None
+    personality: AgentPersonality
     messages: list[ChatMessageInput] = Field(default_factory=list)
     user_message: str = Field(min_length=1, max_length=500)
 

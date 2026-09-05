@@ -8,7 +8,6 @@ export interface Agent {
   stance: string;
   energy: number;
   role: Role;
-  mbti_type?: string;
   personality?: AgentPersonality | null;
 }
 
@@ -16,7 +15,6 @@ export interface DraftAgent {
   name: string;
   persona_text: string;
   energy: number;
-  mbti_type?: string;
   personality: AgentPersonality;
 }
 
@@ -47,6 +45,14 @@ export interface PersonalityPreset {
   role_goal: string;
   ocean: OceanTraits;
   behavioral_rules: string[];
+  personality: AgentPersonality;
+}
+
+export interface PersonalityCatalog {
+  presets: PersonalityPreset[];
+  default_preset_id: string;
+  traits: Array<{ key: keyof OceanTraits; label: string }>;
+  scale: { min: number; max: number; mid: number; version: string };
 }
 
 export interface ChatMessage {
@@ -89,6 +95,17 @@ export interface PublicTurn {
   message: string;
   visual?: VisualSpec | null;
   table_action?: TableAction | null;
+  generation?: GenerationMetadata | null;
+}
+
+export interface GenerationMetadata {
+  source: "llm" | "fallback";
+  operation: "discussion" | "summary" | "chat";
+  model: string;
+  max_tokens: number;
+  temperature: number;
+  timeout_seconds: number;
+  error_type: string | null;
 }
 
 export interface DatasetInfo {
@@ -167,6 +184,8 @@ export interface ModeratorStrategy {
   id: string;
   name: string;
   description: string;
-  prompt_rules: string[];
+  opening_rules: string[];
+  summary_rules: string[];
+  summary_request: string;
   version: string;
 }

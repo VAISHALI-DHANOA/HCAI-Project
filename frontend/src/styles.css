@@ -1346,10 +1346,10 @@ button:disabled {
 }
 
 /* ================================================================
-   MBTI BADGE (on arena nodes)
+   Personality BADGE (on arena nodes)
    ================================================================ */
 
-.arena-node__mbti-badge {
+.arena-node__personality-badge {
   position: absolute;
   top: -2px;
   left: -2px;
@@ -1402,10 +1402,10 @@ button:disabled {
 }
 
 /* ================================================================
-   MBTI TABS (Pick / Questionnaire)
+   CONTROL TABS
    ================================================================ */
 
-.mbti-tabs {
+.control-tabs {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
@@ -1415,7 +1415,7 @@ button:disabled {
   border: 1px solid var(--border-dim);
 }
 
-.mbti-tab {
+.control-tab {
   padding: 6px 10px;
   font-size: 0.72rem;
   font-weight: 700;
@@ -1429,156 +1429,15 @@ button:disabled {
   transition: all 0.2s ease;
 }
 
-.mbti-tab--active {
+.control-tab--active {
   background: rgba(167, 139, 250, 0.15);
   color: var(--accent-secondary);
   border: 1px solid rgba(167, 139, 250, 0.3);
 }
 
 /* ================================================================
-   MBTI DIRECT PICKER (4 toggle pairs)
+   PERSONALITY CONTROLS
    ================================================================ */
-
-.mbti-picker {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-}
-
-.mbti-dimension {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.mbti-dimension__label {
-  font-size: 0.65rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.mbti-toggle-pair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  background: var(--bg-input);
-  border-radius: var(--radius-sm);
-  padding: 2px;
-  border: 1px solid var(--border-dim);
-}
-
-.mbti-toggle__option {
-  padding: 6px 10px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-}
-
-.mbti-toggle__option--active {
-  background: rgba(167, 139, 250, 0.2);
-  color: var(--accent-secondary);
-  box-shadow: 0 0 8px rgba(167, 139, 250, 0.2);
-}
-
-.mbti-toggle__option:hover:not(.mbti-toggle__option--active) {
-  color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-/* ================================================================
-   MBTI QUESTIONNAIRE
-   ================================================================ */
-
-.mbti-questionnaire {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.mbti-question {
-  background: var(--bg-card);
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-}
-
-.mbti-question__text {
-  margin: 0 0 8px;
-  font-size: 0.8rem;
-  line-height: 1.4;
-  color: var(--text-primary);
-}
-
-.mbti-question__choices {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.mbti-choice {
-  padding: 7px 10px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-align: left;
-  border: 1px solid var(--border-dim);
-  border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
-.mbti-choice:hover {
-  border-color: var(--accent-secondary);
-  color: var(--text-primary);
-}
-
-.mbti-choice--selected {
-  background: rgba(167, 139, 250, 0.15);
-  border-color: var(--accent-secondary);
-  color: var(--accent-secondary);
-  font-weight: 600;
-}
-
-/* ================================================================
-   MBTI BADGE
-   ================================================================ */
-
-.mbti-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 14px;
-  font-size: 1rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  color: var(--accent-secondary);
-  background: rgba(167, 139, 250, 0.12);
-  border: 1px solid rgba(167, 139, 250, 0.3);
-  border-radius: var(--radius-md);
-  text-align: center;
-}
-
-.mbti-badge--small {
-  padding: 2px 8px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  border-radius: 4px;
-}
 
 .personality-summary {
   display: flex;
@@ -2090,7 +1949,6 @@ button:disabled {
 .chat-log::-webkit-scrollbar,
 .setup-left::-webkit-scrollbar,
 .setup-right::-webkit-scrollbar,
-.mbti-questionnaire::-webkit-scrollbar,
 .test-chat-modal__messages::-webkit-scrollbar {
   width: 6px;
 }
@@ -2101,7 +1959,6 @@ button:disabled {
 .chat-log::-webkit-scrollbar-track,
 .setup-left::-webkit-scrollbar-track,
 .setup-right::-webkit-scrollbar-track,
-.mbti-questionnaire::-webkit-scrollbar-track,
 .test-chat-modal__messages::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -2112,7 +1969,6 @@ button:disabled {
 .chat-log::-webkit-scrollbar-thumb,
 .setup-left::-webkit-scrollbar-thumb,
 .setup-right::-webkit-scrollbar-thumb,
-.mbti-questionnaire::-webkit-scrollbar-thumb,
 .test-chat-modal__messages::-webkit-scrollbar-thumb {
   background: rgba(56, 189, 248, 0.2);
   border-radius: 3px;
@@ -2124,7 +1980,6 @@ button:disabled {
 .chat-log::-webkit-scrollbar-thumb:hover,
 .setup-left::-webkit-scrollbar-thumb:hover,
 .setup-right::-webkit-scrollbar-thumb:hover,
-.mbti-questionnaire::-webkit-scrollbar-thumb:hover,
 .test-chat-modal__messages::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.4);
 }
