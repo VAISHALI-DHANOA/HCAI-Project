@@ -63,14 +63,6 @@ def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> s
     return "The group explored diverse angles while maintaining constructive energy."
 
 
-def _drift_stance(agent: Agent, topic: str, round_number: int) -> None:
-    anchor = agent.quirks[round_number % 3]
-    tone = "collaborative trials" if agent.energy >= 0.5 else "careful checks"
-    agent.stance = (
-        f"{agent.name} now frames {topic} through {anchor}, favoring {tone} with civil debate."
-    )
-
-
 async def run_round(
     state: State,
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
@@ -201,10 +193,6 @@ async def run_round(
     speaker_ids = {speaker.id for speaker in speakers}
     non_speaking_users = [a for a in state.agents if a.role == "user" and a.id not in speaker_ids]
     reactions = [_reaction_for(agent, state.round_number) for agent in non_speaking_users]
-
-    for agent in state.agents:
-        if agent.role == "user":
-            _drift_stance(agent, state.topic, state.round_number)
 
     chair = next((a for a in state.agents if a.role == "mediator"), None)
     if chair:
