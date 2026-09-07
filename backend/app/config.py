@@ -14,7 +14,7 @@ class GenerationSettings:
 
 
 MODEL = "claude-haiku-4-5-20251001"
-DISCUSSION_SETTINGS = GenerationSettings(MODEL, max_tokens=80, temperature=0.85)
+DISCUSSION_SETTINGS = GenerationSettings(MODEL, max_tokens=100, temperature=0.85)
 SUMMARY_SETTINGS = GenerationSettings(MODEL, max_tokens=80, temperature=0.7)
 CHAT_SETTINGS = GenerationSettings(MODEL, max_tokens=100, temperature=0.85)
 VISUAL_SETTINGS = GenerationSettings(MODEL, max_tokens=500, temperature=0.7)

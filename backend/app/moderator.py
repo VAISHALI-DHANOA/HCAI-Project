@@ -33,7 +33,7 @@ MODERATOR_STRATEGIES: dict[str, ModeratorStrategy] = {
             "Acknowledge unresolved objections and distinguish tentative agreement from settled conclusions.",
             "Focus on themes and next steps, not listing who said what.",
         ],
-        summary_request="Summarize shared conclusions, unresolved concerns, and next steps in 30 words or fewer.",
+        summary_request="Summarize shared conclusions, unresolved concerns, and next steps in 20 words or fewer.",
     ),
     "facilitator": ModeratorStrategy(
         id="facilitator",
@@ -52,7 +52,7 @@ MODERATOR_STRATEGIES: dict[str, ModeratorStrategy] = {
             "Identify perspectives, assumptions, or questions that remain underexplored.",
             "Do not merge disagreement into a shared conclusion or push for a decision.",
         ],
-        summary_request="Summarize distinct perspectives, unresolved tensions, and an open question in 30 words or fewer.",
+        summary_request="Summarize distinct perspectives, unresolved tensions, and an open question in 20 words or fewer.",
     ),
     "devils_advocate": ModeratorStrategy(
         id="devils_advocate",
@@ -72,7 +72,7 @@ MODERATOR_STRATEGIES: dict[str, ModeratorStrategy] = {
             "Do not conclude with consensus or endorse the leading position merely because it is popular.",
             "Highlight when the discussion itself may be trapped in an overly narrow framing."
         ],
-        summary_request="Summarize the strongest counterargument, missing evidence, and a test of the leading claim in 30 words or fewer.",
+        summary_request="Summarize the strongest counterargument, missing evidence, and a test of the leading claim in 20 words or fewer.",
     ),
 }
 
