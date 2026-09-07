@@ -1,4 +1,4 @@
-import type { Agent, AgentPersonality, DatasetInfo, ModeratorStrategy, PersonalityCatalog, State } from "./types";
+import type { Agent, AgentPersonality, DatasetInfo, DraftAgent, ModeratorStrategy, PersonalityCatalog, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -117,6 +117,13 @@ export async function addAgents(
   return request<{ state: State }>("/agents", {
     method: "POST",
     body: JSON.stringify({ user_agents: agents }),
+  });
+}
+
+export async function syncAgents(agents: DraftAgent[], expected: State): Promise<{ state: State }> {
+  return request<{ state: State }>("/agents/sync", {
+    method: "POST",
+    body: JSON.stringify({ user_agents: agents, run_id: expected.run_id, revision: expected.revision }),
   });
 }
 

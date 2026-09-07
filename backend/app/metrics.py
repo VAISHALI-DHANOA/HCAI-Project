@@ -5,6 +5,8 @@ from collections import defaultdict
 from app.models import Agent, State
 from app.safety import BLOCKED_TERMS
 
+METRICS_POLICY_VERSION = "exclude-marked-fallback-v1"
+
 
 def _stance_signature(stance: str) -> frozenset[str]:
     tokens = [w.strip(".,;:!?").lower() for w in stance.split()]
@@ -61,6 +63,15 @@ def _civility_from_history(state: State) -> float:
 
 
 def compute_emergent_metrics(state: State) -> dict:
+    original = state
+    excluded = [turn for turn in state.public_history if turn.generation and turn.generation.source == "fallback"]
+    history = [turn for turn in state.public_history if not (turn.generation and turn.generation.source == "fallback")]
+    valid_ids = {turn.speaker_id for turn in history}
+    failed_only_ids = {turn.speaker_id for turn in excluded} - valid_ids
+    state = state.model_copy(update={
+        "public_history": history,
+        "agents": [agent for agent in state.agents if agent.id not in failed_only_ids],
+    })
     users = [a for a in state.agents if a.role == "user"]
     latest_text = _latest_agent_text(state)
     consensus = _pairwise_similarity(state)
@@ -68,9 +79,29 @@ def compute_emergent_metrics(state: State) -> dict:
     energy_spread = sum(abs(a.energy - avg_energy) for a in users) / max(len(users), 1)
     polarization = min(1.0, max(0.0, (1.0 - consensus) * 0.75 + energy_spread * 0.5))
     civility = _civility_from_history(state)
+    # Missing observations are not evidence of agreement. Otherwise retain the
+    # existing formulas, including stance context for agents who have not spoken.
+    insufficient = bool(excluded) and len(users) < 2
     return {
-        "consensus_score": round(consensus, 3),
-        "polarization_score": round(polarization, 3),
+        "consensus_score": None if insufficient else round(consensus, 3),
+        "polarization_score": None if insufficient else round(polarization, 3),
         "detected_coalitions": _coalition_ids(users, latest_text),
-        "civility_score": round(civility, 3),
+        "civility_score": None if excluded and not history else round(civility, 3),
+        "evaluation": {
+            "policy_version": METRICS_POLICY_VERSION,
+            "status": "insufficient_data" if insufficient else "available",
+            "excluded_fallback_turns": len(excluded),
+            "excluded_agent_ids": sorted(a.id for a in original.agents if a.id in failed_only_ids and a.role == "user"),
+            "eligible_participant_count": len(users),
+            "included_turns": len(history),
+            "prior_valid_text_agent_ids": sorted(
+                a.id for a in users
+                if a.id in valid_ids and next(
+                    (bool(t.generation and t.generation.source == "fallback")
+                     for t in reversed(original.public_history) if t.speaker_id == a.id), False
+                )
+            ),
+            "stance_only_agent_ids": sorted(a.id for a in users if a.id not in valid_ids),
+            "unannotated_turns_included": sum(turn.generation is None for turn in history),
+        },
     }

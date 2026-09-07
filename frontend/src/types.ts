@@ -12,6 +12,7 @@ export interface Agent {
 }
 
 export interface DraftAgent {
+  id?: string;
   name: string;
   persona_text: string;
   energy: number;
@@ -131,13 +132,21 @@ export interface RoundResult {
 }
 
 export interface Metrics {
-  consensus_score: number;
-  polarization_score: number;
-  civility_score: number;
+  consensus_score: number | null;
+  polarization_score: number | null;
+  civility_score: number | null;
   detected_coalitions: string[];
+  evaluation?: {
+    status: "available" | "insufficient_data";
+    excluded_fallback_turns: number;
+    eligible_participant_count: number;
+  };
 }
 
 export interface State {
+  human_request: string;
+  run_id: string;
+  revision: number;
   topic: string;
   round_number: number;
   agents: Agent[];
@@ -161,11 +170,13 @@ export interface WsTurnEvent {
   type: "turn";
   turn: PublicTurn;
   round_number: number;
+  run_id: string;
 }
 
 export interface WsStateEvent {
   type: "state";
   state_snapshot: State;
+  reset_playback?: boolean;
 }
 
 export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;

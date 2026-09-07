@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
+import { acceptsSnapshot, pendingHumanTurns, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
@@ -25,8 +26,8 @@ function agentColor(agent: Agent): string {
   return AGENT_COLORS[seed % AGENT_COLORS.length];
 }
 
-function metricValue(value: number): string {
-  return value.toFixed(3);
+function metricValue(value: number | null): string {
+  return value === null ? "N/A" : value.toFixed(3);
 }
 
 function authoritativeRoundCount(state: State | null): number {
@@ -36,6 +37,7 @@ function authoritativeRoundCount(state: State | null): number {
 function draftFromAgent(agent: Agent): DraftAgent {
   if (!agent.personality) throw new Error(`Missing personality configuration for ${agent.name}`);
   return {
+    id: agent.id,
     name: agent.name,
     persona_text: agent.persona_text,
     energy: agent.energy,
@@ -67,6 +69,17 @@ export default function App() {
   return <Playground catalog={catalog} />;
 }
 
+function HumanHistory({ turns }: { turns: PublicTurn[] }) {
+  const humanTurns = turns.filter((turn) => turn.speaker_id === "human");
+  if (!humanTurns.length) return null;
+  return (
+    <details>
+      <summary>Human input history ({humanTurns.length})</summary>
+      {humanTurns.map((turn, index) => <p key={index}><strong>You:</strong> {turn.message}</p>)}
+    </details>
+  );
+}
+
 function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
@@ -94,11 +107,11 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [appPhase, setAppPhase] = useState<AppPhase>("setup");
   const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
+  const draftBaseRef = useRef<State | null>(null);
   const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [personalityPresetId, setPersonalityPresetId] = useState(catalog.default_preset_id);
   const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
   const [personalityAdvancedOpen, setPersonalityAdvancedOpen] = useState(true);
   const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
@@ -115,9 +128,8 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
   const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
   const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
-  const [fullDatasetRows, setFullDatasetRows] = useState<Record<string, any>[]>([]);
+  const fullDatasetRows = datasetInfo?.sample_rows ?? [];
   const [dashboardMode, setDashboardMode] = useState(false);
-  const [dashboardTransitioning, setDashboardTransitioning] = useState(false);
   const [dashboardVisuals, setDashboardVisuals] = useState<DashboardVisual[]>([]);
   const { speak, stop: stopTTS } = useTTS();
 
@@ -152,7 +164,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       );
       if (idx < 0) return;
       const [ev] = pendingRoundEventsRef.current.splice(idx, 1);
-      setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
+      setLiveTurns((prev) => pendingHumanTurns(prev, stateRef.current?.human_request ?? ""));
       setActiveTurnIdx(ev.round_result.turns.length - 1);
       setShowReactions(true);
     };
@@ -366,11 +378,10 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       // Auto-load example dataset + agents from ?demo= param
       loadExample(demoName)
         .then((result) => {
-          setStateValue(result.state);
+          if (!applyStateSnapshot(result.state)) return;
           setTopicInput(result.state.topic);
           if (result.parsed) {
             setDatasetInfo(result.parsed);
-            setFullDatasetRows(result.parsed.sample_rows);
           }
           setActiveTurnIdx(-1);
           setShowReactions(false);
@@ -382,6 +393,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
             // Populate draft roster from demo agents so admin can review/add more
             const userAgents = (result.state.agents ?? []).filter((a: Agent) => a.role !== "mediator");
             setDraftAgents(userAgents.map(draftFromAgent));
+            draftBaseRef.current = result.state;
             setInputMode("dataset");
           } else {
             setAppPhase("arena");
@@ -393,8 +405,12 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     } else {
       getState()
         .then((data) => {
-          setStateValue(data);
+          if (!applyStateSnapshot(data)) return;
           setTopicInput(data.topic);
+          if (isAdmin) {
+            setDraftAgents(data.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+            draftBaseRef.current = data;
+          }
         })
         .catch((e: unknown) => {
           setError(e instanceof Error ? e.message : "Failed to load state");
@@ -408,10 +424,11 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     const close = createWsClient(
       (event: WsEvent) => {
         if (event.type === "state") {
-          setStateValue(event.state_snapshot);
+          applyStateSnapshot(event.state_snapshot, event.reset_playback);
           return;
         }
         if (event.type === "turn") {
+          if (stateRef.current?.run_id !== event.run_id) return;
           // Human interventions are shown locally on submit — skip WebSocket echo
           if (event.turn.speaker_id === "human") return;
           // Auto-transition students to arena when debate starts
@@ -425,8 +442,10 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
           return;
         }
         // event.type === "round" — save for finalization after queue drains
-        pendingRoundEventsRef.current.push(event);
-        applyRoundStateSnapshot(event.state_snapshot);
+        if (!applyStateSnapshot(event.state_snapshot)) return;
+        if (!pendingRoundEventsRef.current.some((pending) => pending.round_result.round_number === event.round_result.round_number)) {
+          pendingRoundEventsRef.current.push(event);
+        }
         processQueue();
       },
       (status) => setConnection(status)
@@ -485,16 +504,50 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   const completedRoundCount = authoritativeRoundCount(state);
 
   const selectedPersonalityPreset = useMemo(
-    () => getPersonalityPreset(personalityPresetId),
-    [personalityPresetId],
+    () => getPersonalityPreset(personalityConfig.preset_id),
+    [personalityConfig.preset_id],
   );
 
   const chatLogEndRef = useRef<HTMLDivElement>(null);
 
-  function applyRoundStateSnapshot(snapshot: State) {
-    setStateValue((prev) => {
-      return authoritativeRoundCount(snapshot) >= authoritativeRoundCount(prev) ? snapshot : prev;
-    });
+  function applyStateSnapshot(snapshot: State, resetPlayback = false): boolean {
+    const previous = stateRef.current;
+    if (!acceptsSnapshot(previous, snapshot)) return false;
+    const newRun = previous !== null && previous.run_id !== snapshot.run_id;
+    if (draftBaseRef.current && sameRoster(draftBaseRef.current, snapshot)) {
+      draftBaseRef.current = snapshot;
+    }
+    if (newRun || resetPlayback) {
+      clearTurnQueue();
+      stopTTS();
+      setLiveTurns([]);
+      setActiveTurnIdx(-1);
+      setShowReactions(false);
+      setDashboardVisuals([]);
+      const actions = snapshot.public_history.flatMap((turn) => turn.table_action ? [{ turn, action: turn.table_action }] : []);
+      setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
+      setAccumulatedAnnotations(actions.flatMap(({ action }) => action.annotations));
+      setAgentTablePositions(new Map(actions.map(({ turn, action }) => [
+        turn.speaker_id, { agentId: turn.speaker_id, ...action.navigate_to },
+      ])));
+    }
+    if (newRun) {
+      setAutoRun(false);
+      setAppPhase("setup");
+      setTopicInput(snapshot.topic);
+      setDatasetInfo(null);
+      setDashboardMode(false);
+      setSidePanelView("controls");
+      setInputMode(snapshot.dataset_summary ? "dataset" : "topic");
+      if (!sameRoster(previous!, snapshot)) {
+        setDraftAgents(snapshot.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+        draftBaseRef.current = snapshot;
+        setEditingDraftIndex(null);
+      }
+    }
+    stateRef.current = snapshot;
+    setStateValue(snapshot);
+    return true;
   }
 
   // Scroll test chat to bottom when messages change
@@ -507,14 +560,13 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setError("");
     try {
       const result = await setTopic(topicInput.trim());
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to set topic");
     }
   }
 
   function updatePersonalityPreset(presetId: string) {
-    setPersonalityPresetId(presetId);
     setPersonalityConfig(createPersonalityFromPreset(presetId));
   }
 
@@ -540,7 +592,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setChairSaving(true);
     try {
       const result = await setModeratorStrategy(strategyId);
-      applyRoundStateSnapshot(result.state);
+      applyStateSnapshot(result.state);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to update Chair strategy");
     } finally {
@@ -551,7 +603,9 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   function onAddDraftAgent(event: FormEvent) {
     event.preventDefault();
     if (!nameInput.trim() || !personaInput.trim()) return;
-    const draft = {
+    if (!draftBaseRef.current) draftBaseRef.current = stateRef.current;
+    const draft: DraftAgent = {
+      id: editingDraftIndex === null ? undefined : draftAgents[editingDraftIndex]?.id,
       name: nameInput.trim(),
       persona_text: personaInput.trim(),
       energy: energyInput,
@@ -564,7 +618,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setNameInput("");
     setPersonaInput("");
     setEnergyInput(0.6);
-    setPersonalityPresetId(catalog.default_preset_id);
     setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     setEditingDraftIndex(null);
   }
@@ -578,7 +631,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
-      setPersonalityPresetId(catalog.default_preset_id);
       setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit agent");
@@ -592,7 +644,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
-      setPersonalityPresetId(catalog.default_preset_id);
       setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
     } else if (editingDraftIndex !== null && editingDraftIndex > idx) {
       setEditingDraftIndex(editingDraftIndex - 1);
@@ -606,7 +657,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setNameInput(agent.name);
     setPersonaInput(agent.persona_text);
     setEnergyInput(agent.energy);
-    setPersonalityPresetId(agent.personality.preset_id);
     setPersonalityConfig(agent.personality);
     setAgentSettingsOpen(true);
   }
@@ -686,21 +736,25 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   }
 
   async function launchArena() {
-    const hasBackendAgents = (state?.agents ?? []).filter(a => a.role !== "mediator").length > 0;
-    if ((!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && !hasBackendAgents)) return;
+    if ((!topicInput.trim() && !datasetInfo) || !stateRef.current) return;
     setError("");
     try {
-      // In dataset mode the topic was already set by the upload endpoint
+      let expected = draftBaseRef.current ?? stateRef.current;
+      if (expected.run_id !== stateRef.current.run_id || expected.revision !== stateRef.current.revision) {
+        throw new Error("The roster changed in another request. Reload the page before saving.");
+      }
+      const drafts = draftAgents;
+      // A topic change starts a new discussion; retain its returned revision so
+      // an intervening request cannot be silently overwritten by roster sync.
       if (!datasetInfo) {
-        await setTopic(topicInput.trim());
+        const topicResult = await setTopic(topicInput.trim());
+        if (!applyStateSnapshot(topicResult.state)) return;
+        expected = topicResult.state;
       }
-      // Only add agents that aren't already loaded on the backend (e.g. from ?demo=)
-      const existingNames = new Set((state?.agents ?? []).map(a => a.name));
-      const newDrafts = draftAgents.filter(a => !existingNames.has(a.name));
-      if (newDrafts.length > 0) {
-        const result = await addAgents(newDrafts);
-        setStateValue(result.state);
-      }
+      const result = await syncAgents(drafts, expected);
+      if (!applyStateSnapshot(result.state)) return;
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      draftBaseRef.current = result.state;
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
@@ -712,7 +766,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     try {
       setRunning(true);
       const result = await runRounds(rounds);
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Run failed");
     } finally {
@@ -724,7 +778,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setError("");
     try {
       const result = await reset(topicInput.trim() || undefined);
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setAutoRun(false);
       setActiveTurnIdx(-1);
       setShowReactions(false);
@@ -732,13 +786,12 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       clearTurnQueue();
       setAppPhase("setup");
       setDraftAgents([]);
+      draftBaseRef.current = result.state;
       setDatasetInfo(null);
-      setFullDatasetRows([]);
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
       setDashboardMode(false);
-      setDashboardTransitioning(false);
       setDashboardVisuals([]);
       setInputMode("topic");
       setSidePanelView("controls");
@@ -754,7 +807,8 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setError("");
     try {
       setIntervening(true);
-      await intervene(msg);
+      const result = await intervene(msg);
+      if (!applyStateSnapshot(result.state)) return;
       // Show immediately in center stage and logs (don't wait for WebSocket)
       const turn: PublicTurn = { speaker_id: "human", message: msg };
       setLiveTurns((prev) => [...prev, turn]);
@@ -770,20 +824,22 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setError("");
     try {
       const result = await loadDemo();
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
-      setDraftAgents(result.added.map(draftFromAgent));
+      setDraftAgents(result.added.map((agent) => {
+        const { id, ...draft } = draftFromAgent(agent);
+        return draft;
+      }));
+      draftBaseRef.current = result.state;
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
       setDatasetInfo(null);
-      setFullDatasetRows([]);
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
       setDashboardMode(false);
-      setDashboardTransitioning(false);
       setDashboardVisuals([]);
       setInputMode("topic");
       setSidePanelView("controls");
@@ -797,7 +853,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setError("");
     try {
       const result = await loadExample("ExampleDataset1");
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
       setActiveTurnIdx(-1);
       setShowReactions(false);
@@ -805,7 +861,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
       clearTurnQueue();
       if (result.parsed) {
         setDatasetInfo(result.parsed);
-        setFullDatasetRows(result.parsed.sample_rows);
       }
       setAppPhase("arena");
     } catch (e: unknown) {
@@ -820,10 +875,9 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     setUploading(true);
     try {
       const result = await uploadDataset(file);
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
       setDatasetInfo(result.parsed);
-      setFullDatasetRows(result.parsed.sample_rows);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to upload dataset");
     } finally {
@@ -952,7 +1006,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                 />
 
                 <label className="form-label">Personality</label>
-                <select value={personalityPresetId} onChange={(e) => updatePersonalityPreset(e.target.value)}>
+                <select value={personalityConfig.preset_id} onChange={(e) => updatePersonalityPreset(e.target.value)}>
                   {PERSONALITY_PRESETS.map((preset) => (
                     <option key={preset.id} value={preset.id}>{preset.name}</option>
                   ))}
@@ -1011,7 +1065,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                       setNameInput("");
                       setPersonaInput("");
                       setEnergyInput(0.6);
-                      setPersonalityPresetId(catalog.default_preset_id);
                       setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
                     }}
                   >
@@ -1179,13 +1232,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
               </button>
             </div>
 
-            {/* Dashboard transition overlay */}
-            {dashboardTransitioning && (
-              <div className="dashboard-transition-overlay">
-                <div className="dashboard-transition-overlay__spinner" />
-                <p className="dashboard-transition-overlay__text">Building dashboard...</p>
-              </div>
-            )}
 
             {dashboardMode ? (
               /* ---- DASHBOARD CANVAS ---- */
@@ -1404,6 +1450,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                 {roundHistory.length === 0 && liveTurns.length === 0 && (
                   <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                 )}
+                <HumanHistory turns={state?.public_history ?? []} />
                 {roundHistory.map((roundEvent) => (
                   <div key={roundEvent.round_result.round_number}>
                     <div className="chat-log__round-divider">
@@ -1535,24 +1582,27 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                     <h2 className="section-title">Battle Metrics</h2>
                     {metrics ? (
                       <div className="metrics">
+                        {!!metrics.evaluation?.excluded_fallback_turns && (
+                          <p role="status">{metrics.evaluation.excluded_fallback_turns} fallback turns excluded. {metrics.evaluation.status === "insufficient_data" ? "Not enough valid participant data for comparison." : ""}</p>
+                        )}
                         <div className="metric-row">
                           <span className="metric-label">Consensus</span>
                           <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
+                            <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${(metrics.consensus_score ?? 0) * 100}%` }} />
                           </div>
                           <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
                         </div>
                         <div className="metric-row">
                           <span className="metric-label">Polarization</span>
                           <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
+                            <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${(metrics.polarization_score ?? 0) * 100}%` }} />
                           </div>
                           <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
                         </div>
                         <div className="metric-row">
                           <span className="metric-label">Civility</span>
                           <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
+                            <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${(metrics.civility_score ?? 0) * 100}%` }} />
                           </div>
                           <span className="metric-value">{metricValue(metrics.civility_score)}</span>
                         </div>
@@ -1600,6 +1650,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                       {roundHistory.length === 0 && liveTurns.length === 0 && (
                         <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
                       )}
+                      <HumanHistory turns={state?.public_history ?? []} />
                       {roundHistory.map((roundEvent) => (
                         <div key={roundEvent.round_result.round_number}>
                           <div className="chat-log__round-divider">

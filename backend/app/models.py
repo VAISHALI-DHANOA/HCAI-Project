@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -108,9 +109,12 @@ class RoundResult(BaseModel):
     reactions: list[Reaction]
     emergent_pattern: str
     metrics: dict
+    experiment: dict = Field(default_factory=dict)
 
 
 class State(BaseModel):
+    run_id: str = Field(default_factory=lambda: uuid4().hex)
+    revision: int = 0
     topic: str
     round_number: int = 0
     agents: list[Agent] = Field(default_factory=list)
@@ -139,6 +143,16 @@ class TopicRequest(BaseModel):
 
 class AddAgentsRequest(BaseModel):
     user_agents: list[UserAgentInput] = Field(min_length=1, max_length=25)
+
+
+class DraftAgentInput(UserAgentInput):
+    id: str | None = None
+
+
+class SyncAgentsRequest(BaseModel):
+    run_id: str
+    revision: int
+    user_agents: list[DraftAgentInput] = Field(max_length=25)
 
 
 class RunRequest(BaseModel):
