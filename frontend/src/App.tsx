@@ -1345,7 +1345,6 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
                           .filter(r => r.agent_id === agent.id)
                           .map((reaction, ri) => (
                             <div className="arena-reaction-bubble" key={ri}>
-                              <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
                               <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
                             </div>
                           ))

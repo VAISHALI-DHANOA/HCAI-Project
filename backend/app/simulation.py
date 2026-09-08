@@ -34,15 +34,11 @@ AGENT_COLORS = [
     "#06b6d488",  # cyan
 ]
 
-EMOJIS = ["🙂", "🤔", "⚡", "📚", "🧩", "🌱", "🌀", "🛠️", "✨", "🧠"]
-
-
 def _stable_index(value: str, mod: int) -> int:
     return sum(ord(c) for c in value) % mod
 
 
 def _reaction_for(agent: Agent, round_number: int) -> Reaction:
-    emoji = EMOJIS[_stable_index(agent.id + str(round_number), len(EMOJIS))]
     micro_templates = [
         "Noted, testing this next.",
         "Interesting tension, stay curious.",
@@ -52,7 +48,7 @@ def _reaction_for(agent: Agent, round_number: int) -> Reaction:
     ]
     micro = micro_templates[_stable_index(agent.name + str(round_number), len(micro_templates))]
     micro = " ".join(micro.split()[:6])
-    return Reaction(agent_id=agent.id, emoji=emoji, micro_comment=micro)
+    return Reaction(agent_id=agent.id, micro_comment=micro)
 
 
 def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> str:

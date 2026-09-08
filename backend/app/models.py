@@ -89,7 +89,6 @@ class PublicTurn(BaseModel):
 
 class Reaction(BaseModel):
     agent_id: str
-    emoji: str
     micro_comment: str = Field(max_length=60)
 
     @field_validator("micro_comment")

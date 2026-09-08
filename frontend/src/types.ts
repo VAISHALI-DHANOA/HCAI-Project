@@ -118,7 +118,6 @@ export interface DatasetInfo {
 
 export interface Reaction {
   agent_id: string;
-  emoji: string;
   micro_comment: string;
 }
 
