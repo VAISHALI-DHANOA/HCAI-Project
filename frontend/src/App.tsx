@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setSessionId, setTopic, syncAgents, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
@@ -11,6 +11,8 @@ import { DashboardCanvas } from "./components/DashboardCanvas";
 import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
+import { EntryScreen } from "./components/EntryScreen";
+import { ModeSelection } from "./components/ModeSelection";
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
@@ -46,6 +48,10 @@ function draftFromAgent(agent: Agent): DraftAgent {
 }
 
 export default function App() {
+  const [selectedMode, setSelectedMode] = useState<"debate" | "data">("debate");
+  const [gate, setGate] = useState<"entry" | "mode" | "app">(() =>
+    new URLSearchParams(window.location.search).has("session") || new URLSearchParams(window.location.search).has("demo") ? "app" : "entry"
+  );
   const [catalog, setCatalog] = useState<PersonalityCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -60,13 +66,15 @@ export default function App() {
     return () => { active = false; };
   }, [attempt]);
 
+  if (gate === "entry") return <EntryScreen onCreate={() => { setSessionId(crypto.randomUUID()); setGate("mode"); }} onJoin={(code) => { setSessionId(code); setGate("app"); }} />;
+  if (gate === "mode") return <ModeSelection sessionCode={getSessionId()} onBack={() => setGate("entry")} onSelect={(mode) => { setSelectedMode(mode); setGate("app"); }} />;
   if (!catalog) return (
     <div className="app-shell">
       <p role={catalogError ? "alert" : "status"}>{catalogError || "Loading personality settings…"}</p>
       {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
     </div>
   );
-  return <Playground catalog={catalog} />;
+  return <Playground catalog={catalog} initialMode={selectedMode} onHome={() => setGate("entry")} />;
 }
 
 function HumanHistory({ turns }: { turns: PublicTurn[] }) {
@@ -80,7 +88,7 @@ function HumanHistory({ turns }: { turns: PublicTurn[] }) {
   );
 }
 
-function Playground({ catalog }: { catalog: PersonalityCatalog }) {
+function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onHome: () => void }) {
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
   const PERSONALITY_PRESETS = catalog.presets;
@@ -114,7 +122,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
   const [chatLoading, setChatLoading] = useState(false);
   const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
   const [personalityAdvancedOpen, setPersonalityAdvancedOpen] = useState(true);
-  const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
+  const [inputMode, setInputMode] = useState<"topic" | "dataset">(initialMode === "data" ? "dataset" : "topic");
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
@@ -889,6 +897,7 @@ function Playground({ catalog }: { catalog: PersonalityCatalog }) {
     <div className="app-shell">
       {/* ---- HUD HEADER ---- */}
       <header className="topbar">
+        <button className="home-button" onClick={onHome} title="Return to session access">Home</button>
         <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
         <div className="topbar__right">
           {appPhase === "arena" && (

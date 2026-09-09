@@ -1,0 +1,41 @@
+.entry-screen { --entry-display-font: "Consolas", "Lucida Console", "Courier New", monospace; position: relative; min-height: 100svh; padding: 24px 3vw 20px; display: flex; flex-direction: column; background: #241c32; color: #e7edf2; }
+.entry-screen__artwork { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.entry-screen__brand { position: relative; z-index: 1; display: flex; align-items: center; align-self: flex-start; gap: 16px; padding: 12px 18px; background: rgba(30, 24, 45, .88); border-left: 4px solid #fa7778; letter-spacing: normal; }
+.entry-screen .brand-mark { flex: 0 0 52px; width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid #fa7778; background: #30253f; color: #ff9290; font: 900 38px/1 var(--entry-display-font); text-shadow: 3px 3px 0 #171324; box-shadow: 4px 4px 0 #171324; }
+.entry-brand-copy { display: flex; flex-direction: column; gap: 5px; }
+.entry-brand-name { color: #fff4ec; font: 800 24px/1.1 var(--entry-display-font); letter-spacing: .08em; }
+.entry-brand-tagline { color: #c8bbd7; font-size: 13px; font-weight: 500; letter-spacing: .025em; }
+.entry-screen h1 { margin: 0; width: 100%; color: #f8f0f4; font-family: var(--entry-display-font); font-size: clamp(2rem, 5.5vw, 4.8rem); font-weight: 900; line-height: 1.12; letter-spacing: .025em; text-shadow: 3px 3px 0 #64415d, 6px 6px 0 #21192f; }
+.entry-screen__intro { width: 100%; font-size: .95rem; max-width: 540px; margin: 20px auto 26px; color: #d0c3db; line-height: 1.65; text-wrap: balance; }
+.entry-screen__content { position: relative; z-index: 1; width: 100%; padding: 7vh 0 80px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.session-ledgers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; width: min(866px, 94vw); margin: 30px auto 0; }
+.session-ledger { --frame: #71618e; --pixel-outline: polygon(16px 0, calc(100% - 16px) 0, calc(100% - 16px) 5px, calc(100% - 8px) 5px, calc(100% - 8px) 12px, 100% 12px, 100% calc(100% - 12px), calc(100% - 8px) calc(100% - 12px), calc(100% - 8px) calc(100% - 5px), calc(100% - 16px) calc(100% - 5px), calc(100% - 16px) 100%, 16px 100%, 16px calc(100% - 5px), 8px calc(100% - 5px), 8px calc(100% - 12px), 0 calc(100% - 12px), 0 12px, 8px 12px, 8px 5px, 16px 5px); position: relative; isolation: isolate; box-sizing: border-box; min-width: 0; margin: 0; min-height: 380px; padding: 26px 30px 32px; gap: 22px; display: flex; flex-direction: column; align-items: stretch; text-align: center; color: #fff4ec; }
+.session-ledger::before, .session-ledger::after { content: ""; position: absolute; inset: 0; clip-path: var(--pixel-outline); z-index: -2; background: var(--frame); pointer-events: none; }
+.session-ledger::after { inset: 5px; background: #221e35; z-index: -1; }
+.session-ledger--create { --frame: #fa7778; }
+.session-ledger__meta { display: flex; align-items: center; gap: 12px; color: #9b8ab8; font: bold 10px var(--entry-display-font); letter-spacing: 1.5px; white-space: nowrap; }
+.session-ledger__meta i { height: 1px; flex: 1; background: #594b70; }
+.session-ledger__art { height: 250px; flex: 1; min-height: 250px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.session-ledger__art img { display: block; width: 390px; max-width: none; flex-shrink: 0; height: 250px; object-fit: contain; image-rendering: pixelated; }
+
+
+.session-ledger__controls { display: flex; gap: 12px; margin-top: auto; }
+.session-ledger__button { position: relative; box-sizing: border-box; height: 48px; border: 0; border-radius: 0; background: #fa7778; color: #211d32; padding: 0 27px; font: 900 17px var(--entry-display-font); letter-spacing: 1px; cursor: pointer; clip-path: polygon(5px 0, calc(100% - 5px) 0, calc(100% - 5px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 5px) calc(100% - 4px), calc(100% - 5px) 100%, 5px 100%, 5px calc(100% - 4px), 0 calc(100% - 4px), 0 4px, 5px 4px); }
+.session-ledger__create { width: 100%; margin-top: auto; }
+.session-ledger__create span { position: absolute; right: 23px; top: 8px; font-size: 28px; }
+.session-ledger__controls input { width: 0; min-width: 0; flex: 1; height: 48px; box-sizing: border-box; border: 1px solid #71618e; border-radius: 5px; background: #201b30; padding: 0 18px; color: #fff4ec; font: inherit; font-size: 14px; }
+.session-ledger__controls input::placeholder { color: #9383ac; }
+.session-ledger__button:hover { background: #ff9290; }
+.session-ledger__button:focus-visible { outline: none; background: #ffaaa1; box-shadow: inset 0 0 0 3px #fff4ec; }
+.session-ledger__controls input:focus-visible { outline: 2px solid #fa7778; outline-offset: 3px; }
+@media (max-width: 700px) {
+  .session-ledgers { grid-template-columns: 1fr; width: min(415px, 100%); gap: 32px; }
+  .session-ledger { padding-right: 25px; padding-left: 25px; }
+  .session-ledger__button { padding: 0 20px; font-size: 15px; }
+  .session-ledger__create { padding: 0 44px; }
+  .entry-screen__brand { gap: 12px; padding: 10px 12px; }
+  .entry-screen .brand-mark { flex-basis: 44px; width: 44px; height: 44px; font-size: 32px; }
+  .entry-brand-name { font-size: 21px; }
+  .entry-brand-tagline { font-size: 12px; }
+
+}

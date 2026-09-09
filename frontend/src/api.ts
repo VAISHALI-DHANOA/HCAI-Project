@@ -4,9 +4,13 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
 // Unique session ID per browser tab — isolates state across tabs
 const params = new URLSearchParams(window.location.search);
-const _sessionId: string = params.get("session") ?? crypto.randomUUID();
+let _sessionId: string = params.get("session") ?? crypto.randomUUID();
 export function getSessionId(): string {
   return _sessionId;
+}
+
+export function setSessionId(sessionId: string): void {
+  _sessionId = sessionId.trim();
 }
 
 let _adminKey: string | null = null;
