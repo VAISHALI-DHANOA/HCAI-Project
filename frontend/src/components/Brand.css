@@ -1,0 +1,11 @@
+.entry-screen__brand { position: relative; z-index: 1; display: flex; align-items: center; align-self: flex-start; gap: 16px; padding: 12px 18px; background: rgba(30, 24, 45, .88); border-left: 4px solid #fa7778; letter-spacing: normal; }
+.entry-screen .brand-mark, .setup-header-brand .brand-mark { flex: 0 0 52px; width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid #fa7778; background: #30253f; color: #ff9290; font: 900 38px/1 "Consolas", "Lucida Console", "Courier New", monospace; text-shadow: 3px 3px 0 #171324; box-shadow: 4px 4px 0 #171324; }
+.entry-brand-copy { display: flex; flex-direction: column; gap: 5px; }
+.entry-brand-name { color: #fff4ec; font: 800 24px/1.1 var(--entry-display-font, "Consolas", "Lucida Console", "Courier New", monospace); letter-spacing: .08em; }
+.entry-brand-tagline { color: #c8bbd7; font-size: 13px; font-weight: 500; letter-spacing: .025em; }
+@media (max-width: 700px) {
+  .entry-screen__brand { gap: 12px; padding: 10px 12px; }
+  .entry-screen .brand-mark, .setup-header-brand .brand-mark { flex-basis: 44px; width: 44px; height: 44px; font-size: 32px; }
+  .entry-brand-name { font-size: 21px; }
+  .entry-brand-tagline { font-size: 12px; }
+}

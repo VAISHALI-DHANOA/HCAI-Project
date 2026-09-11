@@ -1,10 +1,5 @@
 .entry-screen { --entry-display-font: "Consolas", "Lucida Console", "Courier New", monospace; position: relative; min-height: 100svh; padding: 24px 3vw 20px; display: flex; flex-direction: column; background: #241c32; color: #e7edf2; }
 .entry-screen__artwork { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-.entry-screen__brand { position: relative; z-index: 1; display: flex; align-items: center; align-self: flex-start; gap: 16px; padding: 12px 18px; background: rgba(30, 24, 45, .88); border-left: 4px solid #fa7778; letter-spacing: normal; }
-.entry-screen .brand-mark { flex: 0 0 52px; width: 52px; height: 52px; display: grid; place-items: center; border: 2px solid #fa7778; background: #30253f; color: #ff9290; font: 900 38px/1 var(--entry-display-font); text-shadow: 3px 3px 0 #171324; box-shadow: 4px 4px 0 #171324; }
-.entry-brand-copy { display: flex; flex-direction: column; gap: 5px; }
-.entry-brand-name { color: #fff4ec; font: 800 24px/1.1 var(--entry-display-font); letter-spacing: .08em; }
-.entry-brand-tagline { color: #c8bbd7; font-size: 13px; font-weight: 500; letter-spacing: .025em; }
 .entry-screen h1 { margin: 0; width: 100%; color: #f8f0f4; font-family: var(--entry-display-font); font-size: clamp(2rem, 5.5vw, 4.8rem); font-weight: 900; line-height: 1.12; letter-spacing: .025em; text-shadow: 3px 3px 0 #64415d, 6px 6px 0 #21192f; }
 .entry-screen__intro { width: 100%; font-size: .95rem; max-width: 540px; margin: 20px auto 26px; color: #d0c3db; line-height: 1.65; text-wrap: balance; }
 .entry-screen__content { position: relative; z-index: 1; width: 100%; padding: 7vh 0 80px; display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -33,9 +28,9 @@
   .session-ledger { padding-right: 25px; padding-left: 25px; }
   .session-ledger__button { padding: 0 20px; font-size: 15px; }
   .session-ledger__create { padding: 0 44px; }
-  .entry-screen__brand { gap: 12px; padding: 10px 12px; }
-  .entry-screen .brand-mark { flex-basis: 44px; width: 44px; height: 44px; font-size: 32px; }
-  .entry-brand-name { font-size: 21px; }
-  .entry-brand-tagline { font-size: 12px; }
 
 }
+
+.session-entry-error { max-width: 540px; color: #ffaaa1; text-align: center; }
+.participant-waiting { width: min(460px, 100%); min-height: 0; gap: 24px; padding: 32px; }
+.participant-waiting p { margin: 0; line-height: 1.6; color: #d0c3db; }

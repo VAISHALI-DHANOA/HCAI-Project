@@ -18,3 +18,11 @@ export function sameRoster(a: State, b: State): boolean {
   return JSON.stringify(a.agents.filter((agent) => agent.role === "user"))
     === JSON.stringify(b.agents.filter((agent) => agent.role === "user"));
 }
+
+// Only additions can be merged without overwriting local edits or removals.
+export function rosterAdditions(base: State, incoming: State) {
+  if (base.run_id !== incoming.run_id) return null;
+  const existingIds = new Set(base.agents.filter((agent) => agent.role === "user").map((agent) => agent.id));
+  if (!sameRoster(base, { ...incoming, agents: incoming.agents.filter((agent) => existingIds.has(agent.id)) })) return null;
+  return incoming.agents.filter((agent) => agent.role === "user" && !existingIds.has(agent.id));
+}

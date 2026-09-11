@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setSessionId, setTopic, syncAgents, testChat, uploadDataset } from "./api";
+import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
-import { acceptsSnapshot, pendingHumanTurns, sameRoster } from "./session";
+import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
@@ -11,8 +11,13 @@ import { DashboardCanvas } from "./components/DashboardCanvas";
 import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
+import "./components/AgentCreation.css";
+import { AgentCard } from "./components/AgentCard";
 import { EntryScreen } from "./components/EntryScreen";
 import { ModeSelection } from "./components/ModeSelection";
+import { SetupHeader, SetupProgress } from "./components/SetupChrome";
+import { ParticipantWaiting } from "./components/ParticipantWaiting";
+import { useSessionGate } from "./hooks/useSessionGate";
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
@@ -48,10 +53,7 @@ function draftFromAgent(agent: Agent): DraftAgent {
 }
 
 export default function App() {
-  const [selectedMode, setSelectedMode] = useState<"debate" | "data">("debate");
-  const [gate, setGate] = useState<"entry" | "mode" | "app">(() =>
-    new URLSearchParams(window.location.search).has("session") || new URLSearchParams(window.location.search).has("demo") ? "app" : "entry"
-  );
+  const session = useSessionGate();
   const [catalog, setCatalog] = useState<PersonalityCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -66,15 +68,16 @@ export default function App() {
     return () => { active = false; };
   }, [attempt]);
 
-  if (gate === "entry") return <EntryScreen onCreate={() => { setSessionId(crypto.randomUUID()); setGate("mode"); }} onJoin={(code) => { setSessionId(code); setGate("app"); }} />;
-  if (gate === "mode") return <ModeSelection sessionCode={getSessionId()} onBack={() => setGate("entry")} onSelect={(mode) => { setSelectedMode(mode); setGate("app"); }} />;
+  if (session.gate === "entry") return <EntryScreen onCreate={session.create} onJoin={session.join} busy={session.busy} error={session.error} />;
+  if (session.gate === "waiting") return <ParticipantWaiting error={session.error} onBack={session.back} />;
+  if (session.gate === "mode") return <ModeSelection initialMode={session.mode} sessionCode={getSessionId()} onBack={session.back} onSelect={session.select} busy={session.busy} error={session.error} />;
   if (!catalog) return (
     <div className="app-shell">
       <p role={catalogError ? "alert" : "status"}>{catalogError || "Loading personality settings…"}</p>
       {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
     </div>
   );
-  return <Playground catalog={catalog} initialMode={selectedMode} onHome={() => setGate("entry")} />;
+  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onHome={session.back} onSetupBack={session.participant ? session.back : session.backToMode} />;
 }
 
 function HumanHistory({ turns }: { turns: PublicTurn[] }) {
@@ -88,7 +91,7 @@ function HumanHistory({ turns }: { turns: PublicTurn[] }) {
   );
 }
 
-function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onHome: () => void }) {
+function Playground({ catalog, initialMode, onModeChange, participant, onHome, onSetupBack }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onHome: () => void; onSetupBack: () => void }) {
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
   const PERSONALITY_PRESETS = catalog.presets;
@@ -121,12 +124,9 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
-  const [personalityAdvancedOpen, setPersonalityAdvancedOpen] = useState(true);
-  const [inputMode, setInputMode] = useState<"topic" | "dataset">(initialMode === "data" ? "dataset" : "topic");
   const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
   const [uploading, setUploading] = useState(false);
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
-  const [agentSettingsOpen, setAgentSettingsOpen] = useState(true);
   const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
   const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
   const [chairSaving, setChairSaving] = useState(false);
@@ -143,9 +143,9 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
 
   const [isAdmin] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
-    const key = params.get("adminKey") ?? params.get("admin");
-    if (key) { setAdminKey(key); return true; }
-    return false;
+    const key = participant ? null : params.get("adminKey") ?? params.get("admin");
+    setAdminKey(key);
+    return Boolean(key);
   });
 
   const [listening, setListening] = useState(false);
@@ -380,7 +380,7 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
   // Initial state load + WebSocket
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const demoName = params.get("demo");
+    const demoName = participant ? null : params.get("demo");
 
     if (demoName) {
       // Auto-load example dataset + agents from ?demo= param
@@ -395,17 +395,8 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
           setShowReactions(false);
           setLiveTurns([]);
           clearTurnQueue();
-          // Admin stays in setup so they can add/modify agents; non-admin goes to arena
-          const adminKey = params.get("adminKey") ?? params.get("admin");
-          if (adminKey) {
-            // Populate draft roster from demo agents so admin can review/add more
-            const userAgents = (result.state.agents ?? []).filter((a: Agent) => a.role !== "mediator");
-            setDraftAgents(userAgents.map(draftFromAgent));
-            draftBaseRef.current = result.state;
-            setInputMode("dataset");
-          } else {
-            setAppPhase("arena");
-          }
+          setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+          draftBaseRef.current = result.state;
         })
         .catch((e: unknown) => {
           setError(e instanceof Error ? e.message : `Failed to load example: ${demoName}`);
@@ -431,6 +422,10 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
 
     const close = createWsClient(
       (event: WsEvent) => {
+        if (event.type === "lobby") {
+          if (participant && event.mode) onModeChange(event.mode);
+          return;
+        }
         if (event.type === "state") {
           applyStateSnapshot(event.state_snapshot, event.reset_playback);
           return;
@@ -440,7 +435,7 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
           // Human interventions are shown locally on submit — skip WebSocket echo
           if (event.turn.speaker_id === "human") return;
           // Auto-transition students to arena when debate starts
-          if (!isAdmin && appPhaseRef.current === "setup") {
+          if (participant && appPhaseRef.current === "setup") {
             setAppPhase("arena");
           }
           // Queue turn for timed reveal (20s display + 3s gap)
@@ -508,7 +503,8 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
     }
   }, [roundHistory, sidebarCollapsed]);
 
-  const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
+  const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
+  const hasAgents = userAgents.length > 0;
   const completedRoundCount = authoritativeRoundCount(state);
 
   const selectedPersonalityPreset = useMemo(
@@ -524,6 +520,12 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
     const newRun = previous !== null && previous.run_id !== snapshot.run_id;
     if (draftBaseRef.current && sameRoster(draftBaseRef.current, snapshot)) {
       draftBaseRef.current = snapshot;
+    } else if (isAdmin && draftBaseRef.current) {
+      const additions = rosterAdditions(draftBaseRef.current, snapshot);
+      if (additions) {
+        setDraftAgents((drafts) => [...drafts, ...additions.map(draftFromAgent)]);
+        draftBaseRef.current = snapshot;
+      }
     }
     if (newRun || resetPlayback) {
       clearTurnQueue();
@@ -546,7 +548,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
       setDatasetInfo(null);
       setDashboardMode(false);
       setSidePanelView("controls");
-      setInputMode(snapshot.dataset_summary ? "dataset" : "topic");
       if (!sameRoster(previous!, snapshot)) {
         setDraftAgents(snapshot.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
         draftBaseRef.current = snapshot;
@@ -562,17 +563,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
   useEffect(() => {
     chatLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
-
-  async function onTopicSubmit(event: FormEvent) {
-    event.preventDefault();
-    setError("");
-    try {
-      const result = await setTopic(topicInput.trim());
-      if (!applyStateSnapshot(result.state)) return;
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to set topic");
-    }
-  }
 
   function updatePersonalityPreset(presetId: string) {
     setPersonalityConfig(createPersonalityFromPreset(presetId));
@@ -635,7 +625,8 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
     if (!nameInput.trim() || !personaInput.trim()) return;
     setError("");
     try {
-      await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), energy: energyInput, personality: personalityConfig }]);
+      const result = await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), energy: energyInput, personality: personalityConfig }]);
+      applyStateSnapshot(result.state);
       setNameInput("");
       setPersonaInput("");
       setEnergyInput(0.6);
@@ -666,7 +657,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
     setPersonaInput(agent.persona_text);
     setEnergyInput(agent.energy);
     setPersonalityConfig(agent.personality);
-    setAgentSettingsOpen(true);
   }
 
   function openTestChat(agent: DraftAgent) {
@@ -801,7 +791,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
       setAgentTablePositions(new Map());
       setDashboardMode(false);
       setDashboardVisuals([]);
-      setInputMode("topic");
       setSidePanelView("controls");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
@@ -849,7 +838,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
       setAgentTablePositions(new Map());
       setDashboardMode(false);
       setDashboardVisuals([]);
-      setInputMode("topic");
       setSidePanelView("controls");
       setAppPhase("setup");
     } catch (e: unknown) {
@@ -870,7 +858,9 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
       if (result.parsed) {
         setDatasetInfo(result.parsed);
       }
-      setAppPhase("arena");
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      draftBaseRef.current = result.state;
+      setEditingDraftIndex(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load data demo");
     }
@@ -893,12 +883,66 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
     }
   }
 
+  const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
+    <button className="btn-demo" onClick={initialMode === "data" ? onLoadDataDemo : onLoadDemo}>{initialMode === "data" ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
+    <button className="launch-button" onClick={launchArena} disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}>Launch into Arena</button>
+  </div> : null;
+  const participantBriefingValue = state?.topic
+    ? initialMode === "data" ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
+    : "";
+
+  const missionBriefing = <section className="mission-briefing section-block setup-pixel-panel">
+    <div className="mission-briefing__copy">
+      <span className="mode-label">{initialMode === "data" ? "Data Analysis Mode" : "Debate Mode"}</span>
+      <h2 className="section-title">Mission Briefing</h2>
+    </div>
+    {isAdmin && <div className="mission-briefing__control">
+      {initialMode === "debate" ? <div className="stacked-form">
+        <label className="form-label" htmlFor="discussion-topic">Discussion Topic</label>
+        <div className="mission-briefing__input-row">
+          <textarea id="discussion-topic" value={topicInput} onChange={(e) => setTopicInput(e.target.value)} rows={2} placeholder="What should the agents debate about?" />
+          {missionActions}
+        </div>
+      </div> : <div className="stacked-form">
+        <label className="form-label" htmlFor="dataset-upload">Dataset Upload / Selection</label>
+        <div className="mission-briefing__input-row">
+          <input id="dataset-upload" type="file" accept=".csv,.xlsx,.xls" onChange={onDatasetUpload} disabled={uploading} />
+          {missionActions}
+        </div>
+        {uploading && <p className="upload-status">Uploading and parsing...</p>}
+        {datasetInfo && <div className="dataset-preview">
+          <p className="dataset-preview__summary">{datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns</p>
+          <div className="dataset-columns">{datasetInfo.columns.map((col, i) => <span key={i} className="arena-node__quirk">{col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}</span>)}</div>
+        </div>}
+      </div>}
+    </div>}
+    {participant && participantBriefingValue && <div className="mission-briefing__participant-value">
+      <span>{initialMode === "data" ? "Dataset" : "Discussion Topic"}</span>
+      <p className="mission-briefing__topic">{participantBriefingValue}</p>
+    </div>}
+  </section>;
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell--${initialMode}`}>
       {/* ---- HUD HEADER ---- */}
+      {appPhase === "setup" ? (
+        <SetupHeader onBack={onSetupBack} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={missionBriefing}>
+          {participant && (
+            <div className="setup-header-round" aria-label={`Round ${completedRoundCount}`}>
+              <span>ROUND</span><strong>{completedRoundCount}</strong>
+            </div>
+          )}
+          <div className={`status ${connection}`}>
+            <span className="status__dot" />
+            {connection === "connected" ? "ONLINE" : "OFFLINE"}
+          </div>
+        </SetupHeader>
+      ) : (
       <header className="topbar">
-        <button className="home-button" onClick={onHome} title="Return to session access">Home</button>
-        <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
+        <button className="home-button" onClick={onHome} title="Return to session access">Back</button>
+        <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>
+          {state?.topic || "The Arena"}
+        </h1>
         <div className="topbar__right">
           {appPhase === "arena" && (
             <button
@@ -919,6 +963,7 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
           </div>
         </div>
       </header>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -926,96 +971,30 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
           SETUP PHASE
           ================================================================ */}
       {appPhase === "setup" ? (
-        <main className="setup-phase">
-          {/* ---- LEFT COLUMN: Topic + Agent Creator ---- */}
+        <main className="setup-screen">
+          <div className="setup-phase">
+          {/* ---- LEFT COLUMN: Agent Creator ---- */}
           <section className="setup-left">
-            {/* Topic or Dataset (admin only) */}
-            {isAdmin && (
-              <div className="section-block">
-                <h2 className="section-title">Mission Briefing</h2>
-                <div className="control-tabs" style={{ marginBottom: "8px" }}>
-                  <button type="button" className={`control-tab${inputMode === "topic" ? " control-tab--active" : ""}`}
-                    onClick={() => setInputMode("topic")}>
-                    Text Topic
-                  </button>
-                  <button type="button" className={`control-tab${inputMode === "dataset" ? " control-tab--active" : ""}`}
-                    onClick={() => setInputMode("dataset")}>
-                    Upload Dataset
-                  </button>
-                </div>
-
-                {inputMode === "topic" ? (
-                  <form onSubmit={onTopicSubmit} className="stacked-form">
-                    <label className="form-label">Discussion Topic</label>
-                    <textarea
-                      value={topicInput}
-                      onChange={(e) => setTopicInput(e.target.value)}
-                      rows={2}
-                      placeholder="What should the agents debate about?"
-                    />
-                    <button type="submit">Set Topic</button>
-                  </form>
-                ) : (
-                  <div className="stacked-form">
-                    <label className="form-label">CSV or Excel File</label>
-                    <input type="file" accept=".csv,.xlsx,.xls" onChange={onDatasetUpload} disabled={uploading} />
-                    {uploading && <p style={{ color: "#94a3b8", fontSize: "0.82rem" }}>Uploading and parsing...</p>}
-                    {datasetInfo && (
-                      <div className="dataset-preview">
-                        <p style={{ color: "#4ade80", fontSize: "0.82rem", margin: "4px 0" }}>
-                          {datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns
-                        </p>
-                        <div className="dataset-columns">
-                          {datasetInfo.columns.map((col, i) => (
-                            <span key={i} className="arena-node__quirk">
-                              {col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Show current topic for students */}
-            {!isAdmin && state?.topic && (
-              <div className="section-block">
-                <h2 className="section-title">Discussion Topic</h2>
-                <p style={{ color: "#94a3b8", margin: "0.5rem 0" }}>{state.topic}</p>
-              </div>
-            )}
 
             {/* Agent Creator */}
-            <div className="section-block">
+            <div className="section-block agent-creation setup-pixel-panel">
               <div className="settings-header">
                 <h2 className="section-title">{editingDraftIndex === null ? "Add / Edit Agents" : "Edit Agent"}</h2>
-                {isAdmin && (
-                  <button type="button" className="settings-toggle" onClick={() => setAgentSettingsOpen((open) => !open)}>
-                    {agentSettingsOpen ? "Hide" : "Show"}
-                  </button>
-                )}
               </div>
-              {agentSettingsOpen && (
               <form onSubmit={isAdmin ? onAddDraftAgent : onSubmitAgent} className="stacked-form">
-                <label className="form-label">Agent Name</label>
-                <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
+                <fieldset className="agent-creation__group">
+                <legend>Identity</legend>
+                <label className="form-label" htmlFor="agent-name">Agent Name</label>
+                <input id="agent-name" value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
 
-                <label className="form-label">Persona (1-2 lines)</label>
-                <textarea value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality and perspective..." />
+                <label className="form-label" htmlFor="agent-persona">Persona (1-2 lines)</label>
+                <textarea id="agent-persona" value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality and perspective..." />
+                </fieldset>
 
-                <label className="form-label">Energy: {energyInput.toFixed(2)}</label>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={energyInput}
-                  onChange={(e) => setEnergyInput(Number(e.target.value))}
-                />
-
-                <label className="form-label">Personality</label>
-                <select value={personalityConfig.preset_id} onChange={(e) => updatePersonalityPreset(e.target.value)}>
+                <fieldset className="agent-creation__group">
+                <legend>Personality</legend>
+                <label className="form-label" htmlFor="agent-personality">Personality Preset</label>
+                <select id="agent-personality" value={personalityConfig.preset_id} onChange={(e) => updatePersonalityPreset(e.target.value)}>
                   {PERSONALITY_PRESETS.map((preset) => (
                     <option key={preset.id} value={preset.id}>{preset.name}</option>
                   ))}
@@ -1027,18 +1006,10 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
                   <small>{personalityConfig.role_goal}</small>
                 </div>
 
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setPersonalityAdvancedOpen((open) => !open)}
-                >
-                  {personalityAdvancedOpen ? "Hide OCEAN Traits" : "Edit OCEAN Traits"}
-                </button>
-
-                {personalityAdvancedOpen && (
-                  <div className="ocean-panel">
+                  <div className="ocean-panel" role="group" aria-labelledby="ocean-heading">
+                    <div className="agent-creation__ocean-heading"><h3 id="ocean-heading">OCEAN traits</h3><span>{OCEAN_SCALE.min}–{OCEAN_SCALE.max}</span></div>
                     {OCEAN_TRAITS.map((trait) => (
-                      <label className="ocean-trait" key={trait.key}>
+                      <label className={`ocean-trait trait--${trait.key}`} key={trait.key}>
                         <span className="ocean-trait__label">{trait.label}</span>
                         <input
                           type="range"
@@ -1051,17 +1022,35 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
                         <span className="ocean-trait__value">{personalityConfig.ocean[trait.key]}</span>
                       </label>
                     ))}
-                    <button type="button" onClick={resetPersonalityDefaults}>Reset to preset defaults</button>
+                    <button type="button" className="agent-creation__reset" onClick={resetPersonalityDefaults}>Reset to preset defaults</button>
                   </div>
-                )}
 
-                <label className="form-label">Additional Instructions (optional)</label>
+                  <label className="ocean-trait trait--energy" htmlFor="agent-energy">
+                    <span className="ocean-trait__label">Energy</span>
+                    <input
+                      id="agent-energy"
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={energyInput}
+                      onChange={(e) => setEnergyInput(Number(e.target.value))}
+                    />
+                    <span className="ocean-trait__value">{Math.round(energyInput * 100)}%</span>
+                  </label>
+                </fieldset>
+
+                <fieldset className="agent-creation__group">
+                <legend>Additional details</legend>
+                <label className="form-label" htmlFor="agent-instructions">Additional Instructions (optional)</label>
                 <textarea
+                  id="agent-instructions"
                   value={personalityConfig.custom_instructions}
                   onChange={(e) => updateCustomInstructions(e.target.value)}
                   rows={2}
                   placeholder="Add behavior notes for this agent..."
                 />
+                </fieldset>
 
                 <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim()}>
                   {isAdmin ? (editingDraftIndex === null ? "Add to Roster" : "Save Agent") : "Submit Agent"}
@@ -1081,7 +1070,6 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
                   </button>
                 )}
               </form>
-              )}
             </div>
 
             {isAdmin && (
@@ -1120,9 +1108,9 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
 
           {/* ---- RIGHT COLUMN: Roster ---- */}
           <section className="setup-right">
-            {isAdmin ? (
+            {!participant ? (
               /* Admin: draft roster (local agents before launch) */
-              <div className="section-block">
+              <div className="section-block agent-roster setup-pixel-panel">
                 <h2 className="section-title">
                   Agent Roster
                   <span className="section-title__count">{draftAgents.length}</span>
@@ -1133,89 +1121,43 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
                 ) : (
                   <div className="draft-roster">
                     {draftAgents.map((agent, idx) => (
-                      <div className="draft-agent-card" key={idx}>
-                        <img
-                          className="draft-agent-card__avatar"
-                          src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`}
-                          alt={agent.name}
-                          width={48}
-                          height={48}
-                        />
-                        <div className="draft-agent-card__info">
-                          <div className="draft-agent-card__header">
-                            <span className="draft-agent-card__name">{agent.name}</span>
-                            <span className="personality-badge personality-badge--small">{agent.personality.role_name}</span>
-                          </div>
-                          <p className="draft-agent-card__persona">{agent.persona_text}</p>
-                          <div className="draft-agent-card__energy-bar">
-                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
-                          </div>
-                        </div>
-                        <div className="draft-agent-card__actions">
+                      <AgentCard key={idx} agent={agent} catalog={catalog}>
                           <button className="btn-test" onClick={() => editDraftAgent(idx)}>Edit</button>
                           <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
-                          <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
-                        </div>
-                      </div>
+                          <button className="btn-remove" aria-label={`Remove ${agent.name}`} onClick={() => removeDraftAgent(idx)}>Remove</button>
+                        </AgentCard>
                     ))}
                   </div>
                 )}
               </div>
             ) : (
               /* Student: show agents already on the server */
-              <div className="section-block">
+              <div className="section-block agent-roster setup-pixel-panel">
                 <h2 className="section-title">
                   Agents in Arena
-                  <span className="section-title__count">{(state?.agents ?? []).filter(a => a.role === "user").length}</span>
+                  <span className="section-title__count">{userAgents.length}</span>
                 </h2>
 
-                {(state?.agents ?? []).filter(a => a.role === "user").length === 0 ? (
+                {userAgents.length === 0 ? (
                   <div className="roster-empty">No agents submitted yet. Add yours!</div>
                 ) : (
                   <div className="draft-roster">
-                    {(state?.agents ?? []).filter(a => a.role === "user").map((agent) => (
-                      <div className="draft-agent-card" key={agent.id}>
-                        <img
-                          className="draft-agent-card__avatar"
-                          src={agentAvatarUrl(agent)}
-                          alt={agent.name}
-                          width={48}
-                          height={48}
-                        />
-                        <div className="draft-agent-card__info">
-                          <div className="draft-agent-card__header">
-                            <span className="draft-agent-card__name">{agent.name}</span>
-                            {agent.personality && <span className="personality-badge personality-badge--small">{agent.personality.role_name}</span>}
-                          </div>
-                          <div className="draft-agent-card__energy-bar">
-                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
-                          </div>
-                        </div>
-                      </div>
+                    {userAgents.map((agent) => (
+                      <AgentCard key={agent.id} agent={agent} catalog={catalog}>
+                          <button className="btn-test" onClick={() => openTestChat(draftFromAgent(agent))}>Test</button>
+                        </AgentCard>
                     ))}
                   </div>
                 )}
-                <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "1rem", textAlign: "center" }}>
+                <p style={{ color: "#b8a9c6", fontSize: "0.85rem", marginTop: "1rem", textAlign: "center" }}>
                   Waiting for the debate to begin...
                 </p>
               </div>
             )}
 
-            {/* Action Buttons (admin only) */}
-            {isAdmin && (
-            <div className="setup-actions">
-              <button className="btn-demo" onClick={onLoadDemo}>Load Debate Preset</button>
-              <button className="btn-demo" onClick={onLoadDataDemo}>Load Data Analysis Demo</button>
-              <button
-                className="launch-button"
-                onClick={launchArena}
-                disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}
-              >
-                Launch into Arena
-              </button>
-            </div>
-            )}
           </section>
+          </div>
+          <SetupProgress activeStep={1} />
         </main>
       ) : (
         /* ================================================================
@@ -1802,7 +1744,7 @@ function Playground({ catalog, initialMode, onHome }: { catalog: PersonalityCata
          ================================================================ */}
       {testChatAgent && (
         <div className="test-chat-overlay" onClick={closeTestChat}>
-          <div className="test-chat-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="test-chat-modal setup-pixel-panel" onClick={(e) => e.stopPropagation()}>
             <div className="test-chat-modal__header">
               <div className="test-chat-modal__agent-info">
                 <img

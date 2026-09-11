@@ -20,7 +20,7 @@ export function setAdminKey(key: string | null) {
 
 function withSession(path: string): string {
   const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}session=${_sessionId}`;
+  return `${path}${separator}session=${encodeURIComponent(_sessionId)}`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -29,12 +29,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers["X-Admin-Key"] = _adminKey;
   }
   const response = await fetch(`${API_BASE}${withSession(path)}`, {
-    headers,
-    ...init
+    ...init,
+    headers: { ...headers, ...init?.headers },
   });
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Request failed: ${response.status}`);
+    let message = text;
+    try { const body = JSON.parse(text); if (typeof body.detail === "string") message = body.detail; } catch { /* Plain-text response. */ }
+    throw new Error(message || `Request failed: ${response.status}`);
   }
   return (await response.json()) as T;
 }
@@ -52,6 +54,20 @@ export async function setTopic(topic: string): Promise<{ state: State }> {
 
 export async function getPersonalityCatalog(): Promise<PersonalityCatalog> {
   return request<PersonalityCatalog>("/personality-presets");
+}
+
+export type SessionMode = "debate" | "data";
+export interface SessionLobby { code: string; mode: SessionMode | null; }
+export function createSession() {
+  return request<SessionLobby & { host_key: string }>("/sessions", { method: "POST" });
+}
+export function getSessionLobby(code: string) {
+  return request<SessionLobby>(`/sessions/${encodeURIComponent(code)}`);
+}
+export function chooseSessionMode(code: string, mode: SessionMode, hostKey: string) {
+  return request<SessionLobby>(`/sessions/${encodeURIComponent(code)}/mode`, {
+    method: "PUT", headers: { "X-Host-Key": hostKey }, body: JSON.stringify({ mode }),
+  });
 }
 
 export async function runRounds(rounds: number): Promise<{ state: State }> {

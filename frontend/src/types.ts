@@ -178,7 +178,7 @@ export interface WsStateEvent {
   reset_playback?: boolean;
 }
 
-export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;
+export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent | { type: "lobby"; code: string; mode: "debate" | "data" | null };
 
 export interface DashboardVisual {
   id: string;

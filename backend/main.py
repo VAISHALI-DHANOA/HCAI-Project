@@ -3,8 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import secrets
+from uuid import uuid4
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+from pydantic import BaseModel
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -93,6 +96,44 @@ class ConnectionManager:
 app = FastAPI(title="Creative Multi-Agent Playground API", version="2.0.0")
 manager = ConnectionManager()
 
+# Like SESSIONS, lobby metadata lives in this single backend worker.
+class Lobby(BaseModel):
+    code: str
+    mode: Literal["debate", "data"] | None = None
+
+
+class ModeChoice(BaseModel):
+    mode: Literal["debate", "data"]
+
+
+lobbies: dict[str, tuple[Lobby, str]] = {}
+
+
+@app.post("/sessions", status_code=201)
+async def create_session() -> dict:
+    lobby = Lobby(code=str(uuid4()))
+    host_key = secrets.token_urlsafe(32)
+    SESSIONS.get_store(lobby.code)
+    lobbies[lobby.code] = (lobby, host_key)
+    return {**lobby.model_dump(), "host_key": host_key}
+
+
+@app.get("/sessions/{code}")
+async def session_status(code: str) -> Lobby:
+    if code not in lobbies:
+        raise HTTPException(status_code=404, detail="Session not found. Check the code with your host.")
+    return lobbies[code][0]
+
+
+@app.put("/sessions/{code}/mode")
+async def choose_session_mode(code: str, payload: ModeChoice, request: Request) -> Lobby:
+    lobby = await session_status(code)
+    if not secrets.compare_digest(request.headers.get("X-Host-Key", ""), lobbies[code][1]):
+        raise HTTPException(status_code=403, detail="Only the host can choose the mode.")
+    lobby.mode = payload.mode
+    await manager.broadcast(code, {"type": "lobby", **lobby.model_dump()})
+    return lobby
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -107,6 +148,8 @@ async def websocket_endpoint(websocket: WebSocket, session: str = Query(...)) ->
     store = SESSIONS.get_store(session)
     await manager.connect(websocket, session)
     try:
+        if session in lobbies:
+            await websocket.send_json({"type": "lobby", **lobbies[session][0].model_dump()})
         await websocket.send_json(
             {
                 "type": "state",
