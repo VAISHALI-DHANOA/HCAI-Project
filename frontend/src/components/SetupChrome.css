@@ -8,7 +8,7 @@
 .mode-token span { color: #b8a9c6; font-size: 11px; font-weight: 800; letter-spacing: .14em; }
 .mode-token strong { min-width: 0; overflow-wrap: anywhere; padding: 8px 0; color: #fff4ec; font-size: 13px; letter-spacing: .04em; }
 .mode-token button { align-self: stretch; border: 0; padding: 0 12px; color: #2a2037; background: var(--mode-accent); font: 900 12px var(--mode-font); cursor: pointer; }
-.mode-progress { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: min(820px, 100%); padding: 16px 20px calc(22px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; background: rgba(28, 21, 41, .97); border-top: 1px solid #51435f; font-family: var(--mode-font); }
+.mode-progress { position: fixed; z-index: 5; bottom: 0; left: 50%; transform: translateX(-50%); width: min(820px, 100%); padding: 16px 20px calc(22px + env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; background: rgba(28, 21, 41, .97); border-top: 1px solid #51435f; font-family: var(--mode-font); }
 .mode-progress__step { position: relative; padding-top: 12px; display: flex; justify-content: center; gap: 8px; color: #a193ae; }
 .mode-progress__step::before { content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: #524461; }
 .mode-progress__step span { font-size: 11px; }

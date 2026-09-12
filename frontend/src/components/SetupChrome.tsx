@@ -30,7 +30,6 @@ export function SetupHeader({ onBack, sessionCode, busy = false, children, backA
 
 export function SetupProgress({ activeStep }: { activeStep: number }) {
   return <nav className="mode-progress" aria-label="Setup progress">
-    {[["01", "CHOOSE MODE"], ["02", "TOPIC & TEAM"], ["03", "MODERATOR"], ["04", "REVIEW"]].map(([number, label], index) => <div className={index === activeStep ? "mode-progress__step is-active" : "mode-progress__step"} key={number} aria-current={index === activeStep ? "step" : undefined}><span>{number}</span><strong>{label}</strong></div>)}
+    {[["01", "CHOOSE MODE"], ["02", "TOPIC & TEAM"], ["03", "MODERATOR"]].map(([number, label], index) => <div className={index === activeStep ? "mode-progress__step is-active" : "mode-progress__step"} key={number} aria-current={index === activeStep ? "step" : undefined}><span>{number}</span><strong>{label}</strong></div>)}
   </nav>;
 }
-

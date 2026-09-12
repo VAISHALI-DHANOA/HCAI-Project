@@ -17,14 +17,17 @@ import { EntryScreen } from "./components/EntryScreen";
 import { ModeSelection } from "./components/ModeSelection";
 import { SetupHeader, SetupProgress } from "./components/SetupChrome";
 import { ParticipantWaiting } from "./components/ParticipantWaiting";
+import { ModeratorSelection } from "./components/ModeratorSelection";
 import { useSessionGate } from "./hooks/useSessionGate";
+import { getModeratorAvatar } from "./moderatorAvatars";
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
   "#fbbf24", "#22d3ee", "#e879f9", "#34d399", "#f472b6",
 ];
 
-function agentAvatarUrl(agent: Agent): string {
+function agentAvatarUrl(agent: Agent, moderatorStrategyId?: string): string {
+  if (agent.role === "mediator") return getModeratorAvatar(moderatorStrategyId);
   return `https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`;
 }
 
@@ -117,6 +120,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [appPhase, setAppPhase] = useState<AppPhase>("setup");
+  const [setupStep, setSetupStep] = useState<"team" | "moderator">("team");
   const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
   const draftBaseRef = useRef<State | null>(null);
   const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
@@ -544,6 +548,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
     if (newRun) {
       setAutoRun(false);
       setAppPhase("setup");
+      setSetupStep("team");
       setTopicInput(snapshot.topic);
       setDatasetInfo(null);
       setDashboardMode(false);
@@ -759,6 +764,13 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
     }
   }
 
+  function continueToModerator() {
+    const existingAgentCount = (state?.agents ?? []).filter((agent) => agent.role !== "mediator").length;
+    if ((!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && existingAgentCount === 0)) return;
+    setError("");
+    setSetupStep("moderator");
+  }
+
   async function onRun(rounds: number) {
     setError("");
     try {
@@ -885,7 +897,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
 
   const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
     <button className="btn-demo" onClick={initialMode === "data" ? onLoadDataDemo : onLoadDemo}>{initialMode === "data" ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
-    <button className="launch-button" onClick={launchArena} disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}>Launch into Arena</button>
+    <button className="launch-button" onClick={continueToModerator} disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}>Continue to Moderator</button>
   </div> : null;
   const participantBriefingValue = state?.topic
     ? initialMode === "data" ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
@@ -926,7 +938,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
     <div className={`app-shell app-shell--${initialMode}`}>
       {/* ---- HUD HEADER ---- */}
       {appPhase === "setup" ? (
-        <SetupHeader onBack={onSetupBack} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={missionBriefing}>
+        <SetupHeader onBack={setupStep === "moderator" ? () => setSetupStep("team") : onSetupBack} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={setupStep === "team" ? missionBriefing : undefined}>
           {participant && (
             <div className="setup-header-round" aria-label={`Round ${completedRoundCount}`}>
               <span>ROUND</span><strong>{completedRoundCount}</strong>
@@ -972,6 +984,17 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
           ================================================================ */}
       {appPhase === "setup" ? (
         <main className="setup-screen">
+          {setupStep === "moderator" && isAdmin ? (
+            <ModeratorSelection
+              strategies={visibleModeratorStrategies}
+              selectedId={state?.moderator_strategy_id ?? "consensus"}
+              saving={chairSaving}
+              launching={false}
+              onSelect={onChairStrategyChange}
+              onBack={() => setSetupStep("team")}
+              onEnter={launchArena}
+            />
+          ) : <>
           <div className="setup-phase">
           {/* ---- LEFT COLUMN: Agent Creator ---- */}
           <section className="setup-left">
@@ -1001,7 +1024,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                 </select>
 
                 <div className="personality-summary">
-                  <span className="personality-badge">{personalityConfig.role_name}</span>
                   <p>{selectedPersonalityPreset.description}</p>
                   <small>{personalityConfig.role_goal}</small>
                 </div>
@@ -1071,39 +1093,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                 )}
               </form>
             </div>
-
-            {isAdmin && (
-              <div className="section-block">
-                <div className="settings-header">
-                  <h2 className="section-title">Chair Settings</h2>
-                  <button type="button" className="settings-toggle" onClick={() => setChairSettingsOpen((open) => !open)}>
-                    {chairSettingsOpen ? "Hide" : "Show"}
-                  </button>
-                </div>
-                {chairSettingsOpen && (
-                  <div className="stacked-form">
-                    <label className="form-label">Chair Strategy</label>
-                    <select
-                      value={state?.moderator_strategy_id ?? ""}
-                      onChange={(e) => onChairStrategyChange(e.target.value)}
-                      disabled={chairSaving}
-                    >
-                      {visibleModeratorStrategies.map((strategy) => (
-                        <option key={strategy.id} value={strategy.id}>{strategy.name}</option>
-                      ))}
-                    </select>
-                    {visibleModeratorStrategies
-                      .filter((strategy) => strategy.id === (state?.moderator_strategy_id ?? ""))
-                      .map((strategy) => (
-                        <div className="personality-summary" key={strategy.id}>
-                          <span className="personality-badge">{strategy.name}</span>
-                          <p>{strategy.description}</p>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            )}
           </section>
 
           {/* ---- RIGHT COLUMN: Roster ---- */}
@@ -1158,6 +1147,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
           </section>
           </div>
           <SetupProgress activeStep={1} />
+          </>}
         </main>
       ) : (
         /* ================================================================
@@ -1275,7 +1265,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                         onMouseLeave={() => setHoveredAgentId(null)}
                       >
                         <div className="arena-node__avatar-wrap">
-                          <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
+                          <img className="arena-node__avatar" src={agentAvatarUrl(agent, state?.moderator_strategy_id)} alt={agent.name} width={64} height={64} />
                           {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
                           {agent.personality && <span className="arena-node__personality-badge">{agent.personality.role_name}</span>}
                         </div>
@@ -1331,7 +1321,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                         ) : agentMap.get(currentTurn.speaker_id) ? (
                           <img
                             className="center-stage__speaker-avatar"
-                            src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
+                            src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!, state?.moderator_strategy_id)}
                             alt=""
                             width={40}
                             height={40}
@@ -1418,7 +1408,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                             {isHuman ? (
                               <span className="chat-log__human-avatar">You</span>
                             ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
                             )}
                             <div className="chat-log__body">
                               <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
@@ -1450,7 +1440,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                             {isHuman ? (
                               <span className="chat-log__human-avatar">You</span>
                             ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
                             )}
                             <div className="chat-log__body">
                               <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
@@ -1618,7 +1608,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                                   {isHuman ? (
                                     <span className="chat-log__human-avatar">You</span>
                                   ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
                                   )}
                                   <div className="chat-log__body">
                                     <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
@@ -1650,7 +1640,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                                   {isHuman ? (
                                     <span className="chat-log__human-avatar">You</span>
                                   ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
                                   )}
                                   <div className="chat-log__body">
                                     <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
@@ -1706,7 +1696,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                                   {isHuman ? (
                                     <span className="chat-log__human-avatar">You</span>
                                   ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={28} height={28} />
+                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={28} height={28} />
                                   )}
                                   <div className="chat-log__body">
                                     <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
