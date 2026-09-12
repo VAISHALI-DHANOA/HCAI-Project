@@ -18,6 +18,7 @@ import { ModeSelection } from "./components/ModeSelection";
 import { SetupHeader, SetupProgress } from "./components/SetupChrome";
 import { ParticipantWaiting } from "./components/ParticipantWaiting";
 import { ModeratorSelection } from "./components/ModeratorSelection";
+import { Brand } from "./components/Brand";
 import { useSessionGate } from "./hooks/useSessionGate";
 import { getModeratorAvatar } from "./moderatorAvatars";
 
@@ -80,7 +81,7 @@ export default function App() {
       {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
     </div>
   );
-  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onHome={session.back} onSetupBack={session.participant ? session.back : session.backToMode} />;
+  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} />;
 }
 
 function HumanHistory({ turns }: { turns: PublicTurn[] }) {
@@ -94,7 +95,7 @@ function HumanHistory({ turns }: { turns: PublicTurn[] }) {
   );
 }
 
-function Playground({ catalog, initialMode, onModeChange, participant, onHome, onSetupBack }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onHome: () => void; onSetupBack: () => void }) {
+function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void }) {
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
   const PERSONALITY_PRESETS = catalog.presets;
@@ -283,7 +284,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
     }));
   }, [state]);
 
-  const visibleModeratorStrategies = moderatorStrategies;
+  const activeModeratorName = moderatorStrategies.find(
+    (strategy) => strategy.id === (state?.moderator_strategy_id ?? "consensus"),
+  )?.name ?? "Moderator";
 
   const metrics: Metrics | null = useMemo(() => {
     const roundMetric = roundHistory[roundHistory.length - 1]?.metrics;
@@ -951,10 +954,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
         </SetupHeader>
       ) : (
       <header className="topbar">
-        <button className="home-button" onClick={onHome} title="Return to session access">Back</button>
-        <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>
-          {state?.topic || "The Arena"}
-        </h1>
+        <div className="topbar__identity">
+          <Brand className="topbar__brand" />
+          <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
+        </div>
         <div className="topbar__right">
           {appPhase === "arena" && (
             <button
@@ -986,7 +989,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
         <main className="setup-screen">
           {setupStep === "moderator" && isAdmin ? (
             <ModeratorSelection
-              strategies={visibleModeratorStrategies}
+              strategies={moderatorStrategies}
               selectedId={state?.moderator_strategy_id ?? "consensus"}
               saving={chairSaving}
               launching={false}
@@ -1266,8 +1269,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                       >
                         <div className="arena-node__avatar-wrap">
                           <img className="arena-node__avatar" src={agentAvatarUrl(agent, state?.moderator_strategy_id)} alt={agent.name} width={64} height={64} />
-                          {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
-                          {agent.personality && <span className="arena-node__personality-badge">{agent.personality.role_name}</span>}
+                          {agent.role === "mediator"
+                            ? <span className="arena-node__personality-badge">{activeModeratorName}</span>
+                            : agent.personality && <span className="arena-node__personality-badge">{agent.personality.role_name}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
                         <div className="arena-node__energy-bar">
@@ -1501,18 +1505,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onHome, o
                       <div className="control-row">
                         <label className="form-label">Interval (ms)</label>
                         <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
-                      </div>
-                      <div className="control-row">
-                        <label className="form-label">Chair Strategy</label>
-                        <select
-                          value={state?.moderator_strategy_id ?? ""}
-                          onChange={(e) => onChairStrategyChange(e.target.value)}
-                          disabled={chairSaving || running}
-                        >
-                          {visibleModeratorStrategies.map((strategy) => (
-                            <option key={strategy.id} value={strategy.id}>{strategy.name}</option>
-                          ))}
-                        </select>
                       </div>
                     </div>
                   )}

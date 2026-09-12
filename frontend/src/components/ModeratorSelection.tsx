@@ -5,9 +5,9 @@ import { ArrowIcon, SetupProgress } from "./SetupChrome";
 import "./ModeratorSelection.css";
 
 const CARD_ACCENTS: Record<string, string> = {
-  consensus: "#fa7778",
-  facilitator: "#79c9ad",
-  devils_advocate: "#efa65d",
+  consensus: "var(--color-primary)",
+  facilitator: "var(--color-metric-consensus)",
+  devils_advocate: "var(--color-mediator)",
 };
 
 export function ModeratorSelection({ strategies, selectedId, saving, launching, onSelect, onBack, onEnter }: {
@@ -34,7 +34,7 @@ export function ModeratorSelection({ strategies, selectedId, saving, launching, 
           role="radio"
           aria-checked={selected}
           className={`moderator-card setup-pixel-panel${selected ? " is-selected" : ""}`}
-          style={{ "--moderator-accent": CARD_ACCENTS[strategy.id] ?? "#fa7778" } as CSSProperties}
+          style={{ "--moderator-accent": CARD_ACCENTS[strategy.id] ?? "var(--color-primary)" } as CSSProperties}
           key={strategy.id}
           disabled={saving || launching}
           onClick={() => onSelect(strategy.id)}
