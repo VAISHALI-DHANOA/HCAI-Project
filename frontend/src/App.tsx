@@ -1,14 +1,14 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, testChat, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
 import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
-import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
 import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
+import { PlaybackController } from "./playback";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
 import "./components/AgentCreation.css";
@@ -84,14 +84,70 @@ export default function App() {
   return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} />;
 }
 
-function HumanHistory({ turns }: { turns: PublicTurn[] }) {
-  const humanTurns = turns.filter((turn) => turn.speaker_id === "human");
-  if (!humanTurns.length) return null;
+function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
+  state: State | null; liveTurns: PublicTurn[]; liveRound: number; agentMap: Map<string, Agent>;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const roundNumbers = (state?.rounds ?? []).flatMap((round) => round.turns.map(() => round.round_number));
+  const showLive = !(state?.rounds ?? []).some((round) => round.round_number === liveRound);
+  const history = state?.public_history ?? [];
+  const liveHumans = showLive ? liveTurns.filter((turn) => turn.speaker_id === "human") : [];
+  let pendingHuman = liveHumans.length - 1;
+  const inLiveHistory = new Set<number>();
+  for (let index = history.length - 1; index >= 0 && pendingHuman >= 0; index--) {
+    if (history[index].speaker_id === "human" && history[index].message === liveHumans[pendingHuman].message) {
+      inLiveHistory.add(index);
+      pendingHuman--;
+    }
+  }
+  let contribution = 0;
+  const entries = history.filter((_, index) => !inLiveHistory.has(index)).map((turn) => ({
+    turn, round: turn.speaker_id === "human" ? undefined : roundNumbers[contribution++], live: false,
+  }));
+  if (showLive) {
+    entries.push(...liveTurns.map((turn) => ({ turn, round: turn.speaker_id === "human" ? undefined : liveRound, live: true })));
+  }
+  useEffect(() => {
+    if (followLatest.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [entries.length]);
+  let previousRound: number | undefined;
   return (
-    <details>
-      <summary>Human input history ({humanTurns.length})</summary>
-      {humanTurns.map((turn, index) => <p key={index}><strong>You:</strong> {turn.message}</p>)}
-    </details>
+    <div className="section-block section-block--log">
+      <h2 className="section-title">Conversation Log <span className="section-title__count">{entries.length}</span></h2>
+      <div className="chat-log" ref={scrollRef} onScroll={(event) => {
+        const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+        followLatest.current = scrollHeight - scrollTop - clientHeight < 48;
+      }}>
+        {!entries.length && <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>}
+        {entries.map(({ turn, round, live }, index) => {
+          const showRound = round !== undefined && round !== previousRound;
+          if (round !== undefined) previousRound = round;
+          const isHuman = turn.speaker_id === "human";
+          const agent = agentMap.get(turn.speaker_id);
+          const name = isHuman ? "You" : (agent?.name ?? turn.speaker_id);
+          const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
+          return (
+            <Fragment key={index}>
+              {showRound && <div className="chat-log__round-divider">
+                <span className="chat-log__round-divider-line" />
+                <span className="chat-log__round-divider-text">Round {round}{live ? " ? In progress" : ""}</span>
+                <span className="chat-log__round-divider-line" />
+              </div>}
+              <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                {isHuman ? <span className="chat-log__human-avatar">You</span> :
+                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />}
+                <div className="chat-log__body">
+                  <span className="chat-log__name">{name}</span>
+                  <p className="chat-log__message">{turn.message}</p>
+                </div>
+              </div>
+              {turn.visual && <VisualCard visual={turn.visual} agentColor={color} agentName={name} />}
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -113,10 +169,11 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [autoRun, setAutoRun] = useState(false);
-  const [intervalMs, setIntervalMs] = useState(1800);
+  const [displaySeconds, setDisplaySeconds] = useState(12);
   const [activeTurnIdx, setActiveTurnIdx] = useState<number>(-1);
   const [showReactions, setShowReactions] = useState(false);
   const [liveTurns, setLiveTurns] = useState<PublicTurn[]>([]);
+  const [liveRound, setLiveRound] = useState(0);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
@@ -135,7 +192,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
   const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
   const [chairSaving, setChairSaving] = useState(false);
-  const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
+  const [sidePanelView, setSidePanelView] = useState<"controls" | "log">("controls");
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
   const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
@@ -145,6 +202,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [dashboardMode, setDashboardMode] = useState(false);
   const [dashboardVisuals, setDashboardVisuals] = useState<DashboardVisual[]>([]);
   const { speak, stop: stopTTS } = useTTS();
+
+  useEffect(() => {
+    if (!voiceEnabled) stopTTS();
+  }, [voiceEnabled, stopTTS]);
 
   const [isAdmin] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
@@ -156,123 +217,107 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
-  const chatLogRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const appPhaseRef = useRef(appPhase);
   appPhaseRef.current = appPhase;
   const stateRef = useRef<State | null>(state);
   stateRef.current = state;
-  // Turn queue: incoming turns are queued and revealed one at a time
-  // with 20s display + 3s gap between each message.
-  const turnQueueRef = useRef<{ turn: PublicTurn; roundNumber: number }[]>([]);
-  const pendingRoundEventsRef = useRef<WsRoundEvent[]>([]);
-  const displayTimerRef = useRef<number | null>(null);
-
-  const processQueue = useCallback(() => {
-    if (displayTimerRef.current !== null) return; // timer already active
-
-    const finalizeRoundDisplay = (roundNumber: number) => {
-      const idx = pendingRoundEventsRef.current.findIndex(
-        (event) => event.round_result.round_number === roundNumber,
-      );
-      if (idx < 0) return;
-      const [ev] = pendingRoundEventsRef.current.splice(idx, 1);
+  const playbackSettings = useRef({ displaySeconds, voiceEnabled });
+  playbackSettings.current = { displaySeconds, voiceEnabled };
+  const playbackHandlers = useRef({ snapshot: applyStateSnapshot, show: showContribution });
+  playbackHandlers.current = { snapshot: applyStateSnapshot, show: showContribution };
+  const playbackRef = useRef<PlaybackController | null>(null);
+  if (!playbackRef.current) playbackRef.current = new PlaybackController({
+    duration: () => playbackSettings.current.displaySeconds,
+    speak: (turn) => {
+      const speaker = stateRef.current?.agents.find((agent) => agent.id === turn.speaker_id);
+      return playbackSettings.current.voiceEnabled && speaker
+        ? speak(turn.message, agentVoiceParams(speaker)) : Promise.resolve();
+    },
+    stopAudio: stopTTS,
+    requestRound: async (signal) => (await runRounds(1, signal)).state,
+    snapshot: (snapshot) => playbackHandlers.current.snapshot(snapshot),
+    contribution: (turn, round) => playbackHandlers.current.show(turn, round),
+    completed: (round) => {
       setLiveTurns((prev) => pendingHumanTurns(prev, stateRef.current?.human_request ?? ""));
-      setActiveTurnIdx(ev.round_result.turns.length - 1);
+      setActiveTurnIdx(round.turns.length - 1);
       setShowReactions(true);
-    };
+    },
+    busy: setRunning,
+    autoChanged: setAutoRun,
+    error: setError,
+  });
+  const playback = playbackRef.current;
 
-    const queued = turnQueueRef.current.shift();
-    if (queued) {
-      const next = queued.turn;
-      const turnRoundNum = queued.roundNumber;
-      setShowReactions(false);
-      setLiveTurns((prev) => [...prev, next]);
+  function showContribution(next: PublicTurn, turnRoundNum: number) {
+    setShowReactions(false);
+    setLiveRound(turnRoundNum);
+    setLiveTurns((prev) => [...prev, next]);
+    // Determine if this turn belongs to a dashboard round (3+)
+    const isDashboardRound = turnRoundNum >= 3;
 
-      // Determine if this turn belongs to a dashboard round (3+)
-      const isDashboardRound = turnRoundNum >= 3;
-
-      // Accumulate table actions from this turn (only in table mode, rounds 1-2)
-      if (next.table_action && !isDashboardRound) {
-        const ta = next.table_action;
-        if (ta.navigate_to) {
-          setAgentTablePositions((prev) => {
-            const updated = new Map(prev);
-            updated.set(next.speaker_id, {
-              agentId: next.speaker_id,
-              row: ta.navigate_to.row,
-              column: ta.navigate_to.column,
-            });
-            return updated;
+    // Accumulate table actions from this turn (only in table mode, rounds 1-2)
+    if (next.table_action && !isDashboardRound) {
+      const ta = next.table_action;
+      if (ta.navigate_to) {
+        setAgentTablePositions((prev) => {
+          const updated = new Map(prev);
+          updated.set(next.speaker_id, {
+            agentId: next.speaker_id,
+            row: ta.navigate_to.row,
+            column: ta.navigate_to.column,
           });
-        }
-        if (ta.highlights?.length) {
-          setAccumulatedHighlights((prev) => [...prev, ...ta.highlights]);
-        }
-        if (ta.annotations?.length) {
-          setAccumulatedAnnotations((prev) => [...prev, ...ta.annotations]);
-        }
+          return updated;
+        });
       }
-
-      // Accumulate dashboard visuals for rounds 3+
-      if (isDashboardRound && next.visual && next.speaker_id !== "human") {
-        const speakerId = next.speaker_id;
-        // Skip mediator/chair agents — they don't get dashboard cards
-        const speakerAgent = stateRef.current?.agents?.find(
-          (a: Agent) => a.id === speakerId
-        );
-        if (speakerAgent?.role !== "mediator") {
-          setDashboardVisuals((prev) => {
-            // Look up agent info from the state snapshot in the pending round
-            const agents = stateRef.current?.agents ?? [];
-            const agent = agents.find((a: Agent) => a.id === speakerId);
-            const color = agent ? agentColor(agent) : "#38bdf8";
-            const dv: DashboardVisual = {
-              id: `${turnRoundNum}-${speakerId}`,
-              roundNumber: turnRoundNum,
-              speakerId,
-              agentName: agent?.name ?? "Unknown",
-              agentColor: color,
-              visual: next.visual!,
-              message: next.message,
-            };
-            const filtered = prev.filter((v) => v.id !== dv.id);
-            return [...filtered, dv];
-          });
-        }
+      if (ta.highlights?.length) {
+        setAccumulatedHighlights((prev) => [...prev, ...ta.highlights]);
       }
-
-      displayTimerRef.current = window.setTimeout(() => {
-        displayTimerRef.current = null;
-        const nextQueued = turnQueueRef.current[0];
-        if (nextQueued && nextQueued.roundNumber !== turnRoundNum) {
-          finalizeRoundDisplay(turnRoundNum);
-          displayTimerRef.current = window.setTimeout(() => {
-            displayTimerRef.current = null;
-            processQueue();
-          }, 12000);
-          return;
-        }
-        processQueue();
-      }, 12000); // 15s display + 3s gap
-    } else if (pendingRoundEventsRef.current.length > 0) {
-      // All turns displayed — finalize round after 15s for last turn
-      const ev = pendingRoundEventsRef.current[0];
-      displayTimerRef.current = window.setTimeout(() => {
-        displayTimerRef.current = null;
-        finalizeRoundDisplay(ev.round_result.round_number);
-      }, 12000); // 15s display for last turn
+      if (ta.annotations?.length) {
+        setAccumulatedAnnotations((prev) => [...prev, ...ta.annotations]);
+      }
     }
-  }, []);
 
-  function clearTurnQueue() {
-    turnQueueRef.current = [];
-    pendingRoundEventsRef.current = [];
-    if (displayTimerRef.current !== null) {
-      clearTimeout(displayTimerRef.current);
-      displayTimerRef.current = null;
+    // Accumulate dashboard visuals for rounds 3+
+    if (isDashboardRound && next.visual && next.speaker_id !== "human") {
+      const speakerId = next.speaker_id;
+      // Skip mediator/chair agents — they don't get dashboard cards
+      const speakerAgent = stateRef.current?.agents?.find(
+        (a: Agent) => a.id === speakerId
+      );
+      if (speakerAgent?.role !== "mediator") {
+        setDashboardVisuals((prev) => {
+          // Look up agent info from the state snapshot in the pending round
+          const agents = stateRef.current?.agents ?? [];
+          const agent = agents.find((a: Agent) => a.id === speakerId);
+          const color = agent ? agentColor(agent) : "#38bdf8";
+          const dv: DashboardVisual = {
+            id: `${turnRoundNum}-${speakerId}`,
+            roundNumber: turnRoundNum,
+            speakerId,
+            agentName: agent?.name ?? "Unknown",
+            agentColor: color,
+            visual: next.visual!,
+            message: next.message,
+          };
+          const filtered = prev.filter((v) => v.id !== dv.id);
+          return [...filtered, dv];
+        });
+      }
     }
   }
+
+  function clearTurnQueue() {
+    playback.cancel();
+    setLiveTurns([]);
+    setActiveTurnIdx(-1);
+    setShowReactions(false);
+  }
+
+  useEffect(() => {
+    if (appPhase !== "arena") clearTurnQueue();
+    else playback.resume();
+  }, [appPhase]);
 
   const roundHistory: WsRoundEvent[] = useMemo(() => {
     if (!state) return [];
@@ -444,19 +489,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
           // Auto-transition students to arena when debate starts
           if (participant && appPhaseRef.current === "setup") {
             setAppPhase("arena");
+            playback.resume();
           }
-          // Queue turn for timed reveal (20s display + 3s gap)
-          setShowReactions(false);
-          turnQueueRef.current.push({ turn: event.turn, roundNumber: event.round_number });
-          processQueue();
+          if (appPhaseRef.current === "arena" || participant) {
+            playback.turn(event.run_id, event.round_number, event.contribution_index ?? -1, event.turn);
+          }
           return;
         }
-        // event.type === "round" — save for finalization after queue drains
-        if (!applyStateSnapshot(event.state_snapshot)) return;
-        if (!pendingRoundEventsRef.current.some((pending) => pending.round_result.round_number === event.round_result.round_number)) {
-          pendingRoundEventsRef.current.push(event);
-        }
-        processQueue();
+        applyStateSnapshot(event.state_snapshot);
       },
       (status) => setConnection(status)
     );
@@ -467,48 +507,12 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     };
   }, []);
 
-  // Auto-run timer
-  useEffect(() => {
-    if (!autoRun) return;
-    const timer = window.setInterval(async () => {
-      if (running) return;
-      try {
-        setRunning(true);
-        await runRounds(1);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Auto-run failed");
-      } finally {
-        setRunning(false);
-      }
-    }, Math.max(200, intervalMs));
-
-    return () => window.clearInterval(timer);
-  }, [autoRun, intervalMs, running]);
-
-  // Speak current turn aloud when voice is enabled
-  useEffect(() => {
-    if (!voiceEnabled || !currentTurn) {
-      stopTTS();
-      return;
-    }
-    const speaker = agentMap.get(currentTurn.speaker_id);
-    if (!speaker) return;
-    speak(currentTurn.message, agentVoiceParams(speaker));
-  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
-
   // Auto-scroll center stage history to bottom so recent turns are visible
   useEffect(() => {
     if (historyRef.current) {
       historyRef.current.scrollTop = historyRef.current.scrollHeight;
     }
   }, [liveTurns.length, activeTurnIdx]);
-
-  // Auto-scroll chat log when stored round history updates
-  useEffect(() => {
-    if (sidebarCollapsed && chatLogRef.current) {
-      chatLogRef.current.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" });
-    }
-  }, [roundHistory, sidebarCollapsed]);
 
   const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
   const hasAgents = userAgents.length > 0;
@@ -536,10 +540,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     }
     if (newRun || resetPlayback) {
       clearTurnQueue();
-      stopTTS();
-      setLiveTurns([]);
-      setActiveTurnIdx(-1);
-      setShowReactions(false);
+      if (resetPlayback) setError("The round was interrupted. Playback has stopped; you can retry the round.");
       setDashboardVisuals([]);
       const actions = snapshot.public_history.flatMap((turn) => turn.table_action ? [{ turn, action: turn.table_action }] : []);
       setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
@@ -564,6 +565,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     }
     stateRef.current = snapshot;
     setStateValue(snapshot);
+    playback.sync(snapshot, previous === null || newRun || resetPlayback);
     return true;
   }
 
@@ -700,7 +702,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       // Speak the agent's reply aloud when input was via voice
       if (overrideMessage) {
         const agentSeed = testChatAgent.name.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-        speak(result.reply, { voiceIndex: agentSeed });
+        void speak(result.reply, { voiceIndex: agentSeed }).catch((error: unknown) => setError(error instanceof Error ? error.message : "Voice playback failed"));
       }
     } catch (e: unknown) {
       setChatMessages((prev) => [
@@ -774,20 +776,13 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     setSetupStep("moderator");
   }
 
-  async function onRun(rounds: number) {
+  function onRun(rounds: number) {
     setError("");
-    try {
-      setRunning(true);
-      const result = await runRounds(rounds);
-      if (!applyStateSnapshot(result.state)) return;
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Run failed");
-    } finally {
-      setRunning(false);
-    }
+    playback.run(rounds);
   }
 
   async function onReset() {
+    clearTurnQueue();
     setError("");
     try {
       const result = await reset(topicInput.trim() || undefined);
@@ -1387,79 +1382,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
           {hasAgents && sidebarCollapsed ? (
             <aside className="chat-log-panel">
               <div className="chat-log-panel__header">
-                <h2 className="section-title">Conversation Log</h2>
+                <span className="section-title">Discussion</span>
                 <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
               </div>
-              <div className="chat-log" ref={chatLogRef}>
-                {roundHistory.length === 0 && liveTurns.length === 0 && (
-                  <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
-                )}
-                <HumanHistory turns={state?.public_history ?? []} />
-                {roundHistory.map((roundEvent) => (
-                  <div key={roundEvent.round_result.round_number}>
-                    <div className="chat-log__round-divider">
-                      <span className="chat-log__round-divider-line" />
-                      <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
-                      <span className="chat-log__round-divider-line" />
-                    </div>
-                    {roundEvent.round_result.turns.map((turn, ti) => {
-                      const isHuman = turn.speaker_id === "human";
-                      const agent = agentMap.get(turn.speaker_id);
-                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                      return (
-                        <div key={ti}>
-                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                            {isHuman ? (
-                              <span className="chat-log__human-avatar">You</span>
-                            ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
-                            )}
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                          {turn.visual && (
-                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-                {liveTurns.length > 0 && (
-                  <div>
-                    <div className="chat-log__round-divider">
-                      <span className="chat-log__round-divider-line" />
-                      <span className="chat-log__round-divider-text">Round {completedRoundCount || roundHistory.length + 1}</span>
-                      <span className="chat-log__round-divider-line" />
-                    </div>
-                    {liveTurns.map((turn, ti) => {
-                      const isHuman = turn.speaker_id === "human";
-                      const agent = agentMap.get(turn.speaker_id);
-                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                      return (
-                        <div key={`live-${ti}`}>
-                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                            {isHuman ? (
-                              <span className="chat-log__human-avatar">You</span>
-                            ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
-                            )}
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                          {turn.visual && (
-                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} />
               {isAdmin && (
                 <div className="chat-log-panel__controls">
                   <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
@@ -1477,9 +1403,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   onClick={() => setSidePanelView("controls")}>
                   Controls
                 </button>
-                <button type="button" className={`control-tab${sidePanelView === "dashboard" ? " control-tab--active" : ""}`}
-                  onClick={() => setSidePanelView("dashboard")}>
-                  Dashboard
+                <button type="button" className={`control-tab${sidePanelView === "log" ? " control-tab--active" : ""}`}
+                  onClick={() => setSidePanelView("log")}>
+                  Conversation Log
                 </button>
               </div>
 
@@ -1497,14 +1423,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                       </div>
                       <div className="control-row">
                         <label className="toggle-row">
-                          <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
+                          <input type="checkbox" checked={autoRun} onChange={(e) => playback.auto(e.target.checked)} className="toggle-input" />
                           <span className="toggle-switch" />
                           <span className="toggle-label">Auto-Run</span>
                         </label>
                       </div>
                       <div className="control-row">
-                        <label className="form-label">Interval (ms)</label>
-                        <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
+                        <label className="form-label" htmlFor="contribution-display-time">Display time per contribution (s)</label>
+                        <input id="contribution-display-time" type="number" min={1} step={1} value={displaySeconds} onChange={(e) => { const value = Number(e.target.value); if (Number.isFinite(value)) setDisplaySeconds(Math.max(1, value)); }} />
                       </div>
                     </div>
                   )}
@@ -1572,149 +1498,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                     </div>
                   </div>
 
-                  {/* Conversation Log */}
-                  <div className="section-block section-block--log">
-                    <h2 className="section-title">
-                      Conversation Log
-                      <span className="section-title__count">{roundHistory.length}</span>
-                    </h2>
-                    <div className="chat-log" ref={chatLogRef}>
-                      {roundHistory.length === 0 && liveTurns.length === 0 && (
-                        <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
-                      )}
-                      <HumanHistory turns={state?.public_history ?? []} />
-                      {roundHistory.map((roundEvent) => (
-                        <div key={roundEvent.round_result.round_number}>
-                          <div className="chat-log__round-divider">
-                            <span className="chat-log__round-divider-line" />
-                            <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
-                            <span className="chat-log__round-divider-line" />
-                          </div>
-                          {roundEvent.round_result.turns.map((turn, ti) => {
-                            const isHuman = turn.speaker_id === "human";
-                            const agent = agentMap.get(turn.speaker_id);
-                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                            return (
-                              <div key={ti}>
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                                {turn.visual && (
-                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                      {liveTurns.length > 0 && (
-                        <div>
-                          <div className="chat-log__round-divider">
-                            <span className="chat-log__round-divider-line" />
-                            <span className="chat-log__round-divider-text">Round {completedRoundCount || roundHistory.length + 1}</span>
-                            <span className="chat-log__round-divider-line" />
-                          </div>
-                          {liveTurns.map((turn, ti) => {
-                            const isHuman = turn.speaker_id === "human";
-                            const agent = agentMap.get(turn.speaker_id);
-                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                            return (
-                              <div key={`live-${ti}`}>
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                                {turn.visual && (
-                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </>
               ) : (
-                /* ---- Dashboard Tab: Visual Contributions ---- */
-                <div className="section-block section-block--log">
-                  <h2 className="section-title">Analysis Dashboard</h2>
-                  {/* Admin controls row within dashboard */}
-                  {isAdmin && (
-                    <div className="button-row" style={{ marginBottom: "8px" }}>
-                      <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                      <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                      <button className="btn-danger" onClick={onReset}>Reset</button>
-                    </div>
-                  )}
-                  {/* Data Preview Table */}
-                  {datasetInfo && (
-                    <DataPreviewTable
-                      datasetInfo={datasetInfo}
-                      highlightedColumns={highlightedColumns}
-                    />
-                  )}
-                  <div className="dashboard-section">
-                    {roundHistory.length === 0 ? (
-                      <div className="chat-log__empty">No analysis yet. Run a round to begin.</div>
-                    ) : (
-                      roundHistory.map((roundEvent) => {
-                        const visuals = roundEvent.round_result.turns.filter(t => t.visual);
-                        return (
-                          <div className="dashboard-round-group" key={roundEvent.round_result.round_number}>
-                            <div className="dashboard-round-label">Round {roundEvent.round_result.round_number}</div>
-                            {/* Text summary for this round */}
-                            {roundEvent.round_result.turns.map((turn, ti) => {
-                              const isHuman = turn.speaker_id === "human";
-                              const agent = agentMap.get(turn.speaker_id);
-                              const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                              return (
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} key={`text-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={28} height={28} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {/* Visual contributions */}
-                            {visuals.map((turn, ti) => {
-                              const agent = agentMap.get(turn.speaker_id);
-                              return (
-                                <VisualCard
-                                  key={`vis-${ti}`}
-                                  visual={turn.visual!}
-                                  agentColor={agent ? agentColor(agent) : "#38bdf8"}
-                                  agentName={agent?.name ?? "Unknown"}
-                                />
-                              );
-                            })}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} />
               )}
             </aside>
           )}

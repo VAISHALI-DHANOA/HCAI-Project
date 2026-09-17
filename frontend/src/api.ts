@@ -70,10 +70,10 @@ export function chooseSessionMode(code: string, mode: SessionMode, hostKey: stri
   });
 }
 
-export async function runRounds(rounds: number): Promise<{ state: State }> {
+export async function runRounds(rounds: number, signal?: AbortSignal): Promise<{ state: State }> {
   return request<{ state: State }>("/run", {
     method: "POST",
-    body: JSON.stringify({ rounds })
+    body: JSON.stringify({ rounds }), signal,
   });
 }
 
@@ -160,13 +160,17 @@ export async function testChat(
   });
 }
 
-export async function getTTSAudio(text: string, voice: string): Promise<Blob> {
+export async function getTTSAudio(text: string, voice: string, signal?: AbortSignal): Promise<Blob> {
   const response = await fetch(`${API_BASE}/tts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, voice }),
+    signal,
   });
-  if (!response.ok) throw new Error(`TTS failed: ${response.status}`);
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(`Voice request failed (${response.status}): ${body?.detail ?? response.statusText}`);
+  }
   return response.blob();
 }
 

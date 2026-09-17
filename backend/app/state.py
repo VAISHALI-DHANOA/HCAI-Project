@@ -32,6 +32,7 @@ class InMemoryStateStore:
         self._busy = False
         self._revision = 0
         self._active_round: State | None = None
+        self._round_intervention_start: int | None = None
         self._state = State(
             topic="Untitled classroom inquiry", agents=create_mediators(),
             world_state={"round": 0}, moderator_strategy_id=DEFAULT_MODERATOR_STRATEGY_ID,
@@ -165,6 +166,7 @@ class InMemoryStateStore:
             if self._active_round is not None:
                 raise SessionBusyError("A round is already running.")
             self._active_round = self._state.model_copy(deep=True)
+            self._round_intervention_start = len(self._interventions)
             return self._active_round
 
     def abort_round(self, error_type: str) -> None:
@@ -174,6 +176,7 @@ class InMemoryStateStore:
                 "failed_at": utc_now(), "error_type": error_type,
             })
             self._active_round = None
+            self._round_intervention_start = None
             self._touch()
             try:
                 self._write_log_file(self._state)
@@ -189,21 +192,27 @@ class InMemoryStateStore:
                 return
             previous_revision = target.revision
             pending_request = target.human_request
+            history_length = len(target.public_history)
+            queued = (self._interventions[self._round_intervention_start:]
+                      if working_state is self._active_round and self._round_intervention_start is not None else [])
             target.rounds.append(result)
             target.revision = self._revision + 1
-            # Consume the pending input with the committed round, retaining
-            # historical human turns and the permanent intervention log.
-            target.human_request = ""
+            # Only consume requests present when this round began. New input
+            # stays outside the working snapshot until the next round.
+            target.human_request = "\n".join(item["message"] for item in queued)
+            target.public_history.extend(PublicTurn(speaker_id="human", message=item["message"]) for item in queued)
             try:
                 self._write_log_file(target)
             except BaseException:
                 target.rounds.pop()
                 target.revision = previous_revision
                 target.human_request = pending_request
+                del target.public_history[history_length:]
                 raise
             self._state = target
             self._revision = target.revision
             self._active_round = None
+            self._round_intervention_start = None
 
     def set_moderator_strategy(self, strategy_id: str) -> State:
         with self._lock:
@@ -213,14 +222,11 @@ class InMemoryStateStore:
             return self._state
 
     def add_intervention(self, message: str) -> PublicTurn:
-        """Human input remains available to subsequent turns during a round."""
+        """Log immediately, but freeze the active round's input at its start."""
         with self._lock:
             turn = PublicTurn(speaker_id="human", message=message)
             self._state.public_history.append(turn)
-            self._state.human_request = message
-            if self._active_round is not None:
-                self._active_round.public_history.append(turn.model_copy(deep=True))
-                self._active_round.human_request = message
+            self._state.human_request = "\n".join(filter(None, [self._state.human_request, message]))
             self._interventions.append({
                 "at": utc_now(), "message": message,
                 "after_completed_round": self._state.round_number,

@@ -2,10 +2,12 @@ import type { PublicTurn, State } from "./types";
 
 export function pendingHumanTurns(turns: PublicTurn[], pendingRequest: string): PublicTurn[] {
   if (!pendingRequest) return [];
-  const pending = [...turns].reverse().find(
-    (turn) => turn.speaker_id === "human" && turn.message === pendingRequest,
-  );
-  return pending ? [pending] : [];
+  const humanTurns = turns.filter((turn) => turn.speaker_id === "human");
+  for (let start = humanTurns.length - 1; start >= 0; start--) {
+    const pending = humanTurns.slice(start);
+    if (pending.map((turn) => turn.message).join("\n") === pendingRequest) return pending;
+  }
+  return [];
 }
 
 export function acceptsSnapshot(current: State | null, incoming: State): boolean {

@@ -40,3 +40,8 @@ backend/logs/
 # Per-session uploaded datasets
 backend/uploads/
 
+
+# Local playback and audio regression tests
+/frontend/tests/playback.test.mjs
+/frontend/tests/tts.test.mjs
+/frontend/tests/intervention.test.mjs

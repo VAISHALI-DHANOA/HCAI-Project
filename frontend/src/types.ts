@@ -166,6 +166,7 @@ export interface WsRoundEvent {
 }
 
 export interface WsTurnEvent {
+  contribution_index?: number; // Human interventions are outside round.turns.
   type: "turn";
   turn: PublicTurn;
   round_number: number;

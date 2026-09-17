@@ -238,13 +238,20 @@ async def run(payload: RunRequest, session_id: str = Depends(get_session_id)) ->
     csv_path = SESSIONS.get_csv_path(session_id)
     results = []
 
+    contribution_index = 0
+
     async def broadcast_turn(turn: Any, round_number: int) -> None:
+        nonlocal contribution_index
         await manager.broadcast(session_id, {
             "type": "turn", "turn": turn.model_dump(), "round_number": round_number,
+            "contribution_index": contribution_index,
             "run_id": store.get_state().run_id,
         })
 
+        contribution_index += 1
+
     for _ in range(payload.rounds):
+        contribution_index = 0
         working = store.begin_round()
         try:
             experiment = store.experiment_snapshot()

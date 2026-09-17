@@ -1115,6 +1115,8 @@ button:disabled {
   font-size: 0.85rem;
   color: var(--text-primary);
   line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .chat-log-panel__controls {
