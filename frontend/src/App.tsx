@@ -1435,6 +1435,25 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                     </div>
                   )}
 
+                  {/* Simulation Info */}
+                  <div className="section-block">
+                    <h2 className="section-title">Simulation Info</h2>
+                    <div className="info-grid">
+                      <div className="info-item">
+                        <span className="info-label">Round</span>
+                        <span className="info-value">{completedRoundCount}</span>
+                      </div>
+                      <div className="info-item">
+                        <span className="info-label">Agents</span>
+                        <span className="info-value">{state?.agents.length ?? 0}</span>
+                      </div>
+                      <div className="info-item info-item--full">
+                        <span className="info-label">Topic</span>
+                        <span className="info-value">{state?.topic ?? "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Battle Metrics */}
                   <div className="section-block">
                     <h2 className="section-title">Battle Metrics</h2>
@@ -1477,25 +1496,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                     ) : (
                       <div className="metrics-empty">No metrics yet</div>
                     )}
-                  </div>
-
-                  {/* Simulation Info */}
-                  <div className="section-block">
-                    <h2 className="section-title">Simulation Info</h2>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Round</span>
-                        <span className="info-value">{completedRoundCount}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Agents</span>
-                        <span className="info-value">{state?.agents.length ?? 0}</span>
-                      </div>
-                      <div className="info-item info-item--full">
-                        <span className="info-label">Topic</span>
-                        <span className="info-value">{state?.topic ?? "-"}</span>
-                      </div>
-                    </div>
                   </div>
 
                 </>

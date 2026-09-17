@@ -170,9 +170,9 @@ body {
   color: var(--accent-primary);
   text-shadow: none;
   max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .topbar__right {
