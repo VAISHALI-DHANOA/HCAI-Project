@@ -3,7 +3,7 @@ import hashlib
 from functools import lru_cache
 from pathlib import Path
 
-from app.config import CHAT_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, VISUAL_SETTINGS
+from app.config import CHAT_SETTINGS, DATA_CONTRIBUTION_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, VISUAL_SETTINGS
 from app.metrics import METRICS_POLICY_VERSION
 from app.models import State
 from app.moderator import get_moderator_strategy
@@ -16,7 +16,7 @@ def source_fingerprints() -> dict[str, str]:
     folder = Path(__file__).parent
     return {
         name: hashlib.sha256((folder / name).read_bytes()).hexdigest()
-        for name in ("prompts.py", "personality.py", "moderator.py", "config.py", "metrics.py", "selection.py", "simulation.py")
+        for name in ("prompts.py", "personality.py", "moderator.py", "config.py", "metrics.py", "selection.py", "simulation.py", "llm.py", "analysis.py")
     }
 
 
@@ -29,6 +29,7 @@ def configuration_snapshot(state: State, dataset: dict) -> dict:
         "generation_settings": {
             "discussion": DISCUSSION_SETTINGS.to_dict(), "summary": SUMMARY_SETTINGS.to_dict(),
             "chat": CHAT_SETTINGS.to_dict(), "visual": VISUAL_SETTINGS.to_dict(),
+            "data_contribution": DATA_CONTRIBUTION_SETTINGS.to_dict(),
         },
         "dataset": {
             **dataset, "summary": state.dataset_summary, "columns": list(state.dataset_columns),

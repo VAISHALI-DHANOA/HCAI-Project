@@ -10,12 +10,12 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-from app.config import CHAT_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, VISUAL_SETTINGS, GenerationSettings
-from app.models import Agent, ChatMessageInput, GenerationMetadata, PublicTurn, State
+from app.config import CHAT_SETTINGS, DATA_CONTRIBUTION_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, VISUAL_SETTINGS, GenerationSettings
+from app.models import Agent, ChatMessageInput, DataContributionRequest, GenerationMetadata, PublicTurn, State
 from app.personality import AgentPersonality
 from app.prompts import (
     VISUAL_REQUEST, _build_test_chat_system_prompt, _format_conversation_history,
-    build_chair_summary_prompt, build_system_prompt, build_test_chat_messages, build_visual_prompt,
+    DATA_EVIDENCE_RULES, build_analysis_request_prompt, build_chair_summary_prompt, build_system_prompt, build_test_chat_messages, build_visual_prompt,
 )
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 class GeneratedMessage:
     text: str
     generation: GenerationMetadata
+    analysis_request: dict | None = None
 
 
 def _extract_json(text: str) -> dict | list | None:
@@ -114,18 +115,56 @@ def _fallback_message(agent: Agent, topic: str) -> str:
 async def generate_agent_message(
     agent: Agent, state: State, active_turns: list[PublicTurn],
 ) -> GeneratedMessage:
+    system_prompt = build_system_prompt(
+        agent, state.topic, state.round_number,
+        dataset_context=state.dataset_summary,
+        human_request=state.human_request,
+        moderator_strategy_id=state.moderator_strategy_id,
+    )
+    if state.dataset_summary:
+        system_prompt += DATA_EVIDENCE_RULES
     return await _generate_text(
-        system_prompt=build_system_prompt(
-            agent, state.topic, state.round_number,
-            dataset_context=state.dataset_summary,
-            human_request=state.human_request,
-            moderator_strategy_id=state.moderator_strategy_id,
-        ),
+        system_prompt=system_prompt,
         messages=_format_conversation_history(state, active_turns, agent),
         settings=DISCUSSION_SETTINGS,
         operation="discussion",
         fallback=_fallback_message(agent, state.topic),
     )
+
+
+async def generate_data_contribution(agent: Agent, state: State, active_turns: list[PublicTurn]) -> GeneratedMessage:
+    """Choose discussion or a computation in one call; never retry malformed output."""
+    prompt = build_system_prompt(
+        agent, state.topic, state.round_number, human_request=state.human_request,
+        moderator_strategy_id=state.moderator_strategy_id,
+    ) + DATA_EVIDENCE_RULES + "\n" + build_analysis_request_prompt(agent, state)
+    settings = DATA_CONTRIBUTION_SETTINGS
+    try:
+        response = await get_client().messages.create(
+            model=settings.model, max_tokens=settings.max_tokens,
+            temperature=settings.temperature, timeout=settings.timeout_seconds, system=prompt,
+            messages=_format_conversation_history(state, active_turns, agent),
+        )
+        text = response.content[0].text.strip()
+        if not text:
+            error_type = "EmptyResponse"
+        else:
+            payload = _extract_json(text)
+            if payload is None:
+                raise json.JSONDecodeError("No valid JSON contribution found", text, 0)
+            contribution = DataContributionRequest.model_validate(payload)
+            if not contribution.message.strip():
+                raise ValueError("Empty contribution")
+            return GeneratedMessage(contribution.message.strip(), GenerationMetadata(
+                source="llm", operation="discussion", **settings.to_dict(),
+            ), contribution.analysis_request)
+
+    except Exception as exc:
+        error_type = type(exc).__name__
+    logger.warning("Data contribution failed for %s (%s)", agent.name, error_type)
+    return GeneratedMessage("No analysis was performed. I suggest clarifying the next question.", GenerationMetadata(
+        source="fallback", operation="discussion", error_type=error_type, **settings.to_dict(),
+    ))
 
 
 async def generate_chair_summary(

@@ -83,6 +83,7 @@ class InMemoryStateStore:
             self._state.world_state = {"round": 0}
             self._state.dataset_summary = ""
             self._state.dataset_columns = []
+            self._state.dataset_preview = None
             self._state.human_request = ""
             for agent in self._state.agents:
                 if agent.role == "user":
@@ -96,6 +97,7 @@ class InMemoryStateStore:
             self._archive_current()
             self._state.run_id = uuid4().hex
             self._state.dataset_summary = summary
+            self._state.dataset_preview = None
             self._state.topic = f"Analyze the uploaded dataset: {filename}"
             self._state.round_number = 0
             self._state.public_history.clear()

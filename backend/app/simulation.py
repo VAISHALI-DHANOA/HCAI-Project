@@ -5,19 +5,21 @@ from typing import Awaitable, Callable
 
 from app.auto_visual import (
     compute_dashboard_narrative,
-    compute_dashboard_visual,
     compute_table_action_and_visual,
 )
-from app.chart_compute import compute_chart_data
+from app.analysis import (
+    analysis_report, analysis_visual, combined_analysis_visual,
+    compute_requested_analyses, verified_message,
+)
 from app.llm import (
     generate_agent_message,
+    generate_data_contribution,
     generate_chair_summary,
-    generate_visual_spec,
 )
 from app.metrics import compute_emergent_metrics
 from app.models import (
     Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
-    RoundResult, State, TableAction, VisualSpec,
+    RoundResult, State, TableAction,
 )
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
@@ -86,41 +88,53 @@ async def run_round(
             state.world_state["narrative_human_request"] = state.human_request
 
     turns: list[PublicTurn] = []
+    verified_path = bool(state.dataset_summary)
+    onboarding_speaker = next((a.id for a in speakers if a.role == "user"), None)
     for speaker in speakers:
-        generated = await generate_agent_message(
-            agent=speaker,
-            state=state,
-            active_turns=turns,
+        analysis = None
+        analyses = []
+        request = None
+        redisplay = False
+        generated = await (
+            generate_data_contribution(speaker, state, turns)
+            if verified_path and speaker.role == "user"
+            else generate_agent_message(speaker, state, turns)
         )
+        if verified_path and speaker.role == "user":
+            request = generated.analysis_request
+            if (request is None and generated.generation.source == "llm"
+                    and state.round_number <= 2 and speaker.id == onboarding_speaker):
+                # One real overview, persisted as a normal contribution and reused in round 2.
+                request = {"operation": "dataset_overview", "columns": state.dataset_columns}
+            if request is not None:
+                redisplay = request.get("redisplay") is True
+                analyses = compute_requested_analyses(request, csv_path, state.public_history + turns)
+                analysis = analyses[0]
+            if analyses and not any(a.status == "completed" for a in analyses):
+                turn = PublicTurn(speaker_id=speaker.id,
+                                  message=" ".join(analysis_report(a) for a in analyses),
+                                  analysis=analysis, additional_analyses=analyses[1:], generation=generated.generation)
+                turns.append(turn)
+                if on_turn:
+                    await on_turn(turn, state.round_number)
+                continue
         message = enforce_civility(generated.text)
-        message = truncate_to_words(message, 40)
+        # Data prompts already request short sentences; avoid cutting them mid-sentence.
+        if not verified_path:
+            message = truncate_to_words(message, 40)
+        if analysis is not None:
+            message = " ".join(verified_message(a) for a in analyses)
 
         visual = None
         table_action = None
-        if state.dataset_summary and speaker.role == "user":
-            if state.dataset_columns and state.round_number >= 3:
-                # Dashboard mode: LLM returns lightweight spec, backend computes real data
-                narrative = state.world_state.get("dashboard_narrative", "")
-                spec_data = compute_dashboard_visual(
-                    speaker, state, message,
-                    round_number=state.round_number,
-                    column_names=state.dataset_columns,
-                    dashboard_narrative=narrative,
-                )
-                if spec_data and isinstance(spec_data, dict) and spec_data.get("visual_type"):
-                    computed = compute_chart_data(spec_data, csv_path=csv_path)
-                    if computed:
-                        try:
-                            visual = VisualSpec(
-                                visual_type=spec_data["visual_type"],
-                                title=spec_data.get("title", ""),
-                                data=computed,
-                                description=spec_data.get("description", ""),
-                            )
-                        except Exception:
-                            pass
-            elif state.dataset_columns:
-                # Rounds 1-2: table action + lightweight visual spec
+        if analysis is not None:
+            # Numeric facts always come from computation, never from the model.
+            if redisplay or any(a.status == "completed" and not a.reused for a in analyses):
+                visual = combined_analysis_visual(analyses) if len(analyses) > 1 else analysis_visual(analysis)
+        if (state.dataset_summary and state.round_number <= 2 and speaker.role == "user"
+                and (state.dataset_preview is None or state.dataset_preview["sample_rows"])):
+            if state.dataset_columns:
+                # Preserve table navigation/annotations during onboarding and data quality.
                 speaker_idx = next(
                     (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
                 )
@@ -129,7 +143,8 @@ async def run_round(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
-                    row_count=state.world_state.get("dataset_row_count", 200),
+                    row_count=(len(state.dataset_preview["sample_rows"]) if state.dataset_preview is not None
+                               else min(state.world_state.get("dataset_row_count", 200), 500)),
                 )
                 try:
                     ta_raw = action_data.get("table_action")
@@ -156,31 +171,13 @@ async def run_round(
                             highlights=highlights,
                             annotations=annotations,
                         )
-                    # Compute real chart data from the lightweight spec
-                    vis_raw = action_data.get("visual")
-                    if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
-                        computed = compute_chart_data(vis_raw, csv_path=csv_path)
-                        if computed:
-                            visual = VisualSpec(
-                                visual_type=vis_raw["visual_type"],
-                                title=vis_raw.get("title", ""),
-                                data=computed,
-                                description=vis_raw.get("description", ""),
-                            )
                 except Exception:
                     pass
-            else:
-                # Fallback: no dataset columns, use original visual generation
-                visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
-                if visual_data:
-                    try:
-                        visual = VisualSpec(**visual_data)
-                    except Exception:
-                        visual = None
 
         turn = PublicTurn(
             speaker_id=speaker.id, message=message, visual=visual,
-            table_action=table_action, generation=generated.generation,
+            table_action=table_action, generation=generated.generation, analysis=analysis,
+            additional_analyses=analyses[1:],
         )
         turns.append(turn)
         if on_turn:

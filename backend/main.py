@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse, Response
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from app.agent_factory import create_agents_from_user
+from app.dataset import dataset_preview
+from app.chart_compute import clear_cache
 from app.config import TTS_MODEL
 from app.personality import get_personality_catalog
 from app.moderator import MODERATOR_STRATEGIES
@@ -359,12 +361,14 @@ async def upload_dataset(file: UploadFile = File(...), session_id: str = Depends
     upload_dir.mkdir(exist_ok=True)
     saved_path = upload_dir / f"{session_id}_{file.filename}"
     saved_path.write_bytes(contents)
+    clear_cache(saved_path)
     SESSIONS.set_csv_path(session_id, saved_path)
 
     store = SESSIONS.get_store(session_id)
     summary_text = build_dataset_summary_text(parsed)
     state = store.set_dataset_summary(summary_text, file.filename)
     state.dataset_columns = [c["name"] for c in parsed["columns"]]
+    state.dataset_preview = dataset_preview(parsed)
     state.world_state["dataset_row_count"] = parsed["shape"][0]
     store.set_dataset_identity(file.filename, contents)
     store.record_configuration("/upload-dataset")
@@ -413,6 +417,7 @@ async def load_data_demo(session_id: str = Depends(get_session_id)) -> dict:
         state.dataset_summary = dataset_summary
     if parsed_data:
         state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
+        state.dataset_preview = dataset_preview(parsed_data)
         state.world_state["dataset_row_count"] = parsed_data["shape"][0]
     created = create_agents_from_user(topic, agents_raw)
     state = store.add_agents(created)
@@ -492,6 +497,7 @@ async def load_example(name: str, session_id: str = Depends(get_session_id)) -> 
     if dataset_summary:
         state.dataset_summary = dataset_summary
     state.dataset_columns = [c["name"] for c in parsed_data["columns"]]
+    state.dataset_preview = dataset_preview(parsed_data)
     state.world_state["dataset_row_count"] = parsed_data["shape"][0]
     created = create_agents_from_user(topic, agents_raw)
     state = store.add_agents(created)
