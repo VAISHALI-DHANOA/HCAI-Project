@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 from uuid import uuid4
 
@@ -79,12 +80,74 @@ class GenerationMetadata(BaseModel):
     error_type: str | None = None
 
 
+class DataContributionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=2000)
+    analysis_request: dict | None = None
+
+
+class AnalysisFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    operator: Literal["eq", "gt", "gte", "lt", "lte"]
+    value: str | int | float | bool
+
+
+class AnalysisSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: str
+    x_column: str | None = None
+    y_column: str | None = None
+    group_by: str | None = None
+    filters: dict[str, str | int | float | bool | AnalysisFilter] = Field(default_factory=dict)
+    columns: list[str] = Field(default_factory=list)
+    aggregation: str = "mean"
+    grouping: Literal["categories", "quartiles"] = "categories"
+    limit: int = Field(default=10, ge=1, le=30)
+
+    @field_validator("filters", mode="before")
+    @classmethod
+    def empty_filters(cls, value):
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            value = value.copy()
+            operators = {">": "gt", ">=": "gte", "<": "lt", "<=": "lte"}
+            for column, condition in value.items():
+                if isinstance(condition, str):
+                    match = re.fullmatch(r"\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)\s*", condition)
+                    if match:
+                        value[column] = {"operator": operators[match[1]], "value": float(match[2])}
+        return value
+
+    @field_validator("columns", mode="before")
+    @classmethod
+    def empty_columns(cls, value):
+        return [] if value is None else value
+
+
+class AnalysisResult(BaseModel):
+    status: Literal["completed", "not_performed"]
+    spec: AnalysisSpec | None = None
+    sample_size: int = 0
+    pearson_r: float | None = None
+    groups: list[dict] = Field(default_factory=list)
+    chart_data: dict | None = None
+    error: str | None = None
+    values: dict = Field(default_factory=dict)
+    dataset_version: str = ""
+    reused: bool = False
+    request: dict | None = None
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
     visual: VisualSpec | None = None
     table_action: TableAction | None = None
     generation: GenerationMetadata | None = None
+    analysis: AnalysisResult | None = None
+    additional_analyses: list[AnalysisResult] = Field(default_factory=list)
 
 
 class Reaction(BaseModel):
@@ -123,6 +186,7 @@ class State(BaseModel):
     world_state: dict = Field(default_factory=dict)
     dataset_summary: str = ""
     dataset_columns: list[str] = Field(default_factory=list)
+    dataset_preview: dict | None = None
     human_request: str = ""
     moderator_strategy_id: str = DEFAULT_MODERATOR_STRATEGY_ID
 
