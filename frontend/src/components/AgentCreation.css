@@ -671,7 +671,26 @@
   margin-top: 4px;
 }
 
+.mission-briefing .dataset-columns {
+  font-size: .72rem;
+  /* Two full tag rows plus half of the next row, including padding and gaps. */
+  max-height: calc(3.5em + 18px);
+  align-content: flex-start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--setup-accent) var(--setup-input);
+  scrollbar-width: thin;
+}
+
+.mission-briefing .dataset-columns:focus-visible {
+  outline: 2px solid var(--setup-accent);
+  outline-offset: 2px;
+}
+
 .mission-briefing .arena-node__quirk {
+  font-size: inherit;
+  line-height: 1.4;
   color: var(--setup-muted);
   background: var(--setup-input);
   border-color: var(--setup-line-soft);

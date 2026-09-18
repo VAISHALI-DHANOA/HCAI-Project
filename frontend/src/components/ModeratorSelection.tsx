@@ -10,6 +10,33 @@ const CARD_ACCENTS: Record<string, string> = {
   devils_advocate: "var(--color-mediator)",
 };
 
+const CARD_COPY: Record<string, { description: string; bullets: string[] }> = {
+  consensus: {
+    description: "Seeks areas of agreement while keeping unresolved disagreements visible.",
+    bullets: [
+      "Identify genuine common ground without forcing agreement.",
+      "Clarify which differences remain unresolved.",
+      "Distinguish tentative agreement from settled conclusions.",
+    ],
+  },
+  facilitator: {
+    description: "Keeps different perspectives visible and encourages balanced participation.",
+    bullets: [
+      "Keep different perspectives visible throughout the discussion.",
+      "Encourage contributions from less represented viewpoints.",
+      "Reopen the discussion when the group becomes too narrow or repetitive.",
+    ],
+  },
+  devils_advocate: {
+    description: "Challenges emerging agreement by testing assumptions, evidence, and alternative explanations.",
+    bullets: [
+      "Challenge emerging consensus when it appears under-examined.",
+      "Test assumptions, evidence, and reasoning.",
+      "Introduce plausible counterarguments or alternative framings.",
+    ],
+  },
+};
+
 export function ModeratorSelection({ strategies, selectedId, saving, launching, onSelect, onBack, onEnter }: {
   strategies: ModeratorStrategy[];
   selectedId: string;
@@ -28,7 +55,8 @@ export function ModeratorSelection({ strategies, selectedId, saving, launching, 
     <div className="moderator-grid" role="radiogroup" aria-label="Choose a moderator">
       {strategies.map((strategy) => {
         const selected = strategy.id === selectedId;
-        const traits = strategy.opening_rules.slice(0, 3);
+        const copy = CARD_COPY[strategy.id];
+        const traits = copy?.bullets ?? strategy.opening_rules.slice(0, 3);
         return <button
           type="button"
           role="radio"
@@ -42,7 +70,7 @@ export function ModeratorSelection({ strategies, selectedId, saving, launching, 
           {selected && <span className="moderator-card__selected">SELECTED</span>}
           <div className="moderator-card__portrait"><img src={getModeratorAvatar(strategy.id)} alt={`${strategy.name} moderator`} /></div>
           <h2>{strategy.name}</h2>
-          <p>{strategy.description}</p>
+          <p>{copy?.description ?? strategy.description}</p>
           <ul>{traits.map((trait) => <li key={trait}>{trait}</li>)}</ul>
         </button>;
       })}

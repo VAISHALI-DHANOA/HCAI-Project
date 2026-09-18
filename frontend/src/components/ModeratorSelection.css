@@ -65,7 +65,8 @@
 .moderator-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 22px;
+  column-gap: 22px;
+  row-gap: 0;
 }
 
 .setup-screen .moderator-card {
@@ -73,10 +74,12 @@
   position: relative;
   min-height: clamp(300px, 45vh, 415px);
   padding: clamp(14px, 2vh, 24px) 24px clamp(14px, 1.8vh, 20px);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-row: span 6;
+  grid-template-rows: subgrid;
   align-items: stretch;
   text-align: left;
+  text-transform: none;
   color: var(--setup-ink);
   background: transparent;
   border: 0;
@@ -92,7 +95,7 @@
 }
 
 .setup-screen .moderator-card.is-selected {
-  transform: translateY(-5px);
+  transform: none;
   filter: drop-shadow(0 0 12px color-mix(in srgb, var(--moderator-accent) 42%, transparent));
 }
 
@@ -141,7 +144,10 @@
 }
 
 .moderator-card ul {
-  margin: auto 0 0;
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: subgrid;
+  margin: 0;
   padding: clamp(8px, 1.3vh, 14px) 0 0;
   border-top: 1px solid var(--setup-line);
   list-style: none;
@@ -149,7 +155,7 @@
 
 .moderator-card li {
   position: relative;
-  margin: clamp(4px, .7vh, 8px) 0;
+  margin: 6px 0;
   padding-left: 25px;
   color: var(--setup-muted);
   font: 12px/1.35 var(--font-body);
@@ -205,10 +211,12 @@
 @media (max-width: 900px) {
   .moderator-grid {
     grid-template-columns: 1fr;
+    row-gap: 22px;
   }
 
   .moderator-card {
     min-height: 370px;
+    row-gap: 0;
   }
 }
 

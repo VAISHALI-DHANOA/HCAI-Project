@@ -17,7 +17,7 @@ import "./components/AgentCreation.css";
 import { AgentCard } from "./components/AgentCard";
 import { EntryScreen } from "./components/EntryScreen";
 import { ModeSelection } from "./components/ModeSelection";
-import { SetupHeader, SetupProgress } from "./components/SetupChrome";
+import { ArrowIcon, SetupHeader, SetupProgress } from "./components/SetupChrome";
 import { ParticipantWaiting } from "./components/ParticipantWaiting";
 import { ModeratorSelection } from "./components/ModeratorSelection";
 import { Brand } from "./components/Brand";
@@ -948,7 +948,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
         {uploading && <p className="upload-status">Uploading and parsing...</p>}
         {datasetInfo && <div className="dataset-preview">
           <p className="dataset-preview__summary">{datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns</p>
-          <div className="dataset-columns">{datasetInfo.columns.map((col, i) => <span key={i} className="arena-node__quirk">{col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}</span>)}</div>
+          <div className="dataset-columns" tabIndex={0} role="region" aria-label="Dataset columns">{datasetInfo.columns.map((col, i) => <span key={i} className="arena-node__quirk">{col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}</span>)}</div>
         </div>}
       </div>}
     </div>}
@@ -976,6 +976,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       ) : (
       <header className="topbar">
         <div className="topbar__identity">
+          <button type="button" className="topbar__back" onClick={() => { setSetupStep("moderator"); setAppPhase("setup"); }} title="Back to moderator selection"><ArrowIcon direction="left" /> BACK</button>
           <Brand className="topbar__brand" />
           <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
         </div>
