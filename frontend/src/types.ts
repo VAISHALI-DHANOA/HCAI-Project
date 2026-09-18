@@ -155,6 +155,7 @@ export interface State {
   world_state: Record<string, unknown>;
   dataset_summary?: string;
   dataset_columns?: string[];
+  dataset_preview?: DatasetInfo | null;
   moderator_strategy_id?: string;
 }
 

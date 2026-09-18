@@ -3,10 +3,12 @@ import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog,
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
+import { DataContribution } from "./components/DataContribution";
+import { DataAgentStrip, type AgentFocus } from "./components/DataAgentStrip";
 import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
 import { PlaybackController } from "./playback";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
@@ -84,8 +86,10 @@ export default function App() {
   return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} />;
 }
 
-function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
+function ConversationLog({ state, liveTurns, liveRound, agentMap, visibleVisualIds, completedRound }: {
   state: State | null; liveTurns: PublicTurn[]; liveRound: number; agentMap: Map<string, Agent>;
+  visibleVisualIds?: Set<string>;
+  completedRound?: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
@@ -122,6 +126,9 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
         {!entries.length && <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>}
         {entries.map(({ turn, round, live }, index) => {
           const showRound = round !== undefined && round !== previousRound;
+          const roundStatus = completedRound === undefined ? (live ? "In progress" : "")
+            : round !== undefined && round <= completedRound ? "Completed"
+            : round === liveRound ? "In progress" : "Awaiting playback";
           if (round !== undefined) previousRound = round;
           const isHuman = turn.speaker_id === "human";
           const agent = agentMap.get(turn.speaker_id);
@@ -131,7 +138,7 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
             <Fragment key={index}>
               {showRound && <div className="chat-log__round-divider">
                 <span className="chat-log__round-divider-line" />
-                <span className="chat-log__round-divider-text">Round {round}{live ? " ? In progress" : ""}</span>
+                <span className="chat-log__round-divider-text">Round {round}{roundStatus && ` - ${roundStatus}`}</span>
                 <span className="chat-log__round-divider-line" />
               </div>}
               <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
@@ -142,7 +149,7 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
                   <p className="chat-log__message">{turn.message}</p>
                 </div>
               </div>
-              {turn.visual && <VisualCard visual={turn.visual} agentColor={color} agentName={name} />}
+              {turn.visual && (!visibleVisualIds || visibleVisualIds.has(`${round}-${turn.speaker_id}`)) && <VisualCard visual={turn.visual} agentColor={color} agentName={name} />}
             </Fragment>
           );
         })}
@@ -152,6 +159,7 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap }: {
 }
 
 function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void }) {
+  const isDataMode = initialMode === "data";
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
   const PERSONALITY_PRESETS = catalog.presets;
@@ -186,7 +194,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
   const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
-  const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
+  const datasetInfo = state?.dataset_preview ?? null;
   const [uploading, setUploading] = useState(false);
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
   const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
@@ -199,8 +207,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
   const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
   const fullDatasetRows = datasetInfo?.sample_rows ?? [];
+  const previewColumns = useMemo(() => datasetInfo?.columns.map((column) => column.name) ?? [], [datasetInfo]);
   const [dashboardMode, setDashboardMode] = useState(false);
+  const [agentFocus, setAgentFocus] = useState<AgentFocus | null>(null);
+  const visibleAgentPositions = useMemo(() => new Map([...agentTablePositions].filter(([, pos]) => Number.isInteger(pos.row) && pos.row >= 0 && pos.row < fullDatasetRows.length && previewColumns.includes(pos.column))), [agentTablePositions, fullDatasetRows.length, previewColumns]);
   const [dashboardVisuals, setDashboardVisuals] = useState<DashboardVisual[]>([]);
+  const [completedRound, setCompletedRound] = useState(0);
+  const [revealedContribution, setRevealedContribution] = useState<{ round: number; index: number } | null>(null);
+  const playbackRoundRef = useRef(0);
   const { speak, stop: stopTTS } = useTTS();
 
   useEffect(() => {
@@ -237,8 +251,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     stopAudio: stopTTS,
     requestRound: async (signal) => (await runRounds(1, signal)).state,
     snapshot: (snapshot) => playbackHandlers.current.snapshot(snapshot),
-    contribution: (turn, round) => playbackHandlers.current.show(turn, round),
+    contribution: (turn, round, index) => playbackHandlers.current.show(turn, round, index),
     completed: (round) => {
+      setCompletedRound(round.round_number);
       setLiveTurns((prev) => pendingHumanTurns(prev, stateRef.current?.human_request ?? ""));
       setActiveTurnIdx(round.turns.length - 1);
       setShowReactions(true);
@@ -249,9 +264,12 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   });
   const playback = playbackRef.current;
 
-  function showContribution(next: PublicTurn, turnRoundNum: number) {
+  function showContribution(next: PublicTurn, turnRoundNum: number, index: number) {
     setShowReactions(false);
     setLiveRound(turnRoundNum);
+    setRevealedContribution({ round: turnRoundNum, index });
+    if (stateRef.current?.dataset_preview && turnRoundNum >= 3 && playbackRoundRef.current < 3) setDashboardMode(true);
+    playbackRoundRef.current = turnRoundNum;
     setLiveTurns((prev) => [...prev, next]);
     // Determine if this turn belongs to a dashboard round (3+)
     const isDashboardRound = turnRoundNum >= 3;
@@ -278,8 +296,8 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       }
     }
 
-    // Accumulate dashboard visuals for rounds 3+
-    if (isDashboardRound && next.visual && next.speaker_id !== "human") {
+    // Reveal visuals only when their contribution is displayed.
+    if (next.visual && next.speaker_id !== "human") {
       const speakerId = next.speaker_id;
       // Skip mediator/chair agents — they don't get dashboard cards
       const speakerAgent = stateRef.current?.agents?.find(
@@ -312,6 +330,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     setLiveTurns([]);
     setActiveTurnIdx(-1);
     setShowReactions(false);
+    setRevealedContribution(null);
   }
 
   useEffect(() => {
@@ -350,6 +369,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const storedDashboardVisuals = useMemo<DashboardVisual[]>(() => {
     return roundHistory.flatMap((roundEvent) =>
       roundEvent.round_result.turns
+        .filter((_, index) => roundEvent.round_result.round_number <= completedRound || (
+          roundEvent.round_result.round_number === revealedContribution?.round && index <= revealedContribution.index
+        ))
         .filter((turn) => turn.visual && turn.speaker_id !== "human")
         .map((turn) => {
           const agent = agentMap.get(turn.speaker_id);
@@ -364,7 +386,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
           };
         }),
     );
-  }, [agentMap, roundHistory]);
+  }, [agentMap, roundHistory, completedRound, revealedContribution]);
 
   const visibleDashboardVisuals = useMemo(() => {
     const storedIds = new Set(storedDashboardVisuals.map((visual) => visual.id));
@@ -374,9 +396,12 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     ];
   }, [dashboardVisuals, storedDashboardVisuals]);
 
+  const visibleVisualIds = useMemo(() => new Set(visibleDashboardVisuals.map((visual) => visual.id)), [visibleDashboardVisuals]);
+  const analysisRound = revealedContribution?.round ?? completedRound;
+
   const latestRound = useMemo(() => {
-    return roundHistory.length > 0 ? roundHistory[roundHistory.length - 1] : null;
-  }, [roundHistory]);
+    return roundHistory.find((round) => round.round_result.round_number === completedRound) ?? null;
+  }, [roundHistory, completedRound]);
 
   const latestTurns = useMemo(() => {
     return latestRound?.round_result.turns ?? [];
@@ -440,9 +465,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
         .then((result) => {
           if (!applyStateSnapshot(result.state)) return;
           setTopicInput(result.state.topic);
-          if (result.parsed) {
-            setDatasetInfo(result.parsed);
-          }
           setActiveTurnIdx(-1);
           setShowReactions(false);
           setLiveTurns([]);
@@ -542,19 +564,12 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       clearTurnQueue();
       if (resetPlayback) setError("The round was interrupted. Playback has stopped; you can retry the round.");
       setDashboardVisuals([]);
-      const actions = snapshot.public_history.flatMap((turn) => turn.table_action ? [{ turn, action: turn.table_action }] : []);
-      setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
-      setAccumulatedAnnotations(actions.flatMap(({ action }) => action.annotations));
-      setAgentTablePositions(new Map(actions.map(({ turn, action }) => [
-        turn.speaker_id, { agentId: turn.speaker_id, ...action.navigate_to },
-      ])));
     }
     if (newRun) {
       setAutoRun(false);
       setAppPhase("setup");
       setSetupStep("team");
       setTopicInput(snapshot.topic);
-      setDatasetInfo(null);
       setDashboardMode(false);
       setSidePanelView("controls");
       if (!sameRoster(previous!, snapshot)) {
@@ -565,7 +580,24 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     }
     stateRef.current = snapshot;
     setStateValue(snapshot);
-    playback.sync(snapshot, previous === null || newRun || resetPlayback);
+    const baseline = previous === null || newRun || resetPlayback;
+    if (baseline) {
+      const savedRound = snapshot.rounds?.[snapshot.rounds.length - 1];
+      const round = savedRound?.round_number ?? snapshot.round_number;
+      setCompletedRound(round);
+      setLiveRound(round);
+      setAgentFocus(null);
+      playbackRoundRef.current = round;
+      setDashboardMode(Boolean(snapshot.dataset_preview && round >= 3));
+      setDashboardVisuals([]);
+      setActiveTurnIdx(savedRound ? savedRound.turns.length - 1 : -1);
+      const actions = snapshot.public_history.flatMap((turn) => turn.table_action ? [{ turn, action: turn.table_action }] : []);
+      setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
+      setAccumulatedAnnotations(actions.flatMap(({ action }) => action.annotations));
+      setAgentTablePositions(new Map(actions.map(({ turn, action }) => [turn.speaker_id, { agentId: turn.speaker_id, ...action.navigate_to }])));
+      if (previous === null && snapshot.dataset_preview && savedRound) setAppPhase("arena");
+    }
+    playback.sync(snapshot, baseline);
     return true;
   }
 
@@ -795,7 +827,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setAppPhase("setup");
       setDraftAgents([]);
       draftBaseRef.current = result.state;
-      setDatasetInfo(null);
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
@@ -842,7 +873,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
-      setDatasetInfo(null);
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
@@ -865,9 +895,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
-      if (result.parsed) {
-        setDatasetInfo(result.parsed);
-      }
       setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
       draftBaseRef.current = result.state;
       setEditingDraftIndex(null);
@@ -885,7 +912,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       const result = await uploadDataset(file);
       if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
-      setDatasetInfo(result.parsed);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to upload dataset");
     } finally {
@@ -894,20 +920,20 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   }
 
   const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
-    <button className="btn-demo" onClick={initialMode === "data" ? onLoadDataDemo : onLoadDemo}>{initialMode === "data" ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
+    <button className="btn-demo" onClick={isDataMode ? onLoadDataDemo : onLoadDemo}>{isDataMode ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
     <button className="launch-button" onClick={continueToModerator} disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}>Continue to Moderator</button>
   </div> : null;
   const participantBriefingValue = state?.topic
-    ? initialMode === "data" ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
+    ? isDataMode ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
     : "";
 
   const missionBriefing = <section className="mission-briefing section-block setup-pixel-panel">
     <div className="mission-briefing__copy">
-      <span className="mode-label">{initialMode === "data" ? "Data Analysis Mode" : "Debate Mode"}</span>
+      <span className="mode-label">{isDataMode ? "Data Analysis Mode" : "Debate Mode"}</span>
       <h2 className="section-title">Mission Briefing</h2>
     </div>
     {isAdmin && <div className="mission-briefing__control">
-      {initialMode === "debate" ? <div className="stacked-form">
+      {!isDataMode ? <div className="stacked-form">
         <label className="form-label" htmlFor="discussion-topic">Discussion Topic</label>
         <div className="mission-briefing__input-row">
           <textarea id="discussion-topic" value={topicInput} onChange={(e) => setTopicInput(e.target.value)} rows={2} placeholder="What should the agents debate about?" />
@@ -927,7 +953,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       </div>}
     </div>}
     {participant && participantBriefingValue && <div className="mission-briefing__participant-value">
-      <span>{initialMode === "data" ? "Dataset" : "Discussion Topic"}</span>
+      <span>{isDataMode ? "Dataset" : "Discussion Topic"}</span>
       <p className="mission-briefing__topic">{participantBriefingValue}</p>
     </div>}
   </section>;
@@ -1153,14 +1179,15 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
            ================================================================ */
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
-          <section className={`arena-viewport${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+          <section className={`arena-viewport${isDataMode ? " arena-viewport--data" : ""}${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+            <div className={isDataMode ? "data-view-toolbar" : undefined}>
             <div className="arena-view-switch">
               <button
                 type="button"
                 className={`control-tab${!dashboardMode ? " control-tab--active" : ""}`}
                 onClick={() => setDashboardMode(false)}
               >
-                Discussion
+                {isDataMode ? "Dataset" : "Discussion"}
               </button>
               <button
                 type="button"
@@ -1172,6 +1199,23 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
             </div>
 
 
+            {isDataMode && <>
+              {(state?.round_number ?? 0) <= completedRound && !!state?.world_state?.dashboard_narrative && <p className="data-analysis-focus">{String(state.world_state.dashboard_narrative)}</p>}
+              <span className="data-round-status">{analysisRound ? 'Round ' + analysisRound + (analysisRound > completedRound ? ' - In progress' : ' - Completed') : 'Ready'}</span>
+            </>}
+            </div>
+            {isDataMode && <>
+            <div className="data-discussion-header"><DataAgentStrip agents={state?.agents ?? []} positions={visibleAgentPositions}
+              moderatorStrategyId={state?.moderator_strategy_id}
+              currentSpeakerId={analysisRound > completedRound ? currentSpeakerId : null}
+              onLocate={(agentId) => { setDashboardMode(false); setAgentFocus((previous) => ({ agentId, request: (previous?.request ?? 0) + 1 })); }} />
+              {state && <div className="data-agent-speech"><DataContribution state={state} turn={currentTurn} active={analysisRound > completedRound} pastTurns={pastTurns} /></div>}
+            </div>
+            {!dashboardMode && datasetInfo && <div className="data-preview-caption">
+              {fullDatasetRows.length} of {datasetInfo.shape[0]} rows{fullDatasetRows.length < datasetInfo.shape[0] ? ' - navigation within preview' : ''}
+              {analysisRound >= 3 && <span>Earlier exploration (rounds 1-2)</span>}
+            </div>}
+            </>}
             {dashboardMode ? (
               /* ---- DASHBOARD CANVAS ---- */
               <>
@@ -1180,7 +1224,8 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   agents={state?.agents ?? []}
                   agentMap={agentMap}
                   currentTurn={currentTurn}
-                  dashboardNarrative={(state?.world_state?.dashboard_narrative as string) ?? ""}
+                  currentRound={analysisRound}
+                  completedRound={completedRound}
                 />
                 {/* Intervention Input Bar */}
                 <form className="intervention-bar" onSubmit={onIntervene}>
@@ -1201,18 +1246,18 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   </button>
                 </form>
               </>
-            ) : datasetInfo && fullDatasetRows.length > 0 ? (
+            ) : datasetInfo ? (
               /* ---- DATA TABLE ARENA ---- */
               <>
                 <ArenaTable
                   rows={fullDatasetRows}
-                  columns={datasetInfo.columns.map(c => c.name)}
+                  columns={previewColumns}
                   agents={state?.agents ?? []}
-                  currentTurn={currentTurn}
-                  pastTurns={pastTurns}
+                  currentTurn={analysisRound >= 3 ? null : currentTurn}
                   accumulatedHighlights={accumulatedHighlights}
                   accumulatedAnnotations={accumulatedAnnotations}
-                  agentPositions={agentTablePositions}
+                  focus={agentFocus}
+                  agentPositions={visibleAgentPositions}
                   agentMap={agentMap}
                 />
                 {/* Intervention Input Bar */}
@@ -1355,7 +1400,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                     </div>
                   )}
                 </div>
-
                 {/* Intervention Input Bar */}
                 <form className="intervention-bar" onSubmit={onIntervene}>
                   <input
@@ -1385,7 +1429,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                 <span className="section-title">Discussion</span>
                 <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
               </div>
-              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} />
+              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
               {isAdmin && (
                 <div className="chat-log-panel__controls">
                   <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
@@ -1500,7 +1544,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
                 </>
               ) : (
-                <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} />
+                <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
               )}
             </aside>
           )}
