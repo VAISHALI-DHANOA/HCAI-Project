@@ -180,7 +180,25 @@ export interface WsStateEvent {
   reset_playback?: boolean;
 }
 
-export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent | { type: "lobby"; code: string; mode: "debate" | "data" | null };
+export interface EndSummary {
+  topic: string;
+  rounds: number;
+  duration_seconds: number;
+  contributions: number;
+  agents: number;
+}
+
+export interface WsSessionEndedEvent {
+  type: "session_ended";
+  summary: EndSummary;
+}
+
+export interface WsPlaybackSettingsEvent {
+  type: "playback_settings";
+  display_seconds: number;
+}
+
+export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent | WsSessionEndedEvent | WsPlaybackSettingsEvent | { type: "lobby"; code: string; mode: "debate" | "data" | null };
 
 export interface DashboardVisual {
   id: string;
