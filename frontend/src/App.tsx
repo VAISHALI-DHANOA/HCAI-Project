@@ -24,6 +24,7 @@ import { Brand } from "./components/Brand";
 import { useSessionGate } from "./hooks/useSessionGate";
 import { getModeratorAvatar } from "./moderatorAvatars";
 import { TestChatModal } from "./components/TestChatModal";
+import { downloadAgentRoster, MAX_AGENTS, parseAgentRoster } from "./agentRoster";
 
 const MIN_USER_AGENTS = 4;
 
@@ -201,7 +202,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
   const [chairSaving, setChairSaving] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [topicSaving, setTopicSaving] = useState(false);
+  const topicSaveRef = useRef<Promise<boolean> | null>(null);
   const launchPendingRef = useRef(false);
+  const rosterFileRef = useRef<HTMLInputElement>(null);
   const [sidePanelView, setSidePanelView] = useState<"controls" | "log">("controls");
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [interveneInput, setInterveneInput] = useState("");
@@ -708,18 +712,11 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     launchPendingRef.current = true;
     setLaunching(true);
     try {
-      let expected = draftBaseRef.current ?? stateRef.current;
+      const expected = draftBaseRef.current ?? stateRef.current;
       if (expected.run_id !== stateRef.current.run_id || expected.revision !== stateRef.current.revision) {
         throw new Error("The roster changed in another request. Reload the page before saving.");
       }
       const drafts = draftAgents;
-      // A topic change starts a new discussion; retain its returned revision so
-      // an intervening request cannot be silently overwritten by roster sync.
-      if (!datasetInfo) {
-        const topicResult = await setTopic(topicInput.trim());
-        if (!applyStateSnapshot(topicResult.state)) return;
-        expected = topicResult.state;
-      }
       const result = await syncAgents(drafts, expected);
       if (!applyStateSnapshot(result.state)) return;
       setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
@@ -733,10 +730,62 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     }
   }
 
-  function continueToModerator() {
+  async function persistTopic(topic: string): Promise<boolean> {
+    if (!topic || stateRef.current?.topic === topic) return true;
+    if (topicSaveRef.current) {
+      await topicSaveRef.current;
+      return persistTopic(topic);
+    }
+    setTopicSaving(true);
+    const request = setTopic(topic).then(({ state: nextState }) => {
+      if (!applyStateSnapshot(nextState)) return false;
+      draftBaseRef.current = nextState;
+      return true;
+    });
+    topicSaveRef.current = request;
+    try {
+      return await request;
+    } finally {
+      if (topicSaveRef.current === request) topicSaveRef.current = null;
+      setTopicSaving(false);
+    }
+  }
+
+  async function onTopicBlur() {
+    setError("");
+    try {
+      await persistTopic(topicInput.trim());
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update discussion topic");
+    }
+  }
+
+  async function continueToModerator() {
     if (!canContinueToModerator) return;
     setError("");
-    setSetupStep("moderator");
+    try {
+      if (!datasetInfo && !await persistTopic(topicInput.trim())) return;
+      setSetupStep("moderator");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update discussion topic");
+    }
+  }
+
+  async function onImportAgents(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    try {
+      const imported = parseAgentRoster(await file.text(), catalog);
+      if (draftAgents.length + imported.length > MAX_AGENTS) {
+        throw new Error(`Importing these agents would exceed the limit of ${MAX_AGENTS}.`);
+      }
+      setDraftAgents((current) => [...current, ...imported]);
+      draftBaseRef.current = stateRef.current;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to import agents");
+    }
   }
 
   function onRun(rounds: number) {
@@ -792,6 +841,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   async function onLoadDemo() {
     setError("");
     try {
+      if (topicSaveRef.current) await topicSaveRef.current;
       const result = await loadDemo();
       if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
@@ -852,7 +902,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
   const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
     <button className="btn-demo" onClick={isDataMode ? onLoadDataDemo : onLoadDemo}>{isDataMode ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
-    <button className="launch-button" onClick={continueToModerator} disabled={!canContinueToModerator}>Continue to Moderator</button>
+    <button className="launch-button" onClick={continueToModerator} disabled={!canContinueToModerator}>{topicSaving ? "Saving Topic..." : "Continue to Moderator"}</button>
   </div> : null;
   const participantBriefingValue = state?.topic
     ? isDataMode ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
@@ -867,7 +917,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       {!isDataMode ? <div className="stacked-form">
         <label className="form-label" htmlFor="discussion-topic">Discussion Topic</label>
         <div className="mission-briefing__input-row">
-          <textarea id="discussion-topic" value={topicInput} onChange={(e) => setTopicInput(e.target.value)} rows={2} placeholder="What should the agents debate about?" />
+          <textarea id="discussion-topic" value={topicInput} onChange={(e) => setTopicInput(e.target.value)} onBlur={() => void onTopicBlur()} rows={2} placeholder="What should the agents debate about?" />
           {missionActions}
         </div>
       </div> : <div className="stacked-form">
@@ -1056,10 +1106,17 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
             {!participant ? (
               /* Admin: draft roster (local agents before launch) */
               <div className="section-block agent-roster setup-pixel-panel">
-                <h2 className="section-title">
-                  Agent Roster
-                  <span className="section-title__count">{draftAgents.length} / {MIN_USER_AGENTS} minimum</span>
-                </h2>
+                <div className="agent-roster__header">
+                  <h2 className="section-title">
+                    Agent Roster
+                    <span className="section-title__count">{draftAgents.length} / {MIN_USER_AGENTS} minimum</span>
+                  </h2>
+                  <div className="agent-roster__actions">
+                    <input ref={rosterFileRef} type="file" accept="application/json,.json" onChange={onImportAgents} hidden />
+                    <button type="button" onClick={() => rosterFileRef.current?.click()}>Import</button>
+                    <button type="button" onClick={() => downloadAgentRoster(draftAgents)} disabled={!draftAgents.length}>Export</button>
+                  </div>
+                </div>
 
                 {draftAgents.length === 0 ? (
                   <div className="roster-empty">No agents yet. Create one to get started.</div>
@@ -1112,14 +1169,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
           <section className={`arena-viewport${isDataMode ? " arena-viewport--data" : ""}${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
-            <div className={isDataMode ? "data-view-toolbar" : undefined}>
-            <div className="arena-view-switch">
+            {isDataMode && <div className="data-view-toolbar">
+              <div className="arena-view-switch">
               <button
                 type="button"
                 className={`control-tab${!dashboardMode ? " control-tab--active" : ""}`}
                 onClick={() => setDashboardMode(false)}
               >
-                {isDataMode ? "Dataset" : "Discussion"}
+                Dataset
               </button>
               <button
                 type="button"
@@ -1128,14 +1185,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
               >
                 Dashboard
               </button>
-            </div>
-
-
-            {isDataMode && <>
+              </div>
               {(state?.round_number ?? 0) <= completedRound && !!state?.world_state?.dashboard_narrative && <p className="data-analysis-focus">{String(state.world_state.dashboard_narrative)}</p>}
               <span className="data-round-status">{analysisRound ? 'Round ' + analysisRound + (analysisRound > completedRound ? ' - In progress' : ' - Completed') : 'Ready'}</span>
-            </>}
-            </div>
+            </div>}
             {isDataMode && <>
             <div className="data-discussion-header"><DataAgentStrip agents={state?.agents ?? []} positions={visibleAgentPositions}
               moderatorStrategyId={state?.moderator_strategy_id}

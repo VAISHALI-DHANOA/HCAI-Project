@@ -205,9 +205,31 @@
 }
 
 .agent-creation .settings-header,
-.agent-roster>.section-title,
+.agent-roster__header,
 .setup-left>.section-block .settings-header {
   margin-bottom: 12px;
+}
+
+.agent-roster__header,
+.agent-roster__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.agent-roster__header {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.agent-roster__header .section-title {
+  margin: 0;
+}
+
+.agent-roster__actions button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: .64rem;
 }
 
 .setup-screen .stacked-form,

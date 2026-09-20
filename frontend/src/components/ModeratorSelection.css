@@ -209,14 +209,23 @@
 }
 
 @media (max-width: 900px) {
+  .app-shell:has(.moderator-screen) {
+    height: 100dvh;
+    overflow-y: auto;
+  }
+
   .moderator-screen {
     gap: 22px;
-    padding: 4px 10px calc(92px + env(safe-area-inset-bottom));
+    padding: 4px 10px;
   }
 
   .moderator-grid {
     grid-template-columns: 1fr;
     row-gap: 22px;
+  }
+
+  .moderator-actions {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom));
   }
 
   .moderator-card {
