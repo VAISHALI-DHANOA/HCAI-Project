@@ -209,6 +209,11 @@
 }
 
 @media (max-width: 900px) {
+  .moderator-screen {
+    gap: 22px;
+    padding: 4px 10px calc(92px + env(safe-area-inset-bottom));
+  }
+
   .moderator-grid {
     grid-template-columns: 1fr;
     row-gap: 22px;
@@ -222,13 +227,13 @@
 
 @media (max-width: 620px) {
   .moderator-screen {
-    gap: 16px;
-    padding-inline: 0;
+    gap: 20px;
+    padding-inline: 8px;
   }
 
   .moderator-intro {
     grid-template-columns: 1fr;
-    padding: 18px;
+    padding: 20px 18px;
   }
 
   .moderator-intro__step {
@@ -249,5 +254,20 @@
   .setup-screen .moderator-actions__enter {
     grid-column: 1;
     width: 100%;
+    min-width: 0;
+  }
+
+  .setup-screen .moderator-card {
+    min-height: 0;
+    padding: 18px;
+  }
+
+  .moderator-card__portrait {
+    height: 140px;
+    margin-bottom: 16px;
+  }
+
+  .moderator-card p {
+    min-height: 0;
   }
 }

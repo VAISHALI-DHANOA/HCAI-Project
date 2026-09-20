@@ -247,7 +247,8 @@
 
 @media (max-width: 700px) {
   .mode-screen {
-    padding: 16px 14px 120px;
+    padding: 16px 14px calc(92px + env(safe-area-inset-bottom));
+    overflow-y: auto;
   }
 
   .mode-screen__content {

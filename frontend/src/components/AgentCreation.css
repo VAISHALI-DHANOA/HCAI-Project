@@ -708,9 +708,11 @@
 
 @media (max-width: 780px) {
   .app-shell:has(.setup-screen) {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: calc(82px + env(safe-area-inset-bottom));
   }
 
   .setup-screen {
@@ -760,7 +762,7 @@
 
 @media (max-width: 480px) {
   .app-shell:has(.setup-screen) {
-    padding: 7px;
+    padding: 7px 7px calc(88px + env(safe-area-inset-bottom));
   }
 
   .setup-toolbar {
@@ -769,6 +771,8 @@
 
   .setup-toolbar button {
     width: 100%;
+    min-height: 42px;
+    flex: 0 0 auto;
   }
 
   .agent-creation,

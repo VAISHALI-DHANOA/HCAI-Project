@@ -44,6 +44,6 @@ export function DataAgentStrip({ agents, positions, currentSpeakerId, onLocate, 
       </button>;
     })}
     </div>
-    {agents.length > 6 && <small className="data-agent-list__hint">{agents.length} agents · Scroll to see all ↕</small>}
+    {agents.length > 6 && <small className="data-agent-list__hint">{agents.length} agents - scroll to see all</small>}
   </div>;
 }

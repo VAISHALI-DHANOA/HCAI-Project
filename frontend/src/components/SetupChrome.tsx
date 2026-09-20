@@ -13,19 +13,19 @@ export function SetupHeader({ onBack, sessionCode, busy = false, children, backA
   children?: ReactNode;
   backAccessory?: ReactNode;
 }) {
-  return <header className="mode-screen__topbar setup-global-header">
-    <div className="mode-screen__nav">
-      <Brand className="setup-header-brand" />
-      <div className="setup-global-header__back-row">
-        <button type="button" className="mode-back" onClick={onBack} disabled={busy}><ArrowIcon direction="left" /> BACK</button>
-        {backAccessory}
+  return <>
+    <header className="mode-screen__topbar setup-global-header">
+      <div className="mode-screen__nav">
+        <Brand className="setup-header-brand" />
       </div>
-    </div>
+    </header>
     <div className="setup-global-header__state">
+      <button type="button" className="mode-back" onClick={onBack} disabled={busy}><ArrowIcon direction="left" /> BACK</button>
       {sessionCode && <div className="mode-token" aria-label={`Session token ${sessionCode}`}><span>SESSION TOKEN</span><strong>{sessionCode}</strong><button type="button" onClick={() => navigator.clipboard?.writeText(sessionCode)}>COPY</button></div>}
       {children}
     </div>
-  </header>;
+    {backAccessory && <div className="setup-header-accessory">{backAccessory}</div>}
+  </>;
 }
 
 export function SetupProgress({ activeStep }: { activeStep: number }) {
