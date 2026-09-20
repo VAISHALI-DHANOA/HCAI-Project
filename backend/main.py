@@ -22,7 +22,7 @@ from app.chart_compute import clear_cache
 from app.config import TTS_MODEL
 from app.personality import get_personality_catalog
 from app.moderator import MODERATOR_STRATEGIES
-from app.models import AddAgentsRequest, ChatRequest, InterveneRequest, ModeratorStrategyRequest, ResetRequest, RunRequest, SyncAgentsRequest, TopicRequest, TTSRequest
+from app.models import AddAgentsRequest, ChatRequest, DisplayTimeRequest, EndSessionRequest, InterveneRequest, ModeratorStrategyRequest, ResetRequest, RunRequest, SyncAgentsRequest, TopicRequest, TTSRequest
 from app.simulation import run_round
 from app.state import SESSIONS, SessionBusyError, utc_now
 
@@ -129,6 +129,8 @@ class ModeChoice(BaseModel):
 
 
 lobbies: dict[str, tuple[Lobby, str]] = {}
+ended_sessions: dict[str, dict[str, Any]] = {}
+session_display_times: dict[str, int] = {}
 
 
 @app.post("/sessions", status_code=201)
@@ -178,6 +180,12 @@ async def websocket_endpoint(websocket: WebSocket, session: str = Query(...)) ->
                 "state_snapshot": store.get_state().model_dump(),
             }
         )
+        if session in ended_sessions:
+            await websocket.send_json({"type": "session_ended", "summary": ended_sessions[session]})
+        await websocket.send_json({
+            "type": "playback_settings",
+            "display_seconds": session_display_times.get(session, 12),
+        })
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:
@@ -310,11 +318,36 @@ async def run(payload: RunRequest, session_id: str = Depends(get_session_id)) ->
 async def reset(payload: ResetRequest, session_id: str = Depends(get_session_id)) -> dict:
     store = SESSIONS.get_store(session_id)
     state = store.reset(payload.topic)
+    ended_sessions.pop(session_id, None)
+    session_display_times.pop(session_id, None)
     SESSIONS.set_csv_path(session_id, None)
     store.record_configuration("/reset")
     snapshot = state.model_dump()
     await manager.broadcast(session_id, {"type": "state", "state_snapshot": snapshot})
     return {"state": snapshot}
+
+
+@app.post("/end", dependencies=[Depends(verify_admin), Depends(exclusive_session)])
+async def end_session(payload: EndSessionRequest, session_id: str = Depends(get_session_id)) -> dict:
+    state = SESSIONS.get_store(session_id).get_state()
+    summary = {
+        "topic": state.topic,
+        "rounds": len(state.rounds),
+        "duration_seconds": payload.duration_seconds,
+        "contributions": sum(len(round_result.turns) for round_result in state.rounds),
+        "agents": len(state.agents),
+    }
+    ended_sessions[session_id] = summary
+    await manager.broadcast(session_id, {"type": "session_ended", "summary": summary})
+    return {"summary": summary}
+
+
+@app.put("/playback-settings", dependencies=[Depends(verify_admin)])
+async def set_playback_settings(payload: DisplayTimeRequest, session_id: str = Depends(get_session_id)) -> dict:
+    session_display_times[session_id] = payload.seconds
+    event = {"type": "playback_settings", "display_seconds": payload.seconds}
+    await manager.broadcast(session_id, event)
+    return event
 
 
 @app.post("/intervene")
@@ -574,7 +607,7 @@ async def text_to_speech(payload: TTSRequest) -> Response:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@app.get("/logs/download", dependencies=[Depends(verify_admin)])
+@app.get("/logs/download")
 async def download_logs(session_id: str = Depends(get_session_id)) -> JSONResponse:
     store = SESSIONS.get_store(session_id)
     log = store.get_full_log()

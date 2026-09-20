@@ -1,4 +1,4 @@
-import type { Agent, AgentPersonality, DatasetInfo, DraftAgent, ModeratorStrategy, PersonalityCatalog, State } from "./types";
+import type { Agent, AgentPersonality, DatasetInfo, DraftAgent, EndSummary, ModeratorStrategy, PersonalityCatalog, State } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -159,6 +159,20 @@ export async function testChat(
     method: "POST",
     body: JSON.stringify({ agent_name, agent_persona, personality, messages, user_message }),
     signal,
+  });
+}
+
+export async function endSession(durationSeconds: number): Promise<{ summary: EndSummary }> {
+  return request<{ summary: EndSummary }>("/end", {
+    method: "POST",
+    body: JSON.stringify({ duration_seconds: Math.max(0, Math.round(durationSeconds)) }),
+  });
+}
+
+export async function setContributionDisplayTime(seconds: number): Promise<{ type: "playback_settings"; display_seconds: number }> {
+  return request<{ type: "playback_settings"; display_seconds: number }>("/playback-settings", {
+    method: "PUT",
+    body: JSON.stringify({ seconds }),
   });
 }
 

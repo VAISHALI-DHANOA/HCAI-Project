@@ -1,9 +1,9 @@
 import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, uploadDataset } from "./api";
+import { addAgents, downloadLogs, endSession, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setContributionDisplayTime, setModeratorStrategy, setTopic, syncAgents, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
@@ -87,7 +87,7 @@ export default function App() {
       {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
     </div>
   );
-  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} />;
+  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} onReturnToEntry={session.back} />;
 }
 
 function ConversationLog({ state, liveTurns, liveRound, agentMap, visibleVisualIds, completedRound }: {
@@ -162,7 +162,7 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap, visibleVisualI
   );
 }
 
-function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void }) {
+function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack, onReturnToEntry }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void; onReturnToEntry: () => void }) {
   const isDataMode = initialMode === "data";
   const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
@@ -210,6 +210,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
+  const [endConfirmationOpen, setEndConfirmationOpen] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [endSummary, setEndSummary] = useState<EndSummary | null>(null);
+  const arenaStartedAtRef = useRef<number | null>(null);
   const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
   const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
   const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
@@ -508,6 +512,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
           applyStateSnapshot(event.state_snapshot, event.reset_playback);
           return;
         }
+        if (event.type === "session_ended") {
+          showEndOverview(event.summary);
+          return;
+        }
+        if (event.type === "playback_settings") {
+          setDisplaySeconds(event.display_seconds);
+          return;
+        }
         if (event.type === "turn") {
           if (stateRef.current?.run_id !== event.run_id) return;
           // Human interventions are shown locally on submit — skip WebSocket echo
@@ -721,6 +733,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       if (!applyStateSnapshot(result.state)) return;
       setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
       draftBaseRef.current = result.state;
+      arenaStartedAtRef.current = Date.now();
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
@@ -793,6 +806,15 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     playback.run(rounds);
   }
 
+  function onDisplaySecondsChange(value: number) {
+    if (!Number.isFinite(value)) return;
+    const seconds = Math.min(300, Math.max(1, Math.round(value)));
+    setDisplaySeconds(seconds);
+    void setContributionDisplayTime(seconds).catch((e: unknown) => {
+      setError(e instanceof Error ? e.message : "Could not update display time");
+    });
+  }
+
   async function onReset() {
     clearTurnQueue();
     setError("");
@@ -816,6 +838,47 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
     }
+  }
+
+  function showEndOverview(summary: EndSummary) {
+    const startedAt = arenaStartedAtRef.current ?? Date.now();
+    clearTurnQueue();
+    playback.auto(false);
+    stopTTS();
+    setVoiceEnabled(false);
+    setEndConfirmationOpen(false);
+    setConfirmingEnd(false);
+    setAppPhase("arena");
+    setEndSummary(summary);
+  }
+
+  async function onConfirmEnd() {
+    if (running || confirmingEnd) return;
+    const startedAt = arenaStartedAtRef.current ?? Date.now();
+    setConfirmingEnd(true);
+    setError("");
+    try {
+      const result = await endSession((Date.now() - startedAt) / 1000);
+      showEndOverview(result.summary);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not end the session");
+      setConfirmingEnd(false);
+    }
+  }
+
+  function onEndReturnToEntry() {
+    clearTurnQueue();
+    setEndSummary(null);
+    onReturnToEntry();
+  }
+
+  function formatDuration(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours > 0
+      ? `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`
+      : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
   }
 
   async function onIntervene(event: FormEvent) {
@@ -1421,6 +1484,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
                   <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
                   <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                  <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
                   <button className="btn-danger" onClick={onReset}>Reset</button>
                 </div>
               )}
@@ -1450,6 +1514,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                         <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
                         <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
                         <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                        <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
                         <button className="btn-danger" onClick={onReset}>Reset</button>
                       </div>
                       <div className="control-row">
@@ -1461,7 +1526,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                       </div>
                       <div className="control-row">
                         <label className="form-label" htmlFor="contribution-display-time">Display time per contribution (s)</label>
-                        <input id="contribution-display-time" type="number" min={1} step={1} value={displaySeconds} onChange={(e) => { const value = Number(e.target.value); if (Number.isFinite(value)) setDisplaySeconds(Math.max(1, value)); }} />
+                        <input id="contribution-display-time" type="number" min={1} max={300} step={1} value={displaySeconds} onChange={(e) => onDisplaySecondsChange(Number(e.target.value))} />
                       </div>
                     </div>
                   )}
@@ -1534,6 +1599,40 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                 <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
               )}
             </aside>
+          )}
+
+          {endConfirmationOpen && !endSummary && (
+            <div className="arena-end-layer" role="presentation">
+              <section className="arena-end-dialog arena-end-dialog--confirm" role="alertdialog" aria-modal="true" aria-labelledby="end-confirm-title" aria-describedby="end-confirm-description">
+                <span className="arena-end-dialog__eyebrow">End session</span>
+                <h2 id="end-confirm-title">End this {isDataMode ? "analysis" : "debate"}?</h2>
+                <p id="end-confirm-description">No further rounds can be started after you continue. The session log will remain available in the overview.</p>
+                <div className="arena-end-dialog__actions">
+                  <button type="button" disabled={confirmingEnd} onClick={() => setEndConfirmationOpen(false)}>Cancel</button>
+                  <button type="button" className="btn-end" disabled={confirmingEnd} onClick={() => void onConfirmEnd()}>{confirmingEnd ? "Ending..." : "End session"}</button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {endSummary && (
+            <div className="arena-end-layer arena-end-layer--overview">
+              <section className="arena-end-dialog arena-end-overview" role="dialog" aria-modal="true" aria-labelledby="end-overview-title">
+                <span className="arena-end-dialog__eyebrow">Session complete</span>
+                <h2 id="end-overview-title">{endSummary.topic}</h2>
+                <p className="arena-end-overview__intro">{isDataMode ? "Data analysis" : "Debate"} overview</p>
+                <div className="arena-end-metrics" aria-label="Session metrics">
+                  <div className="arena-end-metric"><span>Rounds</span><strong>{endSummary.rounds}</strong></div>
+                  <div className="arena-end-metric"><span>Duration</span><strong>{formatDuration(endSummary.duration_seconds)}</strong></div>
+                  <div className="arena-end-metric"><span>Contributions</span><strong>{endSummary.contributions}</strong></div>
+                  <div className="arena-end-metric"><span>Agents</span><strong>{endSummary.agents}</strong></div>
+                </div>
+                 <div className="arena-end-dialog__actions arena-end-overview__actions">
+                  <button type="button" onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                  <button type="button" className="btn-primary" onClick={onEndReturnToEntry}>Back to Entry</button>
+                </div>
+              </section>
+            </div>
           )}
         </main>
       )}

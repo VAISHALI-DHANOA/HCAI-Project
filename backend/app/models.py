@@ -245,6 +245,14 @@ class ResetRequest(BaseModel):
     topic: str | None = None
 
 
+class EndSessionRequest(BaseModel):
+    duration_seconds: int = Field(ge=0, le=31_536_000)
+
+
+class DisplayTimeRequest(BaseModel):
+    seconds: int = Field(ge=1, le=300)
+
+
 class InterveneRequest(BaseModel):
     message: str = Field(min_length=1, max_length=500)
 
