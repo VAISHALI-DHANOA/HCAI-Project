@@ -30,6 +30,26 @@ DEMO_FILE = Path(__file__).resolve().parent / "demo_agents.json"
 DEMO_DATA_FILE = Path(__file__).resolve().parent / "demo_data_analysts.json"
 EXAMPLES_DIR = Path(__file__).resolve().parent / "examples"
 ADMIN_KEY = os.environ.get("ADMIN_KEY")
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOADS_DIR = Path(__file__).resolve().parent / "uploads"
+
+
+def _client_filename(raw_filename: str) -> str:
+    """Keep a display name only; never use a client path for storage."""
+    filename = raw_filename.replace("\\", "/").rsplit("/", 1)[-1].strip()
+    if (not filename or filename in {".", ".."} or len(filename) > 255
+            or any(ord(character) < 32 for character in filename)):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    return filename
+
+
+def _new_upload_path(extension: str) -> Path:
+    """Create an opaque path and assert that it remains under uploads/."""
+    root = UPLOADS_DIR.resolve()
+    candidate = (root / f"{uuid4().hex}.{extension}").resolve()
+    if not candidate.is_relative_to(root):
+        raise HTTPException(status_code=400, detail="Invalid upload path")
+    return candidate
 
 
 async def verify_admin(request: Request) -> None:
@@ -341,36 +361,38 @@ async def upload_dataset(file: UploadFile = File(...), session_id: str = Depends
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    filename = _client_filename(file.filename)
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     if ext not in ("csv", "xlsx", "xls"):
         raise HTTPException(status_code=400, detail="Only CSV and Excel files are supported")
 
-    contents = await file.read()
-    if len(contents) > 10 * 1024 * 1024:
+    # Read at most one byte beyond the limit so oversized requests are not
+    # buffered fully in application memory.
+    contents = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=400, detail="File too large (max 10MB)")
 
     from app.dataset import parse_dataset, build_dataset_summary_text
 
     try:
-        parsed = parse_dataset(contents, file.filename)
+        parsed = parse_dataset(contents, filename)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Failed to parse file: {exc}") from exc
 
     # Save uploaded file so chart_compute can read it for this session
-    upload_dir = Path(__file__).resolve().parent / "uploads"
-    upload_dir.mkdir(exist_ok=True)
-    saved_path = upload_dir / f"{session_id}_{file.filename}"
+    UPLOADS_DIR.mkdir(exist_ok=True)
+    saved_path = _new_upload_path(ext)
     saved_path.write_bytes(contents)
     clear_cache(saved_path)
     SESSIONS.set_csv_path(session_id, saved_path)
 
     store = SESSIONS.get_store(session_id)
     summary_text = build_dataset_summary_text(parsed)
-    state = store.set_dataset_summary(summary_text, file.filename)
+    state = store.set_dataset_summary(summary_text, filename)
     state.dataset_columns = [c["name"] for c in parsed["columns"]]
     state.dataset_preview = dataset_preview(parsed)
     state.world_state["dataset_row_count"] = parsed["shape"][0]
-    store.set_dataset_identity(file.filename, contents)
+    store.set_dataset_identity(filename, contents)
     store.record_configuration("/upload-dataset")
 
     snapshot = state.model_dump()

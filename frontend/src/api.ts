@@ -153,10 +153,12 @@ export async function testChat(
   personality: AgentPersonality,
   messages: Array<{ role: string; content: string }>,
   user_message: string,
+  signal?: AbortSignal,
 ): Promise<{ reply: string }> {
   return request<{ reply: string }>("/chat", {
     method: "POST",
     body: JSON.stringify({ agent_name, agent_persona, personality, messages, user_message }),
+    signal,
   });
 }
 

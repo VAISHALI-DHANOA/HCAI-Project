@@ -1,9 +1,9 @@
-import { Fragment, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, testChat, uploadDataset } from "./api";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { addAgents, downloadLogs, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setModeratorStrategy, setTopic, syncAgents, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
@@ -23,6 +23,9 @@ import { ModeratorSelection } from "./components/ModeratorSelection";
 import { Brand } from "./components/Brand";
 import { useSessionGate } from "./hooks/useSessionGate";
 import { getModeratorAvatar } from "./moderatorAvatars";
+import { TestChatModal } from "./components/TestChatModal";
+
+const MIN_USER_AGENTS = 4;
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
@@ -190,9 +193,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
   const draftBaseRef = useRef<State | null>(null);
   const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
   const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
   const datasetInfo = state?.dataset_preview ?? null;
   const [uploading, setUploading] = useState(false);
@@ -200,6 +200,8 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
   const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
   const [chairSaving, setChairSaving] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const launchPendingRef = useRef(false);
   const [sidePanelView, setSidePanelView] = useState<"controls" | "log">("controls");
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
@@ -227,9 +229,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     setAdminKey(key);
     return Boolean(key);
   });
-
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
 
   const historyRef = useRef<HTMLDivElement>(null);
   const appPhaseRef = useRef(appPhase);
@@ -539,13 +538,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
   const hasAgents = userAgents.length > 0;
   const completedRoundCount = authoritativeRoundCount(state);
+  const canContinueToModerator = Boolean(
+    (topicInput.trim() || datasetInfo) && draftAgents.length >= MIN_USER_AGENTS,
+  );
 
   const selectedPersonalityPreset = useMemo(
     () => getPersonalityPreset(personalityConfig.preset_id),
     [personalityConfig.preset_id],
   );
-
-  const chatLogEndRef = useRef<HTMLDivElement>(null);
 
   function applyStateSnapshot(snapshot: State, resetPlayback = false): boolean {
     const previous = stateRef.current;
@@ -595,16 +595,11 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
       setAccumulatedAnnotations(actions.flatMap(({ action }) => action.annotations));
       setAgentTablePositions(new Map(actions.map(({ turn, action }) => [turn.speaker_id, { agentId: turn.speaker_id, ...action.navigate_to }])));
-      if (previous === null && snapshot.dataset_preview && savedRound) setAppPhase("arena");
+      if (previous === null && savedRound) setAppPhase("arena");
     }
     playback.sync(snapshot, baseline);
     return true;
   }
-
-  // Scroll test chat to bottom when messages change
-  useEffect(() => {
-    chatLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
 
   function updatePersonalityPreset(presetId: string) {
     setPersonalityConfig(createPersonalityFromPreset(presetId));
@@ -703,81 +698,13 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
   function openTestChat(agent: DraftAgent) {
     setTestChatAgent(agent);
-    setChatMessages([]);
-    setChatInput("");
-  }
-
-  function closeTestChat() {
-    stopListening();
-    stopTTS();
-    setTestChatAgent(null);
-    setChatMessages([]);
-    setChatInput("");
-  }
-
-  const sendTestMessage = useCallback(async (overrideMessage?: string) => {
-    const msg = overrideMessage ?? chatInput;
-    if (!testChatAgent || !msg.trim() || chatLoading) return;
-    const userMsg = msg.trim();
-    setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setChatLoading(true);
-    try {
-      const result = await testChat(
-        testChatAgent.name,
-        testChatAgent.persona_text,
-        testChatAgent.personality,
-        chatMessages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content })),
-        userMsg
-      );
-      setChatMessages((prev) => [...prev, { role: "agent", content: result.reply }]);
-      // Speak the agent's reply aloud when input was via voice
-      if (overrideMessage) {
-        const agentSeed = testChatAgent.name.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-        void speak(result.reply, { voiceIndex: agentSeed }).catch((error: unknown) => setError(error instanceof Error ? error.message : "Voice playback failed"));
-      }
-    } catch (e: unknown) {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "agent", content: "(Error: could not reach agent)" },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  }, [testChatAgent, chatInput, chatLoading, chatMessages, speak]);
-
-  const sendTestMessageRef = useRef(sendTestMessage);
-  sendTestMessageRef.current = sendTestMessage;
-
-  function startListening() {
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI || chatLoading) return;
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event: any) => {
-      const transcript: string = event.results[0][0].transcript;
-      sendTestMessageRef.current(transcript);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    setListening(true);
-    recognition.start();
-  }
-
-  function stopListening() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    setListening(false);
   }
 
   async function launchArena() {
-    if ((!topicInput.trim() && !datasetInfo) || !stateRef.current) return;
+    if (launchPendingRef.current || (!topicInput.trim() && !datasetInfo) || !stateRef.current) return;
     setError("");
+    launchPendingRef.current = true;
+    setLaunching(true);
     try {
       let expected = draftBaseRef.current ?? stateRef.current;
       if (expected.run_id !== stateRef.current.run_id || expected.revision !== stateRef.current.revision) {
@@ -798,12 +725,14 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
+    } finally {
+      launchPendingRef.current = false;
+      setLaunching(false);
     }
   }
 
   function continueToModerator() {
-    const existingAgentCount = (state?.agents ?? []).filter((agent) => agent.role !== "mediator").length;
-    if ((!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && existingAgentCount === 0)) return;
+    if (!canContinueToModerator) return;
     setError("");
     setSetupStep("moderator");
   }
@@ -921,7 +850,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
   const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
     <button className="btn-demo" onClick={isDataMode ? onLoadDataDemo : onLoadDemo}>{isDataMode ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
-    <button className="launch-button" onClick={continueToModerator} disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}>Continue to Moderator</button>
+    <button className="launch-button" onClick={continueToModerator} disabled={!canContinueToModerator}>Continue to Moderator</button>
   </div> : null;
   const participantBriefingValue = state?.topic
     ? isDataMode ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
@@ -1014,7 +943,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
               strategies={moderatorStrategies}
               selectedId={state?.moderator_strategy_id ?? "consensus"}
               saving={chairSaving}
-              launching={false}
+              launching={launching}
               onSelect={onChairStrategyChange}
               onBack={() => setSetupStep("team")}
               onEnter={launchArena}
@@ -1127,7 +1056,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
               <div className="section-block agent-roster setup-pixel-panel">
                 <h2 className="section-title">
                   Agent Roster
-                  <span className="section-title__count">{draftAgents.length}</span>
+                  <span className="section-title__count">{draftAgents.length} / {MIN_USER_AGENTS} minimum</span>
                 </h2>
 
                 {draftAgents.length === 0 ? (
@@ -1555,67 +1484,13 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       {/* ================================================================
          TEST CHAT MODAL
          ================================================================ */}
-      {testChatAgent && (
-        <div className="test-chat-overlay" onClick={closeTestChat}>
-          <div className="test-chat-modal setup-pixel-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="test-chat-modal__header">
-              <div className="test-chat-modal__agent-info">
-                <img
-                  className="test-chat-modal__avatar"
-                  src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(testChatAgent.name)}`}
-                  alt={testChatAgent.name}
-                  width={40}
-                  height={40}
-                />
-                <div>
-                  <div className="test-chat-modal__name">{testChatAgent.name}</div>
-                  <span className="personality-badge personality-badge--small">{testChatAgent.personality.role_name}</span>
-                </div>
-              </div>
-              <button className="test-chat-modal__close" onClick={closeTestChat}>X</button>
-            </div>
-
-            <div className="test-chat-modal__messages">
-              {chatMessages.length === 0 && (
-                <div className="test-chat-modal__empty">
-                  Say hello to {testChatAgent.name} to test their personality.
-                </div>
-              )}
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`test-chat__bubble test-chat__bubble--${msg.role}`}>
-                  {msg.content}
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="test-chat__bubble test-chat__bubble--agent test-chat__bubble--loading">
-                  Thinking...
-                </div>
-              )}
-              <div ref={chatLogEndRef} />
-            </div>
-
-            <div className="test-chat-modal__input-bar">
-              <input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTestMessage(); } }}
-                placeholder={listening ? "Listening..." : "Type or speak a message..."}
-                disabled={chatLoading || listening}
-              />
-              <button
-                className={`btn-mic${listening ? " btn-mic--active" : ""}`}
-                onClick={listening ? stopListening : startListening}
-                disabled={chatLoading}
-                type="button"
-                title={listening ? "Stop listening" : "Speak"}
-              >
-                {listening ? "\u23F9" : "\uD83C\uDFA4"}
-              </button>
-              <button onClick={() => sendTestMessage()} disabled={chatLoading || !chatInput.trim()}>Send</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {testChatAgent && <TestChatModal
+        agent={testChatAgent}
+        onClose={() => setTestChatAgent(null)}
+        onError={setError}
+        speak={speak}
+        stopAudio={stopTTS}
+      />}
     </div>
   );
 }
