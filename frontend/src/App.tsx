@@ -203,6 +203,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [launching, setLaunching] = useState(false);
   const launchPendingRef = useRef(false);
   const [sidePanelView, setSidePanelView] = useState<"controls" | "log">("controls");
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
   const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
@@ -538,6 +539,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
   const hasAgents = userAgents.length > 0;
   const completedRoundCount = authoritativeRoundCount(state);
+  const setupLocked = isAdmin && (running || completedRoundCount > 0);
   const canContinueToModerator = Boolean(
     (topicInput.trim() || datasetInfo) && draftAgents.length >= MIN_USER_AGENTS,
   );
@@ -891,7 +893,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     <div className={`app-shell app-shell--${initialMode}`}>
       {/* ---- HUD HEADER ---- */}
       {appPhase === "setup" ? (
-        <SetupHeader onBack={setupStep === "moderator" ? () => setSetupStep("team") : onSetupBack} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={setupStep === "team" ? missionBriefing : undefined}>
+        <SetupHeader onBack={setupStep === "moderator" ? () => setSetupStep("team") : onSetupBack} busy={setupStep === "team" && setupLocked} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={setupStep === "team" ? missionBriefing : undefined}>
           {participant && (
             <div className="setup-header-round" aria-label={`Round ${completedRoundCount}`}>
               <span>ROUND</span><strong>{completedRoundCount}</strong>
@@ -905,7 +907,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       ) : (
       <header className="topbar">
         <div className="topbar__identity">
-          <button type="button" className="topbar__back" onClick={() => { setSetupStep("moderator"); setAppPhase("setup"); }} title="Back to moderator selection"><ArrowIcon direction="left" /> BACK</button>
+          <button type="button" className="topbar__back" disabled={setupLocked} onClick={() => { setSetupStep("moderator"); setAppPhase("setup"); }} title={setupLocked ? "Setup is locked after the first round starts" : "Back to moderator selection"}><ArrowIcon direction="left" /> BACK</button>
           <Brand className="topbar__brand" />
           <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
         </div>
@@ -1354,7 +1356,8 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
           {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}
           {hasAgents && sidebarCollapsed ? (
-            <aside className="chat-log-panel">
+            <aside className={`chat-log-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
+              <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close discussion" : "Open discussion"}</button>
               <div className="chat-log-panel__header">
                 <span className="section-title">Discussion</span>
                 <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
@@ -1370,7 +1373,8 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
               )}
             </aside>
           ) : (
-            <aside className="side-panel">
+            <aside className={`side-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
+              <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close controls" : "Open controls"}</button>
               {/* Tab selector */}
               <div className="control-tabs" style={{ marginBottom: "8px" }}>
                 <button type="button" className={`control-tab${sidePanelView === "controls" ? " control-tab--active" : ""}`}
