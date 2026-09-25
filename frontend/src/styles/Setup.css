@@ -1,0 +1,243 @@
+/* Shared setup shell, panel treatment, form controls, and personality tokens. */
+
+.app-shell:has(.setup-screen) {
+  --setup-bg: var(--color-page);
+  --setup-panel: var(--color-panel);
+  --setup-raised: var(--color-surface);
+  --setup-input: var(--color-input);
+  --setup-line: var(--color-border);
+  --setup-line-soft: var(--color-border-soft);
+  --setup-ink: var(--color-text-bright);
+  --setup-muted: var(--color-text-muted);
+  --setup-accent: var(--color-primary);
+  --setup-accent-hover: var(--color-primary-hover);
+  --setup-violet: var(--color-secondary);
+  --mode-font: var(--font-display);
+  --mode-accent: var(--setup-accent);
+  background: var(--setup-bg);
+  color: var(--setup-ink);
+  padding: 20px 3vw 92px;
+}
+
+.app-shell--data:has(.setup-screen) {
+  --setup-accent: var(--color-data-secondary);
+  --setup-accent-hover: var(--color-data-secondary-hover);
+}
+
+.setup-screen {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  width: min(1280px, 100%);
+  min-height: 0;
+  margin: 0 auto;
+  flex: 1;
+  font-family: var(--font-body);
+}
+
+.setup-screen .section-block {
+  margin: 0;
+}
+
+.mode-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--setup-accent);
+  font: 700 .68rem var(--font-display);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.setup-screen .section-title,
+.mission-briefing .section-title {
+  margin: 0;
+  color: var(--setup-ink);
+  font: 800 1.05rem/1.25 var(--font-display);
+  letter-spacing: .04em;
+}
+
+.setup-pixel-panel {
+  --pixel-frame: var(--setup-line);
+  --pixel-outline: var(--pixel-panel-shape);
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.setup-pixel-panel::before,
+.setup-pixel-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background: var(--pixel-frame);
+  clip-path: var(--pixel-outline);
+  pointer-events: none;
+}
+
+.setup-pixel-panel::after {
+  inset: 4px;
+  z-index: -1;
+  background: var(--setup-panel);
+}
+
+.setup-screen .stacked-form,
+.mission-briefing .stacked-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setup-screen .form-label,
+.mission-briefing .form-label {
+  color: var(--setup-muted);
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.setup-screen input:not([type="range"]),
+.setup-screen textarea,
+.setup-screen select,
+.mission-briefing input:not([type="range"]),
+.mission-briefing textarea,
+.mission-briefing select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--setup-ink);
+  background: var(--setup-input);
+  border: 1px solid var(--setup-line);
+  border-radius: 0;
+  box-shadow: none;
+  font: .8rem var(--font-body);
+}
+
+.setup-screen input[type="file"] {
+  padding: 6px;
+}
+
+.setup-screen textarea {
+  min-height: 58px;
+  line-height: 1.35;
+  resize: vertical;
+}
+
+.setup-screen ::placeholder {
+  color: color-mix(in srgb, var(--setup-muted) 82%, transparent);
+}
+
+.personality-badge {
+  padding: 3px 7px;
+  color: var(--setup-violet);
+  background: var(--setup-raised);
+  border: 1px solid var(--setup-line);
+  border-radius: 0;
+  font: 700 .65rem var(--font-display);
+}
+
+.trait--openness {
+  --trait-color: var(--color-secondary);
+}
+
+.trait--conscientiousness {
+  --trait-color: #a9b9e8;
+}
+
+.trait--extraversion {
+  --trait-color: #fa8a87;
+}
+
+.trait--agreeableness {
+  --trait-color: #b5a3d7;
+}
+
+.trait--neuroticism {
+  --trait-color: #e6a1bd;
+}
+
+.setup-screen button,
+.mission-briefing button {
+  min-height: 34px;
+  padding: 6px 11px;
+  color: var(--setup-muted);
+  background: var(--setup-input);
+  border: 1px solid var(--setup-line);
+  border-radius: 0;
+  box-shadow: none;
+  font: 700 .7rem var(--font-display);
+  letter-spacing: .025em;
+  cursor: pointer;
+}
+
+.setup-screen button:hover:not(:disabled),
+.mission-briefing button:hover:not(:disabled) {
+  color: var(--setup-ink);
+  background: var(--color-surface-hover);
+  border-color: var(--setup-violet);
+  box-shadow: none;
+}
+
+.setup-screen button:disabled,
+.mission-briefing button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.setup-screen :is(input, textarea, select, button):focus-visible {
+  outline: 2px solid var(--setup-ink);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+
+.setup-screen .btn-primary,
+.setup-screen .launch-button,
+.mission-briefing .launch-button {
+  color: var(--color-on-accent);
+  background: var(--setup-accent);
+  border: 1px solid var(--setup-accent-hover);
+  text-transform: uppercase;
+}
+
+.setup-screen .btn-primary {
+  min-height: 42px;
+  font-size: .82rem;
+}
+
+.setup-screen .btn-primary:hover:not(:disabled),
+.setup-screen .launch-button:hover:not(:disabled),
+.mission-briefing .launch-button:hover:not(:disabled) {
+  color: var(--color-on-accent);
+  background: var(--setup-accent-hover);
+  border-color: var(--setup-ink);
+}
+
+.setup-screen .launch-button,
+.mission-briefing .launch-button {
+  width: auto;
+  padding-inline: 14px;
+  letter-spacing: .05em;
+}
+
+@media (max-width: 780px) {
+  .app-shell:has(.setup-screen) {
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-bottom: calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .setup-screen {
+    display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-shell:has(.setup-screen) {
+    padding: 7px 7px calc(88px + env(safe-area-inset-bottom));
+  }
+}

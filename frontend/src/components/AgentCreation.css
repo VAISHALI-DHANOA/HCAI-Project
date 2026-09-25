@@ -1,118 +1,6 @@
 /* =========================================================
-   AGENT SETUP
+   TEAM EDITOR & ROSTER
    ========================================================= */
-
-.app-shell:has(.setup-screen) {
-  --setup-bg: var(--color-page);
-  --setup-panel: var(--color-panel);
-  --setup-raised: var(--color-surface);
-  --setup-input: var(--color-input);
-  --setup-line: var(--color-border);
-  --setup-line-soft: var(--color-border-soft);
-  --setup-ink: var(--color-text-bright);
-  --setup-muted: var(--color-text-muted);
-  --setup-accent: var(--color-primary);
-  --setup-accent-hover: var(--color-primary-hover);
-  --setup-violet: var(--color-secondary);
-  --mode-font: var(--font-display);
-  --mode-accent: var(--setup-accent);
-  background: var(--setup-bg);
-  color: var(--setup-ink);
-  padding: 20px 3vw 92px;
-}
-
-.app-shell--data:has(.setup-screen) {
-  --setup-accent: var(--color-data-secondary);
-  --setup-accent-hover: var(--color-data-secondary-hover);
-}
-
-.setup-screen {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr);
-  gap: 10px;
-  width: min(1280px, 100%);
-  min-height: 0;
-  margin: 0 auto;
-  flex: 1;
-  font-family: var(--font-body);
-}
-
-.setup-screen .section-block {
-  margin: 0;
-}
-
-.mission-briefing {
-  display: grid;
-  grid-template-columns: minmax(130px, .4fr) minmax(0, 2fr);
-  align-items: center;
-  gap: 10px;
-  padding: 9px 14px;
-}
-
-.mission-briefing__copy {
-  text-align: center;
-}
-
-.mode-label {
-  display: block;
-  margin-bottom: 4px;
-  color: var(--setup-accent);
-  font: 700 .68rem var(--font-display);
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-
-.setup-screen .section-title,
-.mission-briefing .section-title {
-  margin: 0;
-  color: var(--setup-ink);
-  font: 800 1.05rem/1.25 var(--font-display);
-  letter-spacing: .04em;
-}
-
-.mission-briefing__control .stacked-form {
-  gap: 6px;
-}
-
-.mission-briefing__input-row {
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-}
-
-.mission-briefing textarea {
-  min-height: 34px;
-  max-height: 54px;
-  resize: vertical;
-}
-
-.mission-briefing__topic {
-  margin: 0;
-  color: var(--setup-muted);
-  text-align: right;
-}
-
-.mission-briefing__participant-value {
-  min-width: 0;
-  text-align: right;
-}
-
-.mission-briefing__participant-value>span {
-  display: block;
-  margin-bottom: 5px;
-  color: var(--setup-muted);
-  font-size: .7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.setup-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
 .setup-phase {
   display: grid;
@@ -172,38 +60,6 @@
   flex-shrink: 0;
 }
 
-.setup-pixel-panel {
-  --pixel-frame: var(--setup-line);
-  --pixel-outline: var(--pixel-panel-shape);
-  position: relative;
-  isolation: isolate;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.setup-pixel-panel::before,
-.setup-pixel-panel::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -2;
-  background: var(--pixel-frame);
-  clip-path: var(--pixel-outline);
-  pointer-events: none;
-}
-
-.setup-pixel-panel::after {
-  inset: 4px;
-  z-index: -1;
-  background: var(--setup-panel);
-}
-
-.mission-briefing.setup-pixel-panel {
-  --pixel-frame: var(--setup-accent);
-}
-
 .agent-creation .settings-header,
 .agent-roster__header,
 .setup-left>.section-block .settings-header {
@@ -226,19 +82,6 @@
   margin: 0;
 }
 
-.agent-roster__actions button {
-  min-height: 30px;
-  padding: 5px 10px;
-  font-size: .64rem;
-}
-
-.setup-screen .stacked-form,
-.mission-briefing .stacked-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .agent-creation__group {
   display: flex;
   flex-direction: column;
@@ -259,47 +102,7 @@
   letter-spacing: .04em;
 }
 
-.setup-screen .form-label,
-.mission-briefing .form-label {
-  color: var(--setup-muted);
-  font-size: .74rem;
-  font-weight: 700;
-  letter-spacing: .02em;
-}
-
-.setup-screen input:not([type="range"]),
-.setup-screen textarea,
-.setup-screen select,
-.mission-briefing input:not([type="range"]),
-.mission-briefing textarea,
-.mission-briefing select {
-  width: 100%;
-  min-width: 0;
-  padding: 8px 10px;
-  color: var(--setup-ink);
-  background: var(--setup-input);
-  border: 1px solid var(--setup-line);
-  border-radius: 0;
-  box-shadow: none;
-  font: .8rem var(--font-body);
-}
-
-.setup-screen input[type="file"] {
-  padding: 6px;
-}
-
-.setup-screen textarea {
-  min-height: 58px;
-  line-height: 1.35;
-  resize: vertical;
-}
-
-.setup-screen ::placeholder {
-  color: color-mix(in srgb, var(--setup-muted) 82%, transparent);
-}
-
 .personality-summary {
-  gap: 4px;
   padding: 9px 10px;
   background: var(--setup-raised);
   border: 1px solid var(--setup-line-soft);
@@ -321,17 +124,7 @@
   font-size: .68rem;
 }
 
-.personality-badge {
-  padding: 3px 7px;
-  color: var(--setup-violet);
-  background: var(--setup-raised);
-  border: 1px solid var(--setup-line);
-  border-radius: 0;
-  font: 700 .65rem var(--font-display);
-}
-
 .ocean-panel {
-  gap: 7px;
   padding: 9px 0 0;
   background: transparent;
   border: 0;
@@ -351,26 +144,6 @@
   margin: 0;
   color: var(--setup-ink);
   font-size: .95rem;
-}
-
-.trait--openness {
-  --trait-color: var(--color-secondary);
-}
-
-.trait--conscientiousness {
-  --trait-color: #a9b9e8;
-}
-
-.trait--extraversion {
-  --trait-color: #fa8a87;
-}
-
-.trait--agreeableness {
-  --trait-color: #b5a3d7;
-}
-
-.trait--neuroticism {
-  --trait-color: #e6a1bd;
 }
 
 .trait--energy {
@@ -438,69 +211,6 @@
   border-radius: 0;
 }
 
-.setup-screen button,
-.mission-briefing button {
-  min-height: 34px;
-  padding: 6px 11px;
-  color: var(--setup-muted);
-  background: var(--setup-input);
-  border: 1px solid var(--setup-line);
-  border-radius: 0;
-  box-shadow: none;
-  font: 700 .7rem var(--font-display);
-  letter-spacing: .025em;
-  cursor: pointer;
-}
-
-.setup-screen button:hover:not(:disabled),
-.mission-briefing button:hover:not(:disabled) {
-  color: var(--setup-ink);
-  background: var(--color-surface-hover);
-  border-color: var(--setup-violet);
-  box-shadow: none;
-}
-
-.setup-screen button:disabled,
-.mission-briefing button:disabled {
-  opacity: .42;
-  cursor: not-allowed;
-}
-
-.setup-screen :is(input, textarea, select, button):focus-visible {
-  outline: 2px solid var(--setup-ink);
-  outline-offset: 2px;
-  box-shadow: none;
-}
-
-.setup-screen .btn-primary,
-.setup-screen .launch-button,
-.mission-briefing .launch-button {
-  color: var(--color-on-accent);
-  background: var(--setup-accent);
-  border: 1px solid var(--setup-accent-hover);
-  text-transform: uppercase;
-}
-
-.setup-screen .btn-primary {
-  min-height: 42px;
-  font-size: .82rem;
-}
-
-.setup-screen .btn-primary:hover:not(:disabled),
-.setup-screen .launch-button:hover:not(:disabled),
-.mission-briefing .launch-button:hover:not(:disabled) {
-  color: var(--color-on-accent);
-  background: var(--setup-accent-hover);
-  border-color: var(--setup-ink);
-}
-
-.setup-screen .launch-button,
-.mission-briefing .launch-button {
-  width: auto;
-  padding-inline: 14px;
-  letter-spacing: .05em;
-}
-
 .agent-creation .form-label,
 .agent-creation .personality-summary :is(p, small),
 .agent-creation button {
@@ -513,15 +223,6 @@
 
 .agent-creation__reset {
   align-self: flex-start;
-}
-
-.section-title__count {
-  margin-left: 7px;
-  padding: 2px 6px;
-  color: var(--setup-muted);
-  background: var(--color-surface-hover);
-  border: 1px solid var(--setup-line-soft);
-  font-size: .68rem;
 }
 
 .roster-empty {
@@ -679,90 +380,13 @@
   color: #ffaaa3;
 }
 
-.upload-status,
-.dataset-preview__summary {
-  margin: 3px 0;
-  color: var(--setup-accent);
-  font-size: .72rem;
-}
-
-.dataset-columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.mission-briefing .dataset-columns {
-  font-size: .72rem;
-  /* Two full tag rows plus half of the next row, including padding and gaps. */
-  max-height: calc(3.5em + 18px);
-  align-content: flex-start;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-color: var(--setup-accent) var(--setup-input);
-  scrollbar-width: thin;
-}
-
-.mission-briefing .dataset-columns:focus-visible {
-  outline: 2px solid var(--setup-accent);
-  outline-offset: 2px;
-}
-
-.mission-briefing .arena-node__quirk {
-  font-size: inherit;
-  line-height: 1.4;
-  color: var(--setup-muted);
-  background: var(--setup-input);
-  border-color: var(--setup-line-soft);
-}
-
 @media (max-width: 1050px) {
-  .mission-briefing {
-    grid-template-columns: minmax(140px, .45fr) minmax(260px, 1fr);
-  }
-
   .draft-roster {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 780px) {
-  .app-shell:has(.setup-screen) {
-    height: 100dvh;
-    min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding-bottom: calc(82px + env(safe-area-inset-bottom));
-  }
-
-  .setup-screen {
-    display: block;
-  }
-
-  .mission-briefing {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-    margin-bottom: 10px !important;
-  }
-
-  .mission-briefing__input-row {
-    grid-template-columns: 1fr;
-  }
-
-  .setup-toolbar {
-    grid-column: auto;
-    justify-content: stretch;
-    flex-wrap: wrap;
-  }
-
-  .setup-toolbar button {
-    flex: 1 1 180px;
-    min-width: 0;
-    white-space: normal;
-  }
-
   .setup-phase {
     display: flex;
     flex-direction: column;
@@ -783,20 +407,6 @@
 }
 
 @media (max-width: 480px) {
-  .app-shell:has(.setup-screen) {
-    padding: 7px 7px calc(88px + env(safe-area-inset-bottom));
-  }
-
-  .setup-toolbar {
-    flex-direction: column;
-  }
-
-  .setup-toolbar button {
-    width: 100%;
-    min-height: 42px;
-    flex: 0 0 auto;
-  }
-
   .agent-creation,
   .agent-roster,
   .setup-left>.section-block:not(.agent-creation) {

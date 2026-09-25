@@ -6,3 +6,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Generated TypeScript build metadata and Vite config outputs
+*.tsbuildinfo
+/vite.config.js
+/vite.config.d.ts
+

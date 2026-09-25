@@ -13,6 +13,8 @@ import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as fin
 import { PlaybackController } from "./playback";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
+import "./styles/Setup.css";
+import "./components/MissionBriefing.css";
 import "./components/AgentCreation.css";
 import { AgentCard } from "./components/AgentCard";
 import { EntryScreen } from "./components/EntryScreen";
@@ -187,7 +189,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [liveTurns, setLiveTurns] = useState<PublicTurn[]>([]);
   const [liveRound, setLiveRound] = useState(0);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [appPhase, setAppPhase] = useState<AppPhase>("setup");
   const [setupStep, setSetupStep] = useState<"team" | "moderator">("team");
@@ -553,7 +554,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   }, [liveTurns.length, activeTurnIdx]);
 
   const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
-  const hasAgents = userAgents.length > 0;
   const completedRoundCount = authoritativeRoundCount(state);
   const setupLocked = isAdmin && (running || completedRoundCount > 0);
   const canContinueToModerator = Boolean(
@@ -1002,6 +1002,26 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     </div>}
   </section>;
 
+  const interventionForm = (
+    <form className="intervention-bar" onSubmit={onIntervene}>
+      <input
+        className="intervention-bar__input"
+        value={interveneInput}
+        onChange={(e) => setInterveneInput(e.target.value)}
+        placeholder="Type a message to intervene in the discussion..."
+        disabled={intervening}
+        maxLength={500}
+      />
+      <button
+        className="intervention-bar__send"
+        type="submit"
+        disabled={intervening || !interveneInput.trim()}
+      >
+        Send
+      </button>
+    </form>
+  );
+
   return (
     <div className={`app-shell app-shell--${initialMode}`}>
       {/* ---- HUD HEADER ---- */}
@@ -1276,23 +1296,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   completedRound={completedRound}
                 />
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
             ) : datasetInfo ? (
               /* ---- DATA TABLE ARENA ---- */
@@ -1309,23 +1313,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   agentMap={agentMap}
                 />
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
             ) : (
               /* ---- CIRCULAR ARENA (fallback for non-dataset mode) ---- */
@@ -1449,157 +1437,121 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   )}
                 </div>
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
             )}
           </section>
 
-          {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}
-          {hasAgents && sidebarCollapsed ? (
-            <aside className={`chat-log-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
-              <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close discussion" : "Open discussion"}</button>
-              <div className="chat-log-panel__header">
-                <span className="section-title">Discussion</span>
-                <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
-              </div>
-              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
-              {isAdmin && (
-                <div className="chat-log-panel__controls">
-                  <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                  <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                  <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
-                  <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
-                  <button className="btn-danger" onClick={onReset}>Reset</button>
+          {/* ---- RIGHT COLUMN: Controls and conversation log ---- */}
+          <aside className={`side-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
+            <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close controls" : "Open controls"}</button>
+            {/* Tab selector */}
+            <div className="control-tabs" style={{ marginBottom: "8px" }}>
+              <button type="button" className={`control-tab${sidePanelView === "controls" ? " control-tab--active" : ""}`}
+                onClick={() => setSidePanelView("controls")}>
+                Controls
+              </button>
+              <button type="button" className={`control-tab${sidePanelView === "log" ? " control-tab--active" : ""}`}
+                onClick={() => setSidePanelView("log")}>
+                Conversation Log
+              </button>
+            </div>
+
+            {sidePanelView === "controls" ? (
+              <>
+                {/* Command Center (admin only) */}
+                {isAdmin && (
+                  <div className="section-block">
+                    <h2 className="section-title">Command Center</h2>
+                    <div className="button-row">
+                      <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
+                      <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                      <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                      <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
+                      <button className="btn-danger" onClick={onReset}>Reset</button>
+                    </div>
+                    <div className="control-row">
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={autoRun} onChange={(e) => playback.auto(e.target.checked)} className="toggle-input" />
+                        <span className="toggle-switch" />
+                        <span className="toggle-label">Auto-Run</span>
+                      </label>
+                    </div>
+                    <div className="control-row">
+                      <label className="form-label" htmlFor="contribution-display-time">Display time per contribution (s)</label>
+                      <input id="contribution-display-time" type="number" min={1} max={300} step={1} value={displaySeconds} onChange={(e) => onDisplaySecondsChange(Number(e.target.value))} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Simulation Info */}
+                <div className="section-block">
+                  <h2 className="section-title">Simulation Info</h2>
+                  <div className="info-grid">
+                    <div className="info-item">
+                      <span className="info-label">Round</span>
+                      <span className="info-value">{completedRoundCount}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Agents</span>
+                      <span className="info-value">{state?.agents.length ?? 0}</span>
+                    </div>
+                    <div className="info-item info-item--full">
+                      <span className="info-label">Topic</span>
+                      <span className="info-value">{state?.topic ?? "-"}</span>
+                    </div>
+                  </div>
                 </div>
-              )}
-            </aside>
-          ) : (
-            <aside className={`side-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
-              <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close controls" : "Open controls"}</button>
-              {/* Tab selector */}
-              <div className="control-tabs" style={{ marginBottom: "8px" }}>
-                <button type="button" className={`control-tab${sidePanelView === "controls" ? " control-tab--active" : ""}`}
-                  onClick={() => setSidePanelView("controls")}>
-                  Controls
-                </button>
-                <button type="button" className={`control-tab${sidePanelView === "log" ? " control-tab--active" : ""}`}
-                  onClick={() => setSidePanelView("log")}>
-                  Conversation Log
-                </button>
-              </div>
 
-              {sidePanelView === "controls" ? (
-                <>
-                  {/* Command Center (admin only) */}
-                  {isAdmin && (
-                    <div className="section-block">
-                      <h2 className="section-title">Command Center</h2>
-                      <div className="button-row">
-                        <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                        <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                        <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
-                        <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
-                        <button className="btn-danger" onClick={onReset}>Reset</button>
+                {/* Battle Metrics */}
+                <div className="section-block">
+                  <h2 className="section-title">Battle Metrics</h2>
+                  {metrics ? (
+                    <div className="metrics">
+                      {!!metrics.evaluation?.excluded_fallback_turns && (
+                        <p role="status">{metrics.evaluation.excluded_fallback_turns} fallback turns excluded. {metrics.evaluation.status === "insufficient_data" ? "Not enough valid participant data for comparison." : ""}</p>
+                      )}
+                      <div className="metric-row">
+                        <span className="metric-label">Consensus</span>
+                        <div className="metric-bar-track">
+                          <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${(metrics.consensus_score ?? 0) * 100}%` }} />
+                        </div>
+                        <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
                       </div>
-                      <div className="control-row">
-                        <label className="toggle-row">
-                          <input type="checkbox" checked={autoRun} onChange={(e) => playback.auto(e.target.checked)} className="toggle-input" />
-                          <span className="toggle-switch" />
-                          <span className="toggle-label">Auto-Run</span>
-                        </label>
+                      <div className="metric-row">
+                        <span className="metric-label">Polarization</span>
+                        <div className="metric-bar-track">
+                          <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${(metrics.polarization_score ?? 0) * 100}%` }} />
+                        </div>
+                        <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
                       </div>
-                      <div className="control-row">
-                        <label className="form-label" htmlFor="contribution-display-time">Display time per contribution (s)</label>
-                        <input id="contribution-display-time" type="number" min={1} max={300} step={1} value={displaySeconds} onChange={(e) => onDisplaySecondsChange(Number(e.target.value))} />
+                      <div className="metric-row">
+                        <span className="metric-label">Civility</span>
+                        <div className="metric-bar-track">
+                          <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${(metrics.civility_score ?? 0) * 100}%` }} />
+                        </div>
+                        <span className="metric-value">{metricValue(metrics.civility_score)}</span>
+                      </div>
+                      <div className="coalitions-row">
+                        <span className="metric-label">Coalitions</span>
+                        <div className="coalitions-list">
+                          {metrics.detected_coalitions.length
+                            ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
+                            : <span className="metric-value">None detected</span>
+                          }
+                        </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="metrics-empty">No metrics yet</div>
                   )}
+                </div>
 
-                  {/* Simulation Info */}
-                  <div className="section-block">
-                    <h2 className="section-title">Simulation Info</h2>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Round</span>
-                        <span className="info-value">{completedRoundCount}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Agents</span>
-                        <span className="info-value">{state?.agents.length ?? 0}</span>
-                      </div>
-                      <div className="info-item info-item--full">
-                        <span className="info-label">Topic</span>
-                        <span className="info-value">{state?.topic ?? "-"}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Battle Metrics */}
-                  <div className="section-block">
-                    <h2 className="section-title">Battle Metrics</h2>
-                    {metrics ? (
-                      <div className="metrics">
-                        {!!metrics.evaluation?.excluded_fallback_turns && (
-                          <p role="status">{metrics.evaluation.excluded_fallback_turns} fallback turns excluded. {metrics.evaluation.status === "insufficient_data" ? "Not enough valid participant data for comparison." : ""}</p>
-                        )}
-                        <div className="metric-row">
-                          <span className="metric-label">Consensus</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${(metrics.consensus_score ?? 0) * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
-                        </div>
-                        <div className="metric-row">
-                          <span className="metric-label">Polarization</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${(metrics.polarization_score ?? 0) * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
-                        </div>
-                        <div className="metric-row">
-                          <span className="metric-label">Civility</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${(metrics.civility_score ?? 0) * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.civility_score)}</span>
-                        </div>
-                        <div className="coalitions-row">
-                          <span className="metric-label">Coalitions</span>
-                          <div className="coalitions-list">
-                            {metrics.detected_coalitions.length
-                              ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
-                              : <span className="metric-value">None detected</span>
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="metrics-empty">No metrics yet</div>
-                    )}
-                  </div>
-
-                </>
-              ) : (
-                <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
-              )}
-            </aside>
-          )}
+              </>
+            ) : (
+              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
+            )}
+          </aside>
 
           {endConfirmationOpen && !endSummary && (
             <div className="arena-end-layer" role="presentation">
