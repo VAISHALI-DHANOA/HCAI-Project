@@ -3,13 +3,13 @@ import { addAgents, downloadLogs, endSession, getModeratorStrategies, getPersona
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, Metrics, ModeratorStrategy, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, Metrics, ModeratorStrategy, OceanLevel, OceanTraits, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
 import { DataContribution } from "./components/DataContribution";
 import { DataAgentStrip, type AgentFocus } from "./components/DataAgentStrip";
-import { createPersonalityFromPreset as clonePreset, getPersonalityPreset as findPreset } from "./personality";
+import { createPersonalityFromPreset as clonePreset } from "./personality";
 import { PlaybackController } from "./playback";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
@@ -29,6 +29,20 @@ import { TestChatModal } from "./components/TestChatModal";
 import { downloadAgentRoster, MAX_AGENTS, parseAgentRoster } from "./agentRoster";
 
 const MIN_USER_AGENTS = 4;
+
+const OCEAN_LEVELS = [
+  { label: "Low", value: "low" },
+  { label: "Medium", value: "medium" },
+  { label: "High", value: "high" },
+] as const;
+
+function oceanLevel(value: OceanLevel): (typeof OCEAN_LEVELS)[number]["label"] {
+  return OCEAN_LEVELS.find((level) => level.value === value)?.label ?? "Medium";
+}
+
+function oceanLevelPosition(value: OceanLevel): number {
+  return OCEAN_LEVELS.findIndex((level) => level.value === value) + 1;
+}
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
@@ -59,7 +73,6 @@ function draftFromAgent(agent: Agent): DraftAgent {
     id: agent.id,
     name: agent.name,
     persona_text: agent.persona_text,
-    energy: agent.energy,
     personality: agent.personality,
   };
 }
@@ -166,19 +179,19 @@ function ConversationLog({ state, liveTurns, liveRound, agentMap, visibleVisualI
 
 function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack, onReturnToEntry }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void; onReturnToEntry: () => void }) {
   const isDataMode = initialMode === "data";
-  const OCEAN_SCALE = catalog.scale;
   const OCEAN_TRAITS = catalog.traits;
   const PERSONALITY_PRESETS = catalog.presets;
-  const getPersonalityPreset = (id: string) => findPreset(catalog, id);
   const createPersonalityFromPreset = (
     id: string,
     overrides: Parameters<typeof clonePreset>[2] = {},
   ) => clonePreset(catalog, id, overrides);
+  const createMediumPersonality = () => createPersonalityFromPreset(catalog.default_preset_id, {
+    ocean: Object.fromEntries(OCEAN_TRAITS.map(({ key }) => [key, "medium"])) as unknown as OceanTraits,
+  });
   const [state, setStateValue] = useState<State | null>(null);
   const [topicInput, setTopicInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [personaInput, setPersonaInput] = useState("");
-  const [energyInput, setEnergyInput] = useState(0.6);
   const [connection, setConnection] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState(false);
@@ -195,7 +208,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
   const draftBaseRef = useRef<State | null>(null);
   const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
-  const [personalityConfig, setPersonalityConfig] = useState(() => createPersonalityFromPreset(catalog.default_preset_id));
+  const [personalityConfig, setPersonalityConfig] = useState(createMediumPersonality);
   const datasetInfo = state?.dataset_preview ?? null;
   const [uploading, setUploading] = useState(false);
   const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
@@ -560,11 +573,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     (topicInput.trim() || datasetInfo) && draftAgents.length >= MIN_USER_AGENTS,
   );
 
-  const selectedPersonalityPreset = useMemo(
-    () => getPersonalityPreset(personalityConfig.preset_id),
-    [personalityConfig.preset_id],
-  );
-
   function applyStateSnapshot(snapshot: State, resetPlayback = false): boolean {
     const previous = stateRef.current;
     if (!acceptsSnapshot(previous, snapshot)) return false;
@@ -623,20 +631,35 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     setPersonalityConfig(createPersonalityFromPreset(presetId));
   }
 
-  function updateOceanTrait(trait: keyof typeof personalityConfig.ocean, value: number) {
+  function updateOceanTrait(trait: keyof typeof personalityConfig.ocean, value: OceanLevel) {
     setPersonalityConfig((prev) => ({
       ...prev,
       ocean: { ...prev.ocean, [trait]: value },
     }));
   }
 
+  function changeOceanLevel(trait: keyof typeof personalityConfig.ocean, direction: -1 | 1) {
+    const current = oceanLevelPosition(personalityConfig.ocean[trait]);
+    const next = Math.min(3, Math.max(1, current + direction));
+    updateOceanTrait(trait, OCEAN_LEVELS[next - 1].value);
+  }
+
   function updateCustomInstructions(value: string) {
     setPersonalityConfig((prev) => ({ ...prev, custom_instructions: value }));
   }
 
+  function updateFunctionalRole(value: string) {
+    setPersonalityConfig((prev) => ({ ...prev, role_goal: value }));
+  }
+
+  function clearFunctionalRole() {
+    setPersonalityConfig((prev) => ({ ...prev, role_goal: "" }));
+  }
+
   function resetPersonalityDefaults() {
-    setPersonalityConfig((prev) => createPersonalityFromPreset(prev.preset_id, {
-      custom_instructions: prev.custom_instructions,
+    setPersonalityConfig((prev) => ({
+      ...prev,
+      ocean: Object.fromEntries(OCEAN_TRAITS.map(({ key }) => [key, "medium"])) as unknown as OceanTraits,
     }));
   }
 
@@ -661,7 +684,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       id: editingDraftIndex === null ? undefined : draftAgents[editingDraftIndex]?.id,
       name: nameInput.trim(),
       persona_text: personaInput.trim(),
-      energy: energyInput,
       personality: personalityConfig,
     };
     setDraftAgents((prev) => {
@@ -670,8 +692,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     });
     setNameInput("");
     setPersonaInput("");
-    setEnergyInput(0.6);
-    setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
+    setPersonalityConfig(createMediumPersonality());
     setEditingDraftIndex(null);
   }
 
@@ -680,12 +701,11 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     if (!nameInput.trim() || !personaInput.trim()) return;
     setError("");
     try {
-      const result = await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), energy: energyInput, personality: personalityConfig }]);
+      const result = await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), personality: personalityConfig }]);
       applyStateSnapshot(result.state);
       setNameInput("");
       setPersonaInput("");
-      setEnergyInput(0.6);
-      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
+      setPersonalityConfig(createMediumPersonality());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit agent");
     }
@@ -697,8 +717,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setEditingDraftIndex(null);
       setNameInput("");
       setPersonaInput("");
-      setEnergyInput(0.6);
-      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
+      setPersonalityConfig(createMediumPersonality());
     } else if (editingDraftIndex !== null && editingDraftIndex > idx) {
       setEditingDraftIndex(editingDraftIndex - 1);
     }
@@ -710,7 +729,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     setEditingDraftIndex(idx);
     setNameInput(agent.name);
     setPersonaInput(agent.persona_text);
-    setEnergyInput(agent.energy);
     setPersonalityConfig(agent.personality);
   }
 
@@ -1099,56 +1117,67 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                 <label className="form-label" htmlFor="agent-name">Agent Name</label>
                 <input id="agent-name" value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
 
-                <label className="form-label" htmlFor="agent-persona">Persona (1-2 lines)</label>
-                <textarea id="agent-persona" value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality and perspective..." />
+                <label className="form-label" htmlFor="agent-persona">
+                  Persona (1-2 lines)
+                  <small className="form-label__hint"><em>Describe the agent's background, expertise, perspective, and relevant priorities.</em></small>
+                </label>
+                <textarea id="agent-persona" value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their background, expertise, and perspective..." />
                 </fieldset>
 
                 <fieldset className="agent-creation__group">
-                <legend>Personality</legend>
-                <label className="form-label" htmlFor="agent-personality">Personality Preset</label>
+                <legend>Agent setup</legend>
+                <label className="form-label" htmlFor="agent-personality">Agent Preset</label>
                 <select id="agent-personality" value={personalityConfig.preset_id} onChange={(e) => updatePersonalityPreset(e.target.value)}>
                   {PERSONALITY_PRESETS.map((preset) => (
                     <option key={preset.id} value={preset.id}>{preset.name}</option>
                   ))}
                 </select>
 
-                <div className="personality-summary">
-                  <p>{selectedPersonalityPreset.description}</p>
-                  <small>{personalityConfig.role_goal}</small>
+                <div className="functional-role-field">
+                  <label className="form-label" htmlFor="agent-role-goal">
+                    Functional Role <span>(optional)</span>
+                    <small className="form-label__hint">Defines the agent's responsibility and contribution.</small>
+                  </label>
+                  <textarea
+                    id="agent-role-goal"
+                    value={personalityConfig.role_goal}
+                    onChange={(event) => updateFunctionalRole(event.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Enter a concise responsibility or contribution goal..."
+                  />
+                  {personalityConfig.role_goal && (
+                    <button type="button" className="functional-role__remove" onClick={clearFunctionalRole}>Remove</button>
+                  )}
                 </div>
 
+                </fieldset>
+
+                <fieldset className="agent-creation__group">
+                <legend>Personality</legend>
                   <div className="ocean-panel" role="group" aria-labelledby="ocean-heading">
-                    <div className="agent-creation__ocean-heading"><h3 id="ocean-heading">OCEAN traits</h3><span>{OCEAN_SCALE.min}–{OCEAN_SCALE.max}</span></div>
-                    {OCEAN_TRAITS.map((trait) => (
-                      <label className={`ocean-trait trait--${trait.key}`} key={trait.key}>
-                        <span className="ocean-trait__label">{trait.label}</span>
-                        <input
-                          type="range"
-                          min={OCEAN_SCALE.min}
-                          max={OCEAN_SCALE.max}
-                          step={1}
-                          value={personalityConfig.ocean[trait.key]}
-                          onChange={(e) => updateOceanTrait(trait.key, Number(e.target.value))}
-                        />
-                        <span className="ocean-trait__value">{personalityConfig.ocean[trait.key]}</span>
-                      </label>
-                    ))}
-                    <button type="button" className="agent-creation__reset" onClick={resetPersonalityDefaults}>Reset to preset defaults</button>
+                    <div className="agent-creation__ocean-heading">
+                      <h3 id="ocean-heading">OCEAN traits</h3>
+                      <span>Trait level</span>
+                    </div>
+                    {OCEAN_TRAITS.map((trait) => {
+                      const position = oceanLevelPosition(personalityConfig.ocean[trait.key]);
+                      const level = oceanLevel(personalityConfig.ocean[trait.key]);
+                      return <div className={`ocean-trait trait--${trait.key}`} key={trait.key}>
+                        <span className="ocean-trait__label"><strong>{trait.label.charAt(0)}</strong>{trait.label.slice(1)}</span>
+                        <div className="ocean-level-stepper" role="group" aria-label={`${trait.label}: ${level}`}>
+                          <button type="button" onClick={() => changeOceanLevel(trait.key, -1)} disabled={position === 1} aria-label={`Decrease ${trait.label}`}>−</button>
+                          <span className="ocean-level-pips" aria-hidden="true">
+                            {[1, 2, 3].map((pip) => <i key={pip} className={pip <= position ? "is-filled" : ""} />)}
+                          </span>
+                          <button type="button" onClick={() => changeOceanLevel(trait.key, 1)} disabled={position === 3} aria-label={`Increase ${trait.label}`}>+</button>
+                        </div>
+                        <span className="ocean-level-name" aria-live="polite">{level}</span>
+                      </div>
+                    })}
+                    <button type="button" className="agent-creation__reset" onClick={resetPersonalityDefaults}>↻ Reset Traits</button>
                   </div>
 
-                  <label className="ocean-trait trait--energy" htmlFor="agent-energy">
-                    <span className="ocean-trait__label">Energy</span>
-                    <input
-                      id="agent-energy"
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={energyInput}
-                      onChange={(e) => setEnergyInput(Number(e.target.value))}
-                    />
-                    <span className="ocean-trait__value">{Math.round(energyInput * 100)}%</span>
-                  </label>
                 </fieldset>
 
                 <fieldset className="agent-creation__group">
@@ -1173,8 +1202,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                       setEditingDraftIndex(null);
                       setNameInput("");
                       setPersonaInput("");
-                      setEnergyInput(0.6);
-                      setPersonalityConfig(createPersonalityFromPreset(catalog.default_preset_id));
+                      setPersonalityConfig(createMediumPersonality());
                     }}
                   >
                     Cancel Edit
@@ -1323,6 +1351,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                     const isSpeaking = currentSpeakerId === agent.id;
                     const hasSomeoneActive = currentSpeakerId !== null;
                     const color = agentColor(agent);
+                    const presetName = agent.personality
+                      ? PERSONALITY_PRESETS.find((preset) => preset.id === agent.personality?.preset_id)?.name
+                      : undefined;
                     const isHovered = hoveredAgentId === agent.id;
                     const visibleTurns = liveTurns.length > 0 ? liveTurns : latestTurns;
                     const lastMsg = visibleTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
@@ -1347,15 +1378,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                           <img className="arena-node__avatar" src={agentAvatarUrl(agent, state?.moderator_strategy_id)} alt={agent.name} width={64} height={64} />
                           {agent.role === "mediator"
                             ? <span className="arena-node__personality-badge">{activeModeratorName}</span>
-                            : agent.personality && <span className="arena-node__personality-badge">{agent.personality.role_name}</span>}
+                            : presetName && <span className="arena-node__personality-badge">{presetName}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
-                        <div className="arena-node__energy-bar">
-                          <div
-                            className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
-                            style={{ width: `${agent.energy * 100}%` }}
-                          />
-                        </div>
                         <div className="arena-node__quirks">
                           {agent.quirks.map((q, i) => (
                             <span className="arena-node__quirk" key={i}>{q}</span>

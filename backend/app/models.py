@@ -18,7 +18,6 @@ class Agent(BaseModel):
     persona_text: str
     quirks: list[str] = Field(min_length=3, max_length=3)
     stance: str
-    energy: float = Field(ge=0.0, le=1.0)
     role: Role
     personality: AgentPersonality | None = None
 
@@ -196,7 +195,6 @@ class UserAgentInput(BaseModel):
 
     name: str = Field(min_length=1, max_length=80)
     persona_text: str = Field(min_length=1, max_length=500)
-    energy: float = Field(default=0.6, ge=0.0, le=1.0)
     personality: AgentPersonality
 
 

@@ -136,111 +136,96 @@
     {
       "name": "Dr. Maya Chen",
       "persona_text": "Public health analyst who focuses on prevention and outcomes, separating signal from noise.",
-      "energy": 0.62,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Public health analyst who focuses on prevention and outcomes, separating signal from noise.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 7,
-          "extraversion": 3,
-          "agreeableness": 7,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "high",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Jonas Eklund",
       "persona_text": "Operations analyst who examines response times and staffing constraints across regions.",
-      "energy": 0.68,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Operations analyst who examines response times and staffing constraints across regions.",
+        "role_goal": "",
         "ocean": {
-          "openness": 4,
-          "conscientiousness": 7,
-          "extraversion": 3,
-          "agreeableness": 4,
-          "neuroticism": 5
+          "openness": "medium",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Priyanka Desai",
       "persona_text": "Quant methodologist who tests relationships and warns about confounders.",
-      "energy": 0.57,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Quant methodologist who tests relationships and warns about confounders.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 4,
-          "extraversion": 3,
-          "agreeableness": 4,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Aminah Diallo",
       "persona_text": "Equity advocate who looks for who benefits most when access improves.",
-      "energy": 0.7,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Equity advocate who looks for who benefits most when access improves.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 7,
-          "extraversion": 7,
-          "agreeableness": 7,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Oliver Grant",
       "persona_text": "Visualization specialist who designs drill-down dashboards and KPI tiles for health performance.",
-      "energy": 0.8,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Visualization specialist who designs drill-down dashboards and KPI tiles for health performance.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 4,
-          "extraversion": 7,
-          "agreeableness": 7,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     }
   ]

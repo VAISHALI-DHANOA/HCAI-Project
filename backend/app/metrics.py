@@ -75,9 +75,7 @@ def compute_emergent_metrics(state: State) -> dict:
     users = [a for a in state.agents if a.role == "user"]
     latest_text = _latest_agent_text(state)
     consensus = _pairwise_similarity(state)
-    avg_energy = sum(a.energy for a in users) / max(len(users), 1)
-    energy_spread = sum(abs(a.energy - avg_energy) for a in users) / max(len(users), 1)
-    polarization = min(1.0, max(0.0, (1.0 - consensus) * 0.75 + energy_spread * 0.5))
+    polarization = min(1.0, max(0.0, (1.0 - consensus) * 0.75))
     civility = _civility_from_history(state)
     # Missing observations are not evidence of agreement. Otherwise retain the
     # existing formulas, including stance context for agents who have not spoken.

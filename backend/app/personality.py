@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 OCEAN_TRAITS = (
     "openness",
@@ -12,128 +12,75 @@ OCEAN_TRAITS = (
     "neuroticism",
 )
 
-OCEAN_SCALE_MIN = 1
-OCEAN_SCALE_MAX = 9
-OCEAN_SCALE_MID = 5
-OCEAN_SCALE_VERSION = "ocean-1-9-v1"
-PERSONALITY_PRESET_VERSION = "research-presets-v1"
-PERSONALITY_PROMPT_MAPPING_VERSION = "ocean-prompt-map-v1"
+OceanLevel = Literal["low", "medium", "high"]
+OCEAN_LEVELS: tuple[OceanLevel, ...] = ("low", "medium", "high")
+OCEAN_LEVEL_VERSION = "ocean-low-medium-high-v1"
+PERSONALITY_PRESET_VERSION = "research-presets-v2"
+PERSONALITY_PROMPT_MAPPING_VERSION = "ocean-prompt-map-v3"
 
 
 class OceanTraits(BaseModel):
-    openness: int = Field(default=OCEAN_SCALE_MID, ge=OCEAN_SCALE_MIN, le=OCEAN_SCALE_MAX)
-    conscientiousness: int = Field(default=OCEAN_SCALE_MID, ge=OCEAN_SCALE_MIN, le=OCEAN_SCALE_MAX)
-    extraversion: int = Field(default=OCEAN_SCALE_MID, ge=OCEAN_SCALE_MIN, le=OCEAN_SCALE_MAX)
-    agreeableness: int = Field(default=OCEAN_SCALE_MID, ge=OCEAN_SCALE_MIN, le=OCEAN_SCALE_MAX)
-    neuroticism: int = Field(default=OCEAN_SCALE_MID, ge=OCEAN_SCALE_MIN, le=OCEAN_SCALE_MAX)
+    openness: OceanLevel = "medium"
+    conscientiousness: OceanLevel = "medium"
+    extraversion: OceanLevel = "medium"
+    agreeableness: OceanLevel = "medium"
+    neuroticism: OceanLevel = "medium"
 
 
 class AgentPersonality(BaseModel):
     preset_id: str = "custom"
-    role_name: str = Field(default="Custom", min_length=1, max_length=80)
-    role_goal: str = Field(default="Bring a distinctive, useful perspective to the discussion.", max_length=500)
+    role_goal: str = Field(default="", max_length=500)
     ocean: OceanTraits = Field(default_factory=OceanTraits)
-    behavioral_rules: list[str] = Field(default_factory=list, max_length=12)
     custom_instructions: str = Field(default="", max_length=1000)
-    scale_version: str = OCEAN_SCALE_VERSION
+    scale_version: str = OCEAN_LEVEL_VERSION
     preset_version: str = PERSONALITY_PRESET_VERSION
     prompt_mapping_version: str = PERSONALITY_PROMPT_MAPPING_VERSION
-
-    @field_validator("behavioral_rules")
-    @classmethod
-    def clean_behavioral_rules(cls, value: list[str]) -> list[str]:
-        cleaned: list[str] = []
-        for rule in value:
-            compact = " ".join(str(rule).strip().split())
-            if compact:
-                cleaned.append(compact)
-        return cleaned
-
 
 class PersonalityPreset(BaseModel):
     id: str
     name: str
-    description: str
     role_goal: str
     ocean: OceanTraits
-    behavioral_rules: list[str]
 
 
 PERSONALITY_PRESETS: dict[str, PersonalityPreset] = {
     "explorer": PersonalityPreset(
         id="explorer",
         name="Explorer",
-        description="Surfaces new hypotheses, alternative explanations, and perspectives not yet considered.",
-        role_goal="Explore alternative explanations, introduce new hypotheses, and surface neglected perspectives.",
-        ocean=OceanTraits(openness=8, conscientiousness=5, extraversion=6, agreeableness=5, neuroticism=4),
-        behavioral_rules=[
-            "Actively propose alternative interpretations.",
-            "Explore uncertainty and unresolved possibilities.",
-            "Introduce perspectives not yet discussed.",
-            "Avoid repeating arguments already made by others.",
-        ],
+        role_goal="Generate alternative interpretations, hypotheses, and relevant perspectives.",
+        ocean=OceanTraits(openness="high", conscientiousness="medium", extraversion="medium", agreeableness="medium", neuroticism="medium"),
     ),
     "analyst": PersonalityPreset(
         id="analyst",
         name="Analyst",
-        description="Tests claims against evidence, structure, definitions, and measurable implications.",
-        role_goal="Clarify evidence, identify patterns, and test whether claims follow from the available information.",
-        ocean=OceanTraits(openness=6, conscientiousness=8, extraversion=4, agreeableness=5, neuroticism=4),
-        behavioral_rules=[
-            "Ask what evidence would support or weaken a claim.",
-            "Separate observations from interpretations.",
-            "Look for assumptions, definitions, and measurable criteria.",
-            "Prefer precise reasoning over rhetorical force.",
-        ],
+        role_goal="Examine the available evidence, assumptions, and logical consistency of claims.",
+        ocean=OceanTraits(openness="medium", conscientiousness="high", extraversion="medium", agreeableness="medium", neuroticism="medium"),
     ),
     "critic": PersonalityPreset(
         id="critic",
         name="Critic",
-        description="Challenges assumptions, searches for weak points, and prevents premature acceptance.",
-        role_goal="Challenge assumptions, identify weaknesses, and prevent premature convergence on weak conclusions.",
-        ocean=OceanTraits(openness=6, conscientiousness=8, extraversion=6, agreeableness=3, neuroticism=5),
-        behavioral_rules=[
-            "Challenge weak claims directly but constructively.",
-            "Point out missing evidence and possible counterexamples.",
-            "Prioritize correctness over social agreement.",
-            "Do not agree merely to preserve harmony.",
-        ],
+        role_goal="Identify weaknesses, counterarguments, and unsupported assumptions.",
+        ocean=OceanTraits(openness="medium", conscientiousness="high", extraversion="medium", agreeableness="low", neuroticism="medium"),
     ),
     "integrator": PersonalityPreset(
         id="integrator",
         name="Integrator",
-        description="Connects partial insights, resolves tensions, and builds coherent shared framing.",
-        role_goal="Integrate competing arguments into a coherent synthesis without flattening important differences.",
-        ocean=OceanTraits(openness=7, conscientiousness=6, extraversion=5, agreeableness=8, neuroticism=3),
-        behavioral_rules=[
-            "Connect compatible ideas from different agents.",
-            "Name productive tensions instead of ignoring them.",
-            "Translate disagreement into shared questions.",
-            "Preserve minority concerns while building synthesis.",
-        ],
+        role_goal="Connect competing contributions into a coherent synthesis while preserving relevant disagreement.",
+        ocean=OceanTraits(openness="high", conscientiousness="medium", extraversion="medium", agreeableness="high", neuroticism="low"),
     ),
     "solver": PersonalityPreset(
         id="solver",
         name="Solver",
-        description="Moves discussion toward workable actions, decisions, and concrete next steps.",
-        role_goal="Turn discussion into practical options, decisions, and next steps that can be tested.",
-        ocean=OceanTraits(openness=5, conscientiousness=8, extraversion=6, agreeableness=6, neuroticism=3),
-        behavioral_rules=[
-            "Convert abstract ideas into concrete next steps.",
-            "Identify tradeoffs and implementation constraints.",
-            "Push for decisions when enough evidence is available.",
-            "Suggest small tests before broad commitments.",
-        ],
+        role_goal="Develop concrete solutions, decisions, and actionable next steps from the discussion.",
+        ocean=OceanTraits(openness="medium", conscientiousness="high", extraversion="medium", agreeableness="medium", neuroticism="low"),
     ),
 }
 
 CUSTOM_PERSONALITY = PersonalityPreset(
     id="custom",
     name="Custom",
-    description="A fully customized personality configured by the user.",
-    role_goal="Bring a distinctive, useful perspective to the discussion.",
+    role_goal="",
     ocean=OceanTraits(),
-    behavioral_rules=[],
 )
 
 
@@ -219,31 +166,23 @@ def personality_from_preset(preset_id: str) -> AgentPersonality:
     preset = PERSONALITY_PRESETS.get(preset_id, CUSTOM_PERSONALITY)
     return AgentPersonality(
         preset_id=preset.id,
-        role_name=preset.name,
         role_goal=preset.role_goal,
         ocean=preset.ocean.model_copy(),
-        behavioral_rules=list(preset.behavioral_rules),
     )
 
 
 def normalize_personality(raw: AgentPersonality | dict) -> AgentPersonality:
-    """Validate the effective configuration; never infer personality from labels."""
-    personality = raw if isinstance(raw, AgentPersonality) else AgentPersonality.model_validate(raw)
-    preset = PERSONALITY_PRESETS.get(personality.preset_id)
-    if preset and not personality.role_goal:
-        return personality.model_copy(update={"role_goal": preset.role_goal})
-    return personality
+    """Validate the effective configuration without deriving behavior from preset_id."""
+    return raw if isinstance(raw, AgentPersonality) else AgentPersonality.model_validate(raw)
 
 
 def get_personality_catalog() -> dict:
-    presets = [*list_personality_presets(), CUSTOM_PERSONALITY]
+    presets = [CUSTOM_PERSONALITY, *list_personality_presets()]
     return {
-        "default_preset_id": "explorer",
+        "default_preset_id": "custom",
         "traits": [{"key": trait, "label": trait.capitalize()} for trait in OCEAN_TRAITS],
-        "scale": {
-            "min": OCEAN_SCALE_MIN, "max": OCEAN_SCALE_MAX,
-            "mid": OCEAN_SCALE_MID, "version": OCEAN_SCALE_VERSION,
-        },
+        "levels": list(OCEAN_LEVELS),
+        "level_version": OCEAN_LEVEL_VERSION,
         "presets": [
             {**preset.model_dump(), "personality": personality_from_preset(preset.id).model_dump()}
             for preset in presets
@@ -251,32 +190,21 @@ def get_personality_catalog() -> dict:
     }
 
 
-def _intensity(value: int) -> Literal["low", "medium", "high"]:
-    if value <= 3:
-        return "low"
-    if value >= 7:
-        return "high"
-    return "medium"
-
-
 def build_personality_prompt(personality: AgentPersonality) -> str:
-    lines = [
-        "FUNCTIONAL ROLE",
-        f"- Role: {personality.role_name}",
-        f"- Goal: {personality.role_goal}",
-        "",
-        "PERSONALITY EXPRESSION",
-        "- Express the following tendencies through behavior; do not name trait scores or labels.",
-    ]
+    lines: list[str] = []
+    role_goal = personality.role_goal.strip()
+    if role_goal:
+        lines.extend(["FUNCTIONAL ROLE", role_goal, ""])
+
+    lines.extend([
+        "OCEAN PERSONALITY",
+        "- Express the following tendencies through behavior; do not name trait levels or labels.",
+    ])
     trait_values = personality.ocean.model_dump()
     for trait in OCEAN_TRAITS:
-        level = _intensity(trait_values[trait])
+        level = trait_values[trait]
         for behavior in TRAIT_BEHAVIOR_MAP[trait][level]:
             lines.append(f"- {behavior}")
-
-    if personality.behavioral_rules:
-        lines.extend(["", "BEHAVIORAL RULES"])
-        lines.extend(f"- {rule}" for rule in personality.behavioral_rules)
 
     if personality.custom_instructions.strip():
         lines.extend(["", "CUSTOM INSTRUCTIONS", personality.custom_instructions.strip()])

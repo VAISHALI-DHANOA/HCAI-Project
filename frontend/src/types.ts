@@ -6,7 +6,6 @@ export interface Agent {
   persona_text: string;
   quirks: string[];
   stance: string;
-  energy: number;
   role: Role;
   personality?: AgentPersonality | null;
 }
@@ -15,24 +14,23 @@ export interface DraftAgent {
   id?: string;
   name: string;
   persona_text: string;
-  energy: number;
   personality: AgentPersonality;
 }
 
+export type OceanLevel = "low" | "medium" | "high";
+
 export interface OceanTraits {
-  openness: number;
-  conscientiousness: number;
-  extraversion: number;
-  agreeableness: number;
-  neuroticism: number;
+  openness: OceanLevel;
+  conscientiousness: OceanLevel;
+  extraversion: OceanLevel;
+  agreeableness: OceanLevel;
+  neuroticism: OceanLevel;
 }
 
 export interface AgentPersonality {
   preset_id: string;
-  role_name: string;
   role_goal: string;
   ocean: OceanTraits;
-  behavioral_rules: string[];
   custom_instructions: string;
   scale_version: string;
   preset_version: string;
@@ -42,10 +40,8 @@ export interface AgentPersonality {
 export interface PersonalityPreset {
   id: string;
   name: string;
-  description: string;
   role_goal: string;
   ocean: OceanTraits;
-  behavioral_rules: string[];
   personality: AgentPersonality;
 }
 
@@ -53,7 +49,8 @@ export interface PersonalityCatalog {
   presets: PersonalityPreset[];
   default_preset_id: string;
   traits: Array<{ key: keyof OceanTraits; label: string }>;
-  scale: { min: number; max: number; mid: number; version: string };
+  levels: OceanLevel[];
+  level_version: string;
 }
 
 export interface ChatMessage {

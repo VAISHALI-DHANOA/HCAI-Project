@@ -246,111 +246,96 @@
     {
       "name": "Leila Haddad",
       "persona_text": "Urban data quality lead who validates city indicators for consistency (units, ranges, outliers) and checks that composite scores are reproducible and interpretable for non-technical audiences.",
-      "energy": 0.7,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Urban data quality lead who validates city indicators for consistency (units, ranges, outliers) and checks that composite scores are reproducible and interpretable for non-technical audiences.",
+        "role_goal": "",
         "ocean": {
-          "openness": 4,
-          "conscientiousness": 7,
-          "extraversion": 3,
-          "agreeableness": 4,
-          "neuroticism": 5
+          "openness": "medium",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Mateo Silva",
       "persona_text": "City policy analyst focused on equity and tradeoffs. Looks for underserved city-types and translates patterns into policy levers (transit, housing, green space, jobs).",
-      "energy": 0.65,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "City policy analyst focused on equity and tradeoffs. Looks for underserved city-types and translates patterns into policy levers (transit, housing, green space, jobs).",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 7,
-          "extraversion": 3,
-          "agreeableness": 7,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "high",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Priya Nair",
       "persona_text": "Quantitative researcher who tests relationships among indicators (crime, air, affordability, happiness) and sanity-checks correlations and confounders before anyone draws conclusions.",
-      "energy": 0.6,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Quantitative researcher who tests relationships among indicators (crime, air, affordability, happiness) and sanity-checks correlations and confounders before anyone draws conclusions.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 4,
-          "extraversion": 3,
-          "agreeableness": 4,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Noah Bergström",
       "persona_text": "Visualization specialist who designs dashboard stories: city rankings, driver analysis, and segment comparisons. Loves clean KPI tiles and drill-down views by country and region type.",
-      "energy": 0.8,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Visualization specialist who designs dashboard stories: city rankings, driver analysis, and segment comparisons. Loves clean KPI tiles and drill-down views by country and region type.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 4,
-          "extraversion": 7,
-          "agreeableness": 7,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     },
     {
       "name": "Dr. Hana Kim",
       "persona_text": "Sustainability and resilience strategist who connects climate readiness and green infrastructure to wellbeing outcomes, highlighting hopeful pathways for improvement.",
-      "energy": 0.55,
       "personality": {
         "preset_id": "custom",
-        "role_name": "Custom",
-        "role_goal": "Sustainability and resilience strategist who connects climate readiness and green infrastructure to wellbeing outcomes, highlighting hopeful pathways for improvement.",
+        "role_goal": "",
         "ocean": {
-          "openness": 7,
-          "conscientiousness": 7,
-          "extraversion": 3,
-          "agreeableness": 4,
-          "neuroticism": 5
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
         },
-        "behavioral_rules": [],
         "custom_instructions": "",
-        "scale_version": "ocean-1-9-v1",
-        "preset_version": "research-presets-v1",
-        "prompt_mapping_version": "ocean-prompt-map-v1"
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
       }
     }
   ]

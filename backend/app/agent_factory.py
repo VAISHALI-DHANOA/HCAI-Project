@@ -43,11 +43,6 @@ def extract_quirks(persona_text: str) -> list[str]:
     return selected[:3]
 
 
-def build_initial_stance(topic: str, quirks: list[str], name: str) -> str:
-    lead = quirks[0]
-    return f"{name} approaches {topic} by emphasizing {lead} to find constructive progress."
-
-
 def create_mediators() -> list[Agent]:
     chair = Agent(
         id=deterministic_agent_id("mediator", "The Chair", "turn-taking civility summaries", 0),
@@ -59,7 +54,6 @@ def create_mediators() -> list[Agent]:
             "summarizes with neutral language",
         ],
         stance="I prioritize fair turn-taking and clear summaries so the group stays constructive.",
-        energy=0.7,
         role="mediator",
     )
     return [chair]
@@ -85,8 +79,7 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
                 name=payload.name.strip(),
                 persona_text=payload.persona_text.strip(),
                 quirks=quirks,
-                stance=build_initial_stance(topic, quirks, payload.name.strip()),
-                energy=payload.energy,
+                stance=payload.persona_text.strip(),
                 role="user",
                 personality=personality,
             )

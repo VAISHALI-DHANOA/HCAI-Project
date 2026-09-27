@@ -32,21 +32,18 @@ export function parseAgentRoster(text: string, catalog: PersonalityCatalog): Dra
     const ocean = objectValue(personality.ocean);
     const name = typeof agent.name === "string" ? agent.name.trim() : "";
     const persona = typeof agent.persona_text === "string" ? agent.persona_text.trim() : "";
-    const energy = agent.energy;
     const presetId = personality.preset_id;
 
     if (!name || name.length > 80 || !persona || persona.length > 500) {
       throw new Error(`Agent ${index + 1} needs a valid name and persona.`);
-    }
-    if (typeof energy !== "number" || !Number.isFinite(energy) || energy < 0 || energy > 1) {
-      throw new Error(`Agent ${index + 1} has an invalid energy value.`);
     }
     if (typeof presetId !== "string" || !catalog.presets.some((preset) => preset.id === presetId)) {
       throw new Error(`Agent ${index + 1} uses an unknown personality preset.`);
     }
 
     const traitEntries = catalog.traits.map(({ key }) => [key, ocean[key]] as const);
-    if (traitEntries.some(([, trait]) => typeof trait !== "number" || !Number.isFinite(trait) || trait < catalog.scale.min || trait > catalog.scale.max)) {
+    const validOceanLevels = new Set<unknown>(catalog.levels);
+    if (traitEntries.some(([, trait]) => !validOceanLevels.has(trait))) {
       throw new Error(`Agent ${index + 1} has invalid personality traits.`);
     }
 
@@ -54,12 +51,16 @@ export function parseAgentRoster(text: string, catalog: PersonalityCatalog): Dra
     if (typeof customInstructions !== "string" || customInstructions.length > 1000) {
       throw new Error(`Agent ${index + 1} has invalid custom instructions.`);
     }
+    const roleGoal = personality.role_goal;
+    if (typeof roleGoal !== "string" || roleGoal.length > 500) {
+      throw new Error(`Agent ${index + 1} has an invalid functional role.`);
+    }
 
     return {
       name,
       persona_text: persona,
-      energy,
       personality: createPersonalityFromPreset(catalog, presetId, {
+        role_goal: roleGoal,
         ocean: Object.fromEntries(traitEntries) as unknown as OceanTraits,
         custom_instructions: customInstructions,
       }),
@@ -70,8 +71,8 @@ export function parseAgentRoster(text: string, catalog: PersonalityCatalog): Dra
 export function downloadAgentRoster(agents: DraftAgent[]): void {
   const contents = JSON.stringify({
     version: 1,
-    agents: agents.map(({ name, persona_text, energy, personality }) => ({
-      name, persona_text, energy, personality,
+    agents: agents.map(({ name, persona_text, personality }) => ({
+      name, persona_text, personality,
     })),
   }, null, 2);
   const url = URL.createObjectURL(new Blob([contents], { type: "application/json" }));

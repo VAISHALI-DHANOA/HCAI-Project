@@ -440,27 +440,6 @@ body {
   white-space: nowrap;
 }
 
-/* --- Energy Bar (HP bar on node) --- */
-
-.arena-node__energy-bar {
-  width: 56px;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.arena-node__energy-fill {
-  height: 100%;
-  background: var(--accent-primary);
-  border-radius: 2px;
-  transition: width 0.6s ease;
-}
-
-.arena-node__energy-fill--low {
-  background: var(--accent-danger);
-}
-
 /* --- Quirk Tags (on node) --- */
 
 .arena-node__quirks {
@@ -2625,10 +2604,6 @@ thead .arena-table__row-index {
   .arena-node__name {
     max-width: 72px;
     font-size: .58rem;
-  }
-
-  .arena-node__energy-bar {
-    width: 40px;
   }
 
   .arena-node__quirks {

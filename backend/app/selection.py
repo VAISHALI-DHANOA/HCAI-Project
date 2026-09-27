@@ -21,8 +21,7 @@ def _distance(a: Agent, b: Agent) -> float:
         union = len(tokens_a | tokens_b) or 1
         overlap = len(tokens_a & tokens_b)
         stance_gap = 1.0 - (overlap / union)
-    energy_gap = abs(a.energy - b.energy)
-    return 0.7 * stance_gap + 0.3 * energy_gap
+    return stance_gap
 
 
 def _pick_most_distant(pool: list[Agent], anchors: list[Agent]) -> Agent:
@@ -41,11 +40,8 @@ def select_speakers(agents: list[Agent]) -> list[Agent]:
     if len(users) < 4:
         raise ValueError("At least 4 user agents are required to run a round")
 
-    ordered_users = sorted(users, key=lambda a: (a.energy, a.id))
-    selected: list[Agent] = []
-    low = ordered_users[0]
-    high = ordered_users[-1]
-    selected.extend([high, low] if high.id != low.id else [high])
+    ordered_users = sorted(users, key=lambda a: a.id)
+    selected: list[Agent] = [ordered_users[0]]
 
     remaining = [u for u in users if u.id not in {a.id for a in selected}]
     while remaining:

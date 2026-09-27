@@ -87,7 +87,7 @@ class InMemoryStateStore:
             self._state.human_request = ""
             for agent in self._state.agents:
                 if agent.role == "user":
-                    agent.stance = f"{agent.name} approaches {topic} constructively while staying adaptable."
+                    agent.stance = agent.persona_text
             self._start_metadata()
             self._touch()
             return self._state
@@ -151,7 +151,7 @@ class InMemoryStateStore:
                     original = existing[draft.id]
                     generated = original.model_copy(update={
                         "name": generated.name, "persona_text": generated.persona_text,
-                        "energy": generated.energy, "personality": generated.personality,
+                        "personality": generated.personality,
                         "quirks": generated.quirks if original.persona_text != generated.persona_text else original.quirks,
                     })
                 elif generated.id in existing or generated.id in seen:

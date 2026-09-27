@@ -132,7 +132,7 @@ export async function intervene(message: string): Promise<{ state: State }> {
 }
 
 export async function addAgents(
-  agents: Array<{ name: string; persona_text: string; energy: number; personality: AgentPersonality }>
+  agents: Array<{ name: string; persona_text: string; personality: AgentPersonality }>
 ): Promise<{ state: State }> {
   return request<{ state: State }>("/agents", {
     method: "POST",
