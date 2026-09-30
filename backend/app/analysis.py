@@ -43,7 +43,8 @@ def _aggregate(values: pd.Series, operation: str) -> float | None:
 
 
 def compute_analysis(request: dict, dataset_path: str | Path | None,
-                     history: Sequence[PublicTurn] = ()) -> AnalysisResult:
+                     history: Sequence[PublicTurn] = (),
+                     pending_results: Sequence[AnalysisResult] = ()) -> AnalysisResult:
     """Reuse only an exact spec on identical dataset contents; never substitute columns."""
     spec = None
     try:
@@ -65,6 +66,10 @@ def compute_analysis(request: dict, dataset_path: str | Path | None,
         if dataset_path is None:
             raise ValueError("The session has no dataset file.")
         version = hashlib.sha256(Path(dataset_path).read_bytes()).hexdigest()
+        for previous in reversed(pending_results):
+            if (previous.status == "completed" and previous.spec == spec
+                    and previous.dataset_version == version):
+                return previous.model_copy(update={"reused": True})
         for turn in reversed(history):
             for previous in [turn.analysis, *turn.additional_analyses]:
                 if (previous and previous.status == "completed" and previous.spec == spec
@@ -298,8 +303,7 @@ def compute_requested_analyses(request: dict, dataset_path: str | Path | None,
                                error="A combined request supports up to three correlations, grouped comparisons, or summaries. No alternative was executed.")]
     results = []
     for item in requests:
-        available = [*history, PublicTurn(speaker_id="analysis", message="", additional_analyses=results)]
-        results.append(compute_analysis(item, dataset_path, available))
+        results.append(compute_analysis(item, dataset_path, history, results))
     return results
 
 

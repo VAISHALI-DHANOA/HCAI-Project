@@ -85,9 +85,6 @@ class InMemoryStateStore:
             self._state.dataset_columns = []
             self._state.dataset_preview = None
             self._state.human_request = ""
-            for agent in self._state.agents:
-                if agent.role == "user":
-                    agent.stance = agent.persona_text
             self._start_metadata()
             self._touch()
             return self._state
@@ -109,12 +106,16 @@ class InMemoryStateStore:
             self._touch()
             return self._state
 
-    def reset(self, topic: str | None = None) -> State:
+    def reset(self, topic: str | None = None, *, preserve_agents: bool = False) -> State:
         with self._lock:
             self._archive_current()
+            agents = (
+                [agent.model_copy(deep=True) for agent in self._state.agents]
+                if preserve_agents else create_mediators()
+            )
             self._state = State(
                 topic=topic if topic and topic.strip() else "Untitled classroom inquiry",
-                agents=create_mediators(), world_state={"round": 0},
+                agents=agents, world_state={"round": 0},
                 moderator_strategy_id=DEFAULT_MODERATOR_STRATEGY_ID,
             )
             self._start_metadata()
@@ -152,7 +153,6 @@ class InMemoryStateStore:
                     generated = original.model_copy(update={
                         "name": generated.name, "persona_text": generated.persona_text,
                         "personality": generated.personality,
-                        "quirks": generated.quirks if original.persona_text != generated.persona_text else original.quirks,
                     })
                 elif generated.id in existing or generated.id in seen:
                     # Distinct drafts may have identical names and configurations.
@@ -202,7 +202,13 @@ class InMemoryStateStore:
             # Only consume requests present when this round began. New input
             # stays outside the working snapshot until the next round.
             target.human_request = "\n".join(item["message"] for item in queued)
-            target.public_history.extend(PublicTurn(speaker_id="human", message=item["message"]) for item in queued)
+            target.public_history.extend(
+                PublicTurn(speaker_id="human", message=item["message"], turn_type="human",
+                           round_number=(item["during_round"] if item["during_round"] is not None
+                                         else item["after_completed_round"]),
+                           moderator_strategy_id=None)
+                for item in queued
+            )
             try:
                 self._write_log_file(target)
             except BaseException:
@@ -226,7 +232,10 @@ class InMemoryStateStore:
     def add_intervention(self, message: str) -> PublicTurn:
         """Log immediately, but freeze the active round's input at its start."""
         with self._lock:
-            turn = PublicTurn(speaker_id="human", message=message)
+            # Record when input arrived, independently of when it is consumed.
+            arrival_round = (self._active_round or self._state).round_number
+            turn = PublicTurn(speaker_id="human", message=message, turn_type="human",
+                              round_number=arrival_round, moderator_strategy_id=None)
             self._state.public_history.append(turn)
             self._state.human_request = "\n".join(filter(None, [self._state.human_request, message]))
             self._interventions.append({

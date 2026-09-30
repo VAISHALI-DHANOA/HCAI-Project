@@ -4,8 +4,6 @@ export interface Agent {
   id: string;
   name: string;
   persona_text: string;
-  quirks: string[];
-  stance: string;
   role: Role;
   personality?: AgentPersonality | null;
 }
@@ -91,6 +89,9 @@ export interface TableAction {
 export interface PublicTurn {
   speaker_id: string;
   message: string;
+  turn_type: "moderator_opening" | "participant" | "moderator_summary" | "human";
+  round_number: number;
+  moderator_strategy_id: string | null;
   visual?: VisualSpec | null;
   table_action?: TableAction | null;
   generation?: GenerationMetadata | null;

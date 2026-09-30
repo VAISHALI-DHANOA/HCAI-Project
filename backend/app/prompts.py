@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 
+from app.history import format_turn
 from app.models import Agent, ChatMessageInput, PublicTurn, State
 from app.moderator import DEFAULT_MODERATOR_STRATEGY_ID, build_moderator_strategy_prompt, get_moderator_strategy
 from app.personality import AgentPersonality, build_personality_prompt, normalize_personality
@@ -49,9 +50,11 @@ def _build_chair_system_prompt(
         f"\n"
         f"YOUR ROLE:\n"
         f"- Open the round by posing a focused question or framing the next angle to explore\n"
-        f"- Facilitate fair turn-taking among participants\n"
         f"- Keep the conversation civil and on-track\n"
         f"- Do NOT summarize previous rounds; a separate summary happens at the end\n"
+        f"- Keep the original topic as the main anchor when choosing the next question\n"
+        f"- If the discussion has remained within the same conceptual frame for several rounds,\n"
+        f"- Step back and reopen a substantively different perspective, disagreement, or framing\n"
         f"\n"
         f"CONSTRAINTS:\n"
         f"- Respond in 25 words maximum — be concise\n"
@@ -80,29 +83,27 @@ def _build_user_system_prompt(
             f"A human participant has intervened with this request:\n"
             f'"{human_request}"\n'
             f"You MUST change your analysis to address this request. Your response "
-            f"should directly engage with what the human asked for, applying your "
-            f"unique perspective and expertise to it.\n"
+            f"should directly engage with what the human asked for, applying your unique perspective and expertise to it.\n"
         )
 
     base = (
         f'You are "{agent.name}", a participant in a multi-agent deliberation about: {topic}\n'
-        f"\n"
         f"Your persona: {agent.persona_text}\n"
-        f"Treat the perspective and priorities described in your persona as your stance on the topic.\n"
+        f"Use the perspective and priorities described in your persona to decide what aspects of the topic you consider most important.\n"
         f"This is round {round_number} of the discussion.\n"
-        f"{human_directive}"
-        f"\n"
-        f"{personality_prompt}\n"
-        f"\n"
+        f"{human_directive}\n"
+        f"{personality_prompt}\n\n"
         f"YOUR ROLE:\n"
         f"- Let the agent configuration above guide what you contribute and how you communicate\n"
-        f"- Respond to what others have said; build on, challenge, or refine their ideas\n"
+        f"\n"
+        f"MODERATOR CONTEXT:\n"
+        f"- Use the moderator's opening as guidance for the current round.\n"
+        f"- Moderator summaries are compressed interpretations, not authoritative group conclusions.\n\n"
         f"\n"
         f"CONSTRAINTS:\n"
         f"- Respond in 25 words maximum — be concise and punchy\n"
         f"- Do not break character or reference the simulation\n"
         f"- Do not use markdown formatting, bullet points, or numbered lists\n"
-        f"- Engage with prior contributions when relevant, but do not force a question or explicit invitation in every response.\n"
         f"- Write in a natural conversational tone as if speaking aloud in a meeting"
     )
     if dataset_context:
@@ -147,13 +148,10 @@ def _format_conversation_history(
             }
         ]
 
-    agent_names = {a.id: a.name for a in state.agents}
-    agent_names["human"] = "Human Participant"
     lines = []
     has_human_input = False
     for turn in all_context_turns:
-        name = agent_names.get(turn.speaker_id, "Unknown")
-        lines.append(f"{name}: {turn.message}")
+        lines.append(format_turn(state, turn))
         if state.dataset_summary and turn.analysis is not None:
             lines.append("Backend analysis result: " + turn.analysis.model_dump_json(exclude={"chart_data"}))
         if turn.speaker_id == "human":
@@ -220,8 +218,7 @@ def build_chair_summary_prompt(
     state: State,
     round_turns: list[PublicTurn],
 ) -> tuple[str, list[dict]]:
-    agent_names = {a.id: a.name for a in state.agents}
-    lines = [f"{agent_names.get(t.speaker_id, 'Unknown')}: {t.message}" for t in round_turns]
+    lines = [format_turn(state, turn) for turn in round_turns]
     if state.dataset_summary:
         lines.extend("Backend analysis result: " + turn.analysis.model_dump_json(exclude={"chart_data"})
                      for turn in round_turns if turn.analysis is not None)
@@ -243,6 +240,8 @@ def build_chair_summary_prompt(
         f"{human_request_note}"
         f"YOUR TASK:\n"
         f"{build_moderator_strategy_prompt(state.moderator_strategy_id, 'summary')}\n\n"
+        f"Distinguish what participants said, where genuine agreement exists, and what remains unresolved. "
+        f"The moderator opening is framing, not evidence of participant agreement.\n\n"
         f"CONSTRAINTS:\n"
         f"- 20 words maximum — be concise\n"
         f"- Do not list participant names\n"

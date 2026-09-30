@@ -1,46 +1,8 @@
 from __future__ import annotations
 
-import re
-
 from app.ids import deterministic_agent_id
 from app.models import Agent, UserAgentInput
 from app.personality import normalize_personality
-
-QUIRK_FALLBACKS = [
-    "asks unusual questions",
-    "connects distant concepts",
-    "prefers practical experiments",
-]
-
-
-def _extract_candidate_phrases(persona_text: str) -> list[str]:
-    chunks = re.split(r"[.,;:!?]| and | but | while | because ", persona_text)
-    phrases: list[str] = []
-    for chunk in chunks:
-        phrase = " ".join(chunk.strip().split())
-        if not phrase:
-            continue
-        words = phrase.split()
-        if len(words) > 6:
-            phrase = " ".join(words[:6])
-        phrases.append(phrase.lower())
-    return phrases
-
-
-def extract_quirks(persona_text: str) -> list[str]:
-    candidates = _extract_candidate_phrases(persona_text)
-    selected: list[str] = []
-    for phrase in candidates:
-        if phrase not in selected:
-            selected.append(phrase)
-        if len(selected) == 3:
-            break
-    for fallback in QUIRK_FALLBACKS:
-        if len(selected) == 3:
-            break
-        if fallback not in selected:
-            selected.append(fallback)
-    return selected[:3]
 
 
 def create_mediators() -> list[Agent]:
@@ -48,12 +10,6 @@ def create_mediators() -> list[Agent]:
         id=deterministic_agent_id("mediator", "The Chair", "turn-taking civility summaries", 0),
         name="The Chair",
         persona_text="Ensures turn-taking, summarizes discussions, keeps civility.",
-        quirks=[
-            "counts speaking turns",
-            "reframes conflict calmly",
-            "summarizes with neutral language",
-        ],
-        stance="I prioritize fair turn-taking and clear summaries so the group stays constructive.",
         role="mediator",
     )
     return [chair]
@@ -67,7 +23,6 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
         else:
             payload = UserAgentInput.model_validate(raw)
         personality = normalize_personality(payload.personality)
-        quirks = extract_quirks(payload.persona_text)
         created.append(
             Agent(
                 id=deterministic_agent_id(
@@ -78,8 +33,6 @@ def create_agents_from_user(topic: str, user_agents: list[dict | UserAgentInput]
                 ),
                 name=payload.name.strip(),
                 persona_text=payload.persona_text.strip(),
-                quirks=quirks,
-                stance=payload.persona_text.strip(),
                 role="user",
                 personality=personality,
             )

@@ -317,7 +317,7 @@ async def run(payload: RunRequest, session_id: str = Depends(get_session_id)) ->
 @app.post("/reset", dependencies=[Depends(verify_admin), Depends(exclusive_session)])
 async def reset(payload: ResetRequest, session_id: str = Depends(get_session_id)) -> dict:
     store = SESSIONS.get_store(session_id)
-    state = store.reset(payload.topic)
+    state = store.reset(payload.topic, preserve_agents=True)
     ended_sessions.pop(session_id, None)
     session_display_times.pop(session_id, None)
     SESSIONS.set_csv_path(session_id, None)

@@ -42,8 +42,8 @@ backend/uploads/
 
 
 # Local Tests
-/frontend/tests/playback.test.mjs
-/frontend/tests/tts.test.mjs
-/frontend/tests/intervention.test.mjs
-/backend/tests/test_analysis.py
-/backend/tests/test_crime_income_analysis.py
+/frontend/tests/
+/backend/tests/
+**/*.test.*
+**/*.spec.*
+/frontend/src/test-setup.ts

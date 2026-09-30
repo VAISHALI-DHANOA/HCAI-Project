@@ -909,7 +909,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       const result = await intervene(msg);
       if (!applyStateSnapshot(result.state)) return;
       // Show immediately in center stage and logs (don't wait for WebSocket)
-      const turn: PublicTurn = { speaker_id: "human", message: msg };
+      const turn = result.state.public_history[result.state.public_history.length - 1];
       setLiveTurns((prev) => [...prev, turn]);
       setInterveneInput("");
     } catch (e: unknown) {
@@ -1381,12 +1381,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                             : presetName && <span className="arena-node__personality-badge">{presetName}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
-                        <div className="arena-node__quirks">
-                          {agent.quirks.map((q, i) => (
-                            <span className="arena-node__quirk" key={i}>{q}</span>
-                          ))}
-                        </div>
-
                         {showReactions && latestRound?.round_result.reactions
                           .filter(r => r.agent_id === agent.id)
                           .map((reaction, ri) => (

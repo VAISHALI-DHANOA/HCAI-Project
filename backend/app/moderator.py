@@ -22,18 +22,18 @@ MODERATOR_STRATEGIES: dict[str, ModeratorStrategy] = {
     "consensus": ModeratorStrategy(
         id="consensus",
         name="Consensus",
-        description="Finds shared conclusions and workable next steps while acknowledging unresolved concerns.",
+        description="Identifies genuine common ground while keeping substantive unresolved disagreement visible.",
         opening_rules=[
-            "Identify common ground and invite the group to work toward a shared conclusion.",
+            "Identify common ground and invite the group to clarify what remains unresolved.",
             "Ask what evidence or tradeoffs could help resolve remaining differences.",
             "Do not present agreement as established when objections remain unresolved.",
         ],
         summary_rules=[
-            "Synthesize areas of agreement into a shared conclusion and practical next steps.",
-            "Acknowledge unresolved objections and distinguish tentative agreement from settled conclusions.",
-            "Focus on themes and next steps, not listing who said what.",
+            "Summarize areas of agreement and the most important unresolved disagreement.",
+            "Distinguish tentative agreement from settled conclusions.",
+            "Do not force a shared conclusion where disagreement remains.",
         ],
-        summary_request="Summarize shared conclusions, unresolved concerns, and next steps in 20 words or fewer.",
+        summary_request="Summarize agreement and the main unresolved disagreement in 20 words or fewer.",
     ),
     "facilitator": ModeratorStrategy(
         id="facilitator",

@@ -8,7 +8,7 @@ from app.metrics import METRICS_POLICY_VERSION
 from app.models import State
 from app.moderator import get_moderator_strategy
 
-EXPORT_SCHEMA_VERSION = "experiment-export-v2"
+EXPORT_SCHEMA_VERSION = "experiment-export-v3"
 
 
 @lru_cache(maxsize=1)
@@ -16,13 +16,17 @@ def source_fingerprints() -> dict[str, str]:
     folder = Path(__file__).parent
     return {
         name: hashlib.sha256((folder / name).read_bytes()).hexdigest()
-        for name in ("prompts.py", "personality.py", "moderator.py", "config.py", "metrics.py", "selection.py", "simulation.py", "llm.py", "analysis.py")
+        for name in ("prompts.py", "history.py", "models.py", "personality.py", "moderator.py", "config.py", "metrics.py", "selection.py", "simulation.py", "llm.py", "analysis.py")
     }
 
 
 def configuration_snapshot(state: State, dataset: dict) -> dict:
     return {
         "run_id": state.run_id,
+        "speaker_order": {
+            "policy": "seeded_random_v1",
+            "seed": state.run_id,
+        },
         "topic": state.topic,
         "agents": [agent.model_dump() for agent in state.agents],
         "moderator": get_moderator_strategy(state.moderator_strategy_id).model_dump(),

@@ -66,8 +66,8 @@ async def run_round(
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
     csv_path: str | Path | None = None,
 ) -> RoundResult:
-    speakers = select_speakers(state.agents)
     state.round_number += 1
+    speakers = select_speakers(state.agents, state.run_id, state.round_number)
 
     # Re-generate the dashboard narrative if the human request changed since
     # it was last produced.  This ensures dashboard visuals align with what
@@ -112,6 +112,8 @@ async def run_round(
                 analysis = analyses[0]
             if analyses and not any(a.status == "completed" for a in analyses):
                 turn = PublicTurn(speaker_id=speaker.id,
+                                  turn_type="participant", round_number=state.round_number,
+                                  moderator_strategy_id=None,
                                   message=" ".join(analysis_report(a) for a in analyses),
                                   analysis=analysis, additional_analyses=analyses[1:], generation=generated.generation)
                 turns.append(turn)
@@ -176,6 +178,9 @@ async def run_round(
 
         turn = PublicTurn(
             speaker_id=speaker.id, message=message, visual=visual,
+            turn_type="moderator_opening" if speaker.role == "mediator" else "participant",
+            round_number=state.round_number,
+            moderator_strategy_id=state.moderator_strategy_id if speaker.role == "mediator" else None,
             table_action=table_action, generation=generated.generation, analysis=analysis,
             additional_analyses=analyses[1:],
         )
@@ -192,6 +197,8 @@ async def run_round(
         summary = await generate_chair_summary(chair, state, turns)
         summary_turn = PublicTurn(
             speaker_id=chair.id, message=summary.text, generation=summary.generation,
+            turn_type="moderator_summary", round_number=state.round_number,
+            moderator_strategy_id=state.moderator_strategy_id,
         )
         turns.append(summary_turn)
         if on_turn:

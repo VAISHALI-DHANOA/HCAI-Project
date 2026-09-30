@@ -16,28 +16,8 @@ class Agent(BaseModel):
     id: str
     name: str
     persona_text: str
-    quirks: list[str] = Field(min_length=3, max_length=3)
-    stance: str
     role: Role
     personality: AgentPersonality | None = None
-
-    @field_validator("stance")
-    @classmethod
-    def stance_is_single_sentence(cls, value: str) -> str:
-        cleaned = " ".join(value.strip().split())
-        if not cleaned:
-            raise ValueError("stance cannot be empty")
-        if cleaned[-1] not in ".!?":
-            cleaned += "."
-        return cleaned
-
-    @field_validator("quirks")
-    @classmethod
-    def quirks_are_clean(cls, value: list[str]) -> list[str]:
-        cleaned = [" ".join(q.strip().split()) for q in value if q.strip()]
-        if len(cleaned) != 3:
-            raise ValueError("quirks must contain exactly 3 non-empty items")
-        return cleaned
 
 
 class VisualSpec(BaseModel):
@@ -139,9 +119,15 @@ class AnalysisResult(BaseModel):
     request: dict | None = None
 
 
+TurnType = Literal["moderator_opening", "participant", "moderator_summary", "human"]
+
+
 class PublicTurn(BaseModel):
     speaker_id: str
     message: str
+    turn_type: TurnType
+    round_number: int = Field(ge=0)
+    moderator_strategy_id: str | None
     visual: VisualSpec | None = None
     table_action: TableAction | None = None
     generation: GenerationMetadata | None = None
