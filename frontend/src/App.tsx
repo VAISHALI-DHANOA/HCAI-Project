@@ -569,7 +569,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
 
   const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
   const completedRoundCount = authoritativeRoundCount(state);
-  const setupLocked = isAdmin && (running || completedRoundCount > 0);
+  const setupLocked = running || completedRoundCount > 0;
   const canContinueToModerator = Boolean(
     (topicInput.trim() || datasetInfo) && draftAgents.length >= MIN_USER_AGENTS,
   );
@@ -953,7 +953,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
   async function onLoadDataDemo() {
     setError("");
     try {
-      const result = await loadExample("ExampleDataset1");
+      const result = await loadExample("ExampleDataset2");
       if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
       setActiveTurnIdx(-1);
