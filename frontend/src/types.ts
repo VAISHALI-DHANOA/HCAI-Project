@@ -125,18 +125,71 @@ export interface RoundResult {
   turns: PublicTurn[];
   reactions: Reaction[];
   emergent_pattern: string;
-  metrics: Metrics;
+  thesis_metrics?: Partial<ThesisMetrics>;
 }
 
-export interface Metrics {
-  consensus_score: number | null;
-  polarization_score: number | null;
-  civility_score: number | null;
-  detected_coalitions: string[];
-  evaluation?: {
-    status: "available" | "insufficient_data";
-    excluded_fallback_turns: number;
-    eligible_participant_count: number;
+export type PersonalityStabilityStatus = "available" | "insufficient_evidence" | "unavailable" | "error";
+export type ThesisMetricStatus = PersonalityStabilityStatus;
+
+export interface PersonalityStabilityAgentResult {
+  agent_id: string;
+  status: PersonalityStabilityStatus;
+  score: number | null;
+  reason: string;
+}
+
+export interface ConsensusRoundResult {
+  round_number: number;
+  status: ThesisMetricStatus;
+  score: number | null;
+  shared_conclusion: string | null;
+  unresolved_disagreement: string | null;
+  reason: string;
+  included_agent_ids: string[];
+  included_participant_count: number;
+}
+
+export interface ThesisMetrics {
+  version: "thesis-metrics-v1";
+  personality_stability: {
+    round: {
+      per_agent: PersonalityStabilityAgentResult[];
+      mean_score: number | null;
+      evaluated_agent_count: number;
+      insufficient_evidence_agent_count: number;
+    };
+    run: {
+      per_agent_mean: Record<string, number | null>;
+      overall_mean: number | null;
+      available_score_count: number;
+    };
+  };
+  conversation_convergence?: {
+    definition_version: "jaccard-lexical-overlap-v1";
+    method: "mean_pairwise_jaccard_token_set_similarity";
+    round: {
+      round_number: number;
+      status: ThesisMetricStatus;
+      round_score: number | null;
+      pair_count: number;
+      included_agent_ids: string[];
+      reason: string;
+    };
+    run: {
+      observations: Array<{ round_number: number; round_score: number }>;
+      first_round_score: number | null;
+      latest_score: number | null;
+      latest_round_number: number | null;
+      delta_from_first_round: number | null;
+      slope: number | null;
+    };
+  };
+  consensus?: {
+    round: ConsensusRoundResult;
+    run: {
+      latest_evaluable_round_number: number | null;
+      latest_evaluable_result: ConsensusRoundResult | null;
+    };
   };
 }
 
@@ -160,7 +213,6 @@ export interface State {
 export interface WsRoundEvent {
   type: "round";
   round_result: RoundResult;
-  metrics: Metrics;
   state_snapshot: State;
 }
 

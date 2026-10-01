@@ -3,7 +3,7 @@ import { addAgents, downloadLogs, endSession, getModeratorStrategies, getPersona
 import { createWsClient } from "./ws";
 import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, Metrics, ModeratorStrategy, OceanLevel, OceanTraits, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, ModeratorStrategy, OceanLevel, OceanTraits, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
@@ -27,6 +27,8 @@ import { useSessionGate } from "./hooks/useSessionGate";
 import { getModeratorAvatar } from "./moderatorAvatars";
 import { TestChatModal } from "./components/TestChatModal";
 import { downloadAgentRoster, MAX_AGENTS, parseAgentRoster } from "./agentRoster";
+import { metricsForEnd, metricsForRound } from "./metrics";
+import { MetricsPanel } from "./components/MetricsPanel";
 
 const MIN_USER_AGENTS = 4;
 
@@ -57,10 +59,6 @@ function agentAvatarUrl(agent: Agent, moderatorStrategyId?: string): string {
 function agentColor(agent: Agent): string {
   const seed = Array.from(agent.id).reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
   return AGENT_COLORS[seed % AGENT_COLORS.length];
-}
-
-function metricValue(value: number | null): string {
-  return value === null ? "N/A" : value.toFixed(3);
 }
 
 function authoritativeRoundCount(state: State | null): number {
@@ -365,7 +363,6 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     return (state.rounds ?? []).map((round) => ({
       type: "round",
       round_result: round,
-      metrics: round.metrics,
       state_snapshot: state,
     }));
   }, [state]);
@@ -374,19 +371,23 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
     (strategy) => strategy.id === (state?.moderator_strategy_id ?? "consensus"),
   )?.name ?? "Moderator";
 
-  const metrics: Metrics | null = useMemo(() => {
-    const roundMetric = roundHistory[roundHistory.length - 1]?.metrics;
-    if (roundMetric) return roundMetric;
-    const snapshot = state?.world_state?.metrics;
-    if (snapshot && typeof snapshot === "object") return snapshot as Metrics;
-    return null;
-  }, [roundHistory, state]);
-
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
     (state?.agents ?? []).forEach((agent) => map.set(agent.id, agent));
     return map;
   }, [state]);
+
+  const displayMetrics = useMemo(() => {
+    const completedRounds = (state?.rounds ?? [])
+      .filter((round) => round.round_number <= completedRound);
+    const completed = completedRounds[completedRounds.length - 1];
+    return metricsForRound(completed, state?.agents ?? []);
+  }, [state?.rounds, state?.agents, completedRound]);
+
+  const endMetrics = useMemo(() => metricsForEnd(
+    (state?.rounds ?? []).filter((round) => round.round_number <= completedRound),
+    state?.agents ?? [],
+  ), [state?.rounds, state?.agents, completedRound]);
 
   const storedDashboardVisuals = useMemo<DashboardVisual[]>(() => {
     return roundHistory.flatMap((roundEvent) =>
@@ -845,7 +846,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
       setLiveTurns([]);
       clearTurnQueue();
       setAppPhase("setup");
-      setDraftAgents([]);
+      setSetupStep("team");
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      setEditingDraftIndex(null);
       draftBaseRef.current = result.state;
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
@@ -1522,48 +1525,9 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   </div>
                 </div>
 
-                {/* Battle Metrics */}
                 <div className="section-block">
-                  <h2 className="section-title">Battle Metrics</h2>
-                  {metrics ? (
-                    <div className="metrics">
-                      {!!metrics.evaluation?.excluded_fallback_turns && (
-                        <p role="status">{metrics.evaluation.excluded_fallback_turns} fallback turns excluded. {metrics.evaluation.status === "insufficient_data" ? "Not enough valid participant data for comparison." : ""}</p>
-                      )}
-                      <div className="metric-row">
-                        <span className="metric-label">Consensus</span>
-                        <div className="metric-bar-track">
-                          <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${(metrics.consensus_score ?? 0) * 100}%` }} />
-                        </div>
-                        <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
-                      </div>
-                      <div className="metric-row">
-                        <span className="metric-label">Polarization</span>
-                        <div className="metric-bar-track">
-                          <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${(metrics.polarization_score ?? 0) * 100}%` }} />
-                        </div>
-                        <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
-                      </div>
-                      <div className="metric-row">
-                        <span className="metric-label">Civility</span>
-                        <div className="metric-bar-track">
-                          <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${(metrics.civility_score ?? 0) * 100}%` }} />
-                        </div>
-                        <span className="metric-value">{metricValue(metrics.civility_score)}</span>
-                      </div>
-                      <div className="coalitions-row">
-                        <span className="metric-label">Coalitions</span>
-                        <div className="coalitions-list">
-                          {metrics.detected_coalitions.length
-                            ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
-                            : <span className="metric-value">None detected</span>
-                          }
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="metrics-empty">No metrics yet</div>
-                  )}
+                  <h2 className="section-title" id="controls-metrics-title">Metrics</h2>
+                  <MetricsPanel metrics={displayMetrics} labelledBy="controls-metrics-title" />
                 </div>
 
               </>
@@ -1598,6 +1562,10 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
                   <div className="arena-end-metric"><span>Contributions</span><strong>{endSummary.contributions}</strong></div>
                   <div className="arena-end-metric"><span>Agents</span><strong>{endSummary.agents}</strong></div>
                 </div>
+                <section className="arena-end-evaluation" aria-labelledby="end-metrics-title">
+                  <h3 className="section-title" id="end-metrics-title">Final discussion state</h3>
+                  <MetricsPanel metrics={endMetrics} layout="grid" labelledBy="end-metrics-title" />
+                </section>
                  <div className="arena-end-dialog__actions arena-end-overview__actions">
                   <button type="button" onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
                   <button type="button" className="btn-primary" onClick={onEndReturnToEntry}>Back to Entry</button>

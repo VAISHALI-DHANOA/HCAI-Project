@@ -306,7 +306,7 @@ async def run(payload: RunRequest, session_id: str = Depends(get_session_id)) ->
 
         event = {
             "type": "round", "round_result": result.model_dump(),
-            "metrics": result.metrics, "state_snapshot": store.get_state().model_dump(),
+            "state_snapshot": store.get_state().model_dump(),
         }
         await manager.broadcast(session_id, event)
         results.append(result.model_dump())

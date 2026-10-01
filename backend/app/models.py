@@ -155,7 +155,7 @@ class RoundResult(BaseModel):
     turns: list[PublicTurn]
     reactions: list[Reaction]
     emergent_pattern: str
-    metrics: dict
+    thesis_metrics: dict = Field(default_factory=dict)
     experiment: dict = Field(default_factory=dict)
 
 

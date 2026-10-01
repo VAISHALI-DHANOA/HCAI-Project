@@ -19,4 +19,7 @@ DATA_CONTRIBUTION_SETTINGS = GenerationSettings(MODEL, max_tokens=500, temperatu
 SUMMARY_SETTINGS = GenerationSettings(MODEL, max_tokens=120, temperature=0.7)
 CHAT_SETTINGS = GenerationSettings(MODEL, max_tokens=100, temperature=0.85)
 VISUAL_SETTINGS = GenerationSettings(MODEL, max_tokens=500, temperature=0.7)
+THESIS_METRICS_SETTINGS = GenerationSettings(
+    MODEL, max_tokens=800, temperature=0.0, timeout_seconds=45.0,
+)
 TTS_MODEL = "tts-1"

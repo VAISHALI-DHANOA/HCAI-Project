@@ -16,7 +16,7 @@ from app.llm import (
     generate_data_contribution,
     generate_chair_summary,
 )
-from app.metrics import compute_emergent_metrics
+from app.thesis_metrics import evaluate_thesis_metrics, personality_stability_error_payload
 from app.models import (
     Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
     RoundResult, State, TableAction,
@@ -218,13 +218,17 @@ async def run_round(
     state.world_state["last_speaker_ids"] = [speaker.id for speaker in speakers]
     state.world_state["round"] = state.round_number
 
-    metrics = compute_emergent_metrics(state)
-    state.world_state["metrics"] = metrics
+    # Thesis metric failures are data, never round failures.
+    try:
+        thesis_metrics = await evaluate_thesis_metrics(state)
+    except Exception:
+        thesis_metrics = personality_stability_error_payload(state)
+    state.world_state["thesis_metrics"] = thesis_metrics
     return RoundResult(
         round_number=state.round_number,
         speaker_ids=[speaker.id for speaker in speakers],
         turns=turns,
         reactions=reactions,
         emergent_pattern=emergent_pattern,
-        metrics=metrics,
+        thesis_metrics=thesis_metrics,
     )

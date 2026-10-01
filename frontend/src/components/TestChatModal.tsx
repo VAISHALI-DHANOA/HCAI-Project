@@ -142,7 +142,6 @@ export function TestChatModal({ agent, onClose, onError, speak, stopAudio }: Tes
           />
           <div>
             <div className="test-chat-modal__name">{agent.name}</div>
-            <span className="personality-badge personality-badge--small">{agent.personality.role_name}</span>
           </div>
         </div>
         <button className="test-chat-modal__close" onClick={close}>X</button>
