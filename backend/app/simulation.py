@@ -4,12 +4,11 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from app.auto_visual import (
-    compute_dashboard_narrative,
     compute_table_action_and_visual,
 )
 from app.analysis import (
-    analysis_report, analysis_visual, combined_analysis_visual,
-    compute_requested_analyses, verified_message,
+    analysis_headline, analysis_report, analysis_visual,
+    compute_requested_analyses,
 )
 from app.llm import (
     generate_agent_message,
@@ -18,7 +17,7 @@ from app.llm import (
 )
 from app.thesis_metrics import evaluate_thesis_metrics, personality_stability_error_payload
 from app.models import (
-    Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
+    Agent, AnalysisResult, CellAnnotation, CellHighlight, PublicTurn, Reaction,
     RoundResult, State, TableAction,
 )
 from app.safety import enforce_civility, truncate_to_words
@@ -61,6 +60,18 @@ def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> s
     return "The group explored diverse angles while maintaining constructive energy."
 
 
+def _compose_analysis_message(message: str, analyses: list) -> str:
+    """Keep the agent's contribution and append only backend-derived evidence."""
+    completed = [item for item in analyses if item.status == "completed"]
+    failed = [item for item in analyses if item.status != "completed"]
+    parts = [message.strip()]
+    if completed:
+        parts.extend(analysis_headline(item) for item in completed)
+    if failed:
+        parts.append(" ".join(analysis_report(item) for item in failed))
+    return " ".join(part for part in parts if part)
+
+
 async def run_round(
     state: State,
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
@@ -69,32 +80,12 @@ async def run_round(
     state.round_number += 1
     speakers = select_speakers(state.agents, state.run_id, state.round_number)
 
-    # Re-generate the dashboard narrative if the human request changed since
-    # it was last produced.  This ensures dashboard visuals align with what
-    # the human actually asked for, even when the intervention happens after
-    # round 2 (when the narrative is normally created).
-    if (
-        state.round_number >= 3
-        and state.dataset_summary
-        and state.human_request
-        and state.human_request != state.world_state.get("narrative_human_request", "")
-    ):
-        chair = next((a for a in state.agents if a.role == "mediator"), None)
-        if chair:
-            narrative = compute_dashboard_narrative(
-                chair, state, state.public_history,
-            )
-            state.world_state["dashboard_narrative"] = narrative
-            state.world_state["narrative_human_request"] = state.human_request
-
     turns: list[PublicTurn] = []
     verified_path = bool(state.dataset_summary)
-    onboarding_speaker = next((a.id for a in speakers if a.role == "user"), None)
     for speaker in speakers:
         analysis = None
         analyses = []
         request = None
-        redisplay = False
         generated = await (
             generate_data_contribution(speaker, state, turns)
             if verified_path and speaker.role == "user"
@@ -102,37 +93,24 @@ async def run_round(
         )
         if verified_path and speaker.role == "user":
             request = generated.analysis_request
-            if (request is None and generated.generation.source == "llm"
-                    and state.round_number <= 2 and speaker.id == onboarding_speaker):
-                # One real overview, persisted as a normal contribution and reused in round 2.
-                request = {"operation": "dataset_overview", "columns": state.dataset_columns}
             if request is not None:
-                redisplay = request.get("redisplay") is True
-                analyses = compute_requested_analyses(request, csv_path, state.public_history + turns)
+                if "analyses" in request or isinstance(request.get("y_column"), list):
+                    analyses = [AnalysisResult(status="not_performed", request=request,
+                                               error="Request one analysis per contribution; no analysis was performed.")]
+                else:
+                    analyses = compute_requested_analyses(request, csv_path, state.public_history + turns)
                 analysis = analyses[0]
-            if analyses and not any(a.status == "completed" for a in analyses):
-                turn = PublicTurn(speaker_id=speaker.id,
-                                  turn_type="participant", round_number=state.round_number,
-                                  moderator_strategy_id=None,
-                                  message=" ".join(analysis_report(a) for a in analyses),
-                                  analysis=analysis, additional_analyses=analyses[1:], generation=generated.generation)
-                turns.append(turn)
-                if on_turn:
-                    await on_turn(turn, state.round_number)
-                continue
         message = enforce_civility(generated.text)
         # Data prompts already request short sentences; avoid cutting them mid-sentence.
         if not verified_path:
             message = truncate_to_words(message, 40)
-        if analysis is not None:
-            message = " ".join(verified_message(a) for a in analyses)
-
         visual = None
         table_action = None
         if analysis is not None:
             # Numeric facts always come from computation, never from the model.
-            if redisplay or any(a.status == "completed" and not a.reused for a in analyses):
-                visual = combined_analysis_visual(analyses) if len(analyses) > 1 else analysis_visual(analysis)
+            if analysis.status == "completed" and (not analysis.reused or request.get("redisplay") is True):
+                visual = analysis_visual(analysis)
+            message = _compose_analysis_message(message, analyses)
         if (state.dataset_summary and state.round_number <= 2 and speaker.role == "user"
                 and (state.dataset_preview is None or state.dataset_preview["sample_rows"])):
             if state.dataset_columns:
@@ -203,13 +181,6 @@ async def run_round(
         turns.append(summary_turn)
         if on_turn:
             await on_turn(summary_turn, state.round_number)
-
-        # At end of round 2, generate the dashboard narrative
-        if state.round_number == 2 and state.dataset_summary:
-            all_history = state.public_history + turns
-            narrative = compute_dashboard_narrative(chair, state, all_history)
-            state.world_state["dashboard_narrative"] = narrative
-            state.world_state["narrative_human_request"] = state.human_request
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)

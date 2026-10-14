@@ -2,10 +2,12 @@ import type { PublicTurn, State } from "../types";
 import { useEffect, useRef } from "react";
 import { DataAgentAvatar } from "./DataAgentStrip";
 
-export function DataContribution({ state, turn, active, pastTurns }: { state: State; turn: PublicTurn | null; active: boolean; pastTurns: PublicTurn[] }) {
+export function DataContribution({ state, turn, active, pastTurns, currentRound }: { state: State; turn: PublicTurn | null; active: boolean; pastTurns: PublicTurn[]; currentRound: number }) {
   const speaker = state.agents.find((agent) => agent.id === turn?.speaker_id);
   const historyRef = useRef<HTMLDivElement>(null);
-  const humanHistory = state.public_history.filter((past) => past.speaker_id === "human");
+  const humanHistory = state.public_history.filter((past) =>
+    past.speaker_id === "human" && past.round_number >= currentRound - 1 && past.round_number <= currentRound
+  );
   // The current human message is already shown below; keep repeated questions.
   if (turn?.speaker_id === "human" && humanHistory[humanHistory.length - 1]?.message === turn.message) humanHistory.pop();
   useEffect(() => {

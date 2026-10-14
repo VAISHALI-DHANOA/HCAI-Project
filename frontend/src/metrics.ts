@@ -75,7 +75,7 @@ function personalityMetric(round: RoundResult | undefined, agents: Agent[]): Met
     progress: available ? stability.mean_score! / 4 : undefined,
     roundNumber: round?.round_number,
     explanation: available
-      ? `Mean across ${stability.evaluated_agent_count} available agent score${stability.evaluated_agent_count === 1 ? "" : "s"}.`
+      ? `Profile consistency for ${stability.evaluated_agent_count} agent${stability.evaluated_agent_count === 1 ? "" : "s"}; not a measure of analytical accuracy.`
       : stability.insufficient_evidence_agent_count > 0
         ? "There is not enough observable behavior for a score yet."
         : hasErrors ? "The judge evaluation failed." : "No evaluation is available.",

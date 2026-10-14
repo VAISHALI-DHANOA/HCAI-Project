@@ -4,11 +4,10 @@ from __future__ import annotations
 import json
 
 from app.history import format_turn
+from app.analysis import evidence_context
 from app.models import Agent, ChatMessageInput, PublicTurn, State
 from app.moderator import DEFAULT_MODERATOR_STRATEGY_ID, build_moderator_strategy_prompt, get_moderator_strategy
 from app.personality import AgentPersonality, build_personality_prompt, normalize_personality
-
-VISUAL_REQUEST = "Generate the visual spec now."
 
 
 def build_test_chat_messages(messages: list[ChatMessageInput], user_message: str) -> list[dict]:
@@ -20,7 +19,7 @@ def build_test_chat_messages(messages: list[ChatMessageInput], user_message: str
 ROUND_PROMPTS = {
     1: "DATA ONBOARDING: Introduce the dataset to the team. Describe what this data represents, key columns, data types, and overall scope. Help everyone understand what we're working with.",
     2: "DATA QUALITY & PROCESSING: Identify data quality issues — missing values, suspicious patterns, columns that need cleaning or transformation. Recommend specific preprocessing steps.",
-    3: "VISUALIZATION & PATTERNS: Create visualizations to explore the data. Propose and generate charts that reveal distributions, comparisons, and trends. Agents should create visuals that highlight something meaningful.",
+    3: "VISUALIZATION & PATTERNS: Discuss patterns worth testing. Request a chart when it helps answer a specific question.",
     4: "DEEP EXPLORATION: Use visualizations and cross-column analysis to dig deeper. Explore relationships between variables — how do discounts affect profit? Which regions have more returns? What drives support costs?",
     5: "INSIGHTS & RECOMMENDATIONS: Synthesize findings into actionable insights. What are the key takeaways? What business decisions should this data inform? Summarize the most important discoveries.",
 }
@@ -95,6 +94,8 @@ def _build_user_system_prompt(
         f"{personality_prompt}\n\n"
         f"YOUR ROLE:\n"
         f"- Let the agent configuration above guide what you contribute and how you communicate\n"
+        f"- Respond to what other participants said; develop, question, or challenge a specific point when relevant\n"
+        f"- You may discuss an existing finding or ask a question without requesting a new calculation\n"
         f"\n"
         f"MODERATOR CONTEXT:\n"
         f"- Use the moderator's opening as guidance for the current round.\n"
@@ -152,27 +153,14 @@ def _format_conversation_history(
     has_human_input = False
     for turn in all_context_turns:
         lines.append(format_turn(state, turn))
-        if state.dataset_summary and turn.analysis is not None:
-            lines.append("Backend analysis result: " + turn.analysis.model_dump_json(exclude={"chart_data"}))
         if turn.speaker_id == "human":
             has_human_input = True
 
     transcript = "\n".join(lines)
     if state.dataset_summary:
-        # Keep verified evidence available after the short conversation window moves on.
-        seen = set()
-        evidence = []
-        for turn in reversed(state.public_history + active_turns):
-            for result in [turn.analysis, *turn.additional_analyses]:
-                if result and result.status == "completed":
-                    key = result.spec.model_dump_json()
-                    if key not in seen:
-                        seen.add(key)
-                        evidence.append(result.model_dump_json(exclude={"chart_data", "request"}))
-            if len(evidence) >= 8:
-                break
+        evidence = evidence_context(state.public_history + active_turns)
         if evidence:
-            transcript += "\nKnown completed backend analyses:\n" + "\n".join(evidence[:8])
+            transcript += "\nVerified backend findings (separate from participant claims):\n" + evidence
 
     human_note = ""
     if has_human_input and state.human_request:
@@ -220,10 +208,9 @@ def build_chair_summary_prompt(
 ) -> tuple[str, list[dict]]:
     lines = [format_turn(state, turn) for turn in round_turns]
     if state.dataset_summary:
-        lines.extend("Backend analysis result: " + turn.analysis.model_dump_json(exclude={"chart_data"})
-                     for turn in round_turns if turn.analysis is not None)
-        lines.extend("Backend analysis result: " + result.model_dump_json(exclude={"chart_data"})
-                     for turn in round_turns for result in turn.additional_analyses)
+        evidence = evidence_context(state.public_history + round_turns, limit=12)
+        if evidence:
+            lines.append("Verified backend findings (check variables, filters and groups before comparing):\n" + evidence)
     transcript = "\n".join(lines)
 
     human_request_note = ""
@@ -251,7 +238,21 @@ def build_chair_summary_prompt(
     )
 
     if state.dataset_summary:
-        system_prompt += "\nOnly completed backend analysis results are evidence of performed analyses. Do not repeat unsupported findings as facts. Summarize qualitatively without numbers; each analysis contribution already reports its backend measurements. If no result exists, summarize proposed next steps rather than findings."
+        system_prompt += (
+            "\nOnly completed backend analysis results are evidence of performed analyses. "
+            "Participant interpretations and earlier moderator statements are claims, not verification. "
+            "Describe an unsupported hypothesis as a question or attribute it to participants; "
+            "never present it as an established finding. Summarize qualitatively without numbers; "
+            "each analysis contribution already reports its backend measurements. "
+            "Keep subgroup findings distinct from the overall result and from other subgroups. "
+            "Compare coefficients only when both results use the same variables and compatible filters. "
+            "Correlations show association, not causes, effects, predictors or intervention benefits. "
+            "Do not claim one group leads another unless a completed result directly supports it. "
+            "Do not treat failed analyses as findings. If requests failed, use the recorded "
+            "backend error; do not guess that column names or data values were wrong. "
+            "If no result exists, summarize proposed "
+            "next steps rather than findings."
+        )
 
     messages = [
         {
@@ -264,38 +265,6 @@ def build_chair_summary_prompt(
     ]
 
     return system_prompt, messages
-
-VISUAL_ROUND_HINTS = {
-    1: "For round 1 (data onboarding), prefer stat_card or table visuals that give an overview of the dataset — column counts, data types, basic statistics.",
-    2: "For round 2 (data quality), prefer table or stat_card visuals showing missing values, null counts, or data quality metrics that need attention.",
-    3: "For round 3 (visualization), prefer bar_chart or line_chart visuals that reveal distributions, category comparisons, or trends in the data.",
-    4: "For round 4 (deep exploration), prefer scatter or heatmap visuals that show relationships between variables — correlations, cross-column analysis.",
-    5: "For round 5 (insights), prefer bar_chart or stat_card visuals that summarize key findings and actionable business metrics.",
-}
-
-def build_visual_prompt(agent: Agent, state: State, agent_message: str, round_number: int = 0) -> str:
-    round_visual_hint = VISUAL_ROUND_HINTS.get(round_number, "Choose the most appropriate visual type for the analysis being discussed.")
-
-    visual_system = (
-        f'You are "{agent.name}" generating a data visualization specification.\n'
-        f"Your persona: {agent.persona_text}\n"
-        f"\nDATASET:\n{state.dataset_summary}\n"
-        f"\nYour message this round was: {agent_message}\n"
-        f"\nROUND GUIDANCE: {round_visual_hint}\n"
-        f"\nGenerate a JSON object describing a visual contribution. The JSON MUST have:\n"
-        f'- "visual_type": one of "bar_chart", "table", "scatter", "line_chart", "stat_card", "heatmap"\n'
-        f'- "title": short descriptive title\n'
-        f'- "data": the chart data payload:\n'
-        f'  For bar_chart/line_chart: {{"labels": [...], "values": [...], "series_name": "..."}}\n'
-        f'  For scatter: {{"points": [{{"x": num, "y": num}}, ...], "x_label": "...", "y_label": "..."}}\n'
-        f'  For table: {{"headers": [...], "rows": [[...], ...]}}\n'
-        f'  For stat_card: {{"stats": [{{"label": "...", "value": "..."}}, ...]}}\n'
-        f'  For heatmap: {{"headers": [...], "rows": [[...], ...]}}\n'
-        f'- "description": one sentence about what this shows\n'
-        f"\nUse realistic data values based on the dataset statistics provided.\n"
-        f"Respond with ONLY the JSON object, no markdown, no explanation."
-    )
-    return visual_system
 
 def _build_test_chat_system_prompt(
     agent_name: str,
@@ -322,6 +291,9 @@ DATA_EVIDENCE_RULES = (
     "\nEVIDENCE RULE: Conversation claims and proposed analyses are not computed evidence. "
     "Do not claim an analysis was performed without a completed backend analysis result. "
     "Do not invent coefficients, significance, confidence intervals, regression, stratification, or causal findings. "
+    "When citing a previous numeric result, copy it from the verified backend findings with its scope and sample size; "
+    "do not calculate a new figure or infer a cause from a correlation. "
+    "Treat participant and moderator interpretations as hypotheses until the backend result supports them. "
     "Without a backend result for a proposed analysis, discuss questions and next steps only; "
     "do not describe measurements or completed computations. Dataset metadata and provided descriptive "
     "statistics may be described as metadata, not as newly performed analyses. "
@@ -335,15 +307,24 @@ DATA_EVIDENCE_RULES = (
 
 
 def build_analysis_request_prompt(agent: Agent, state: State) -> str:
-    """Describe the request contract; computation and validation stay in the backend."""
+    """Let an agent discuss naturally and optionally request one backend computation."""
     return (
-        f"You are {agent.name} ({agent.persona_text}). Propose the analysis requested by the human, "
-        "current discussion when you have a concrete computation to contribute. "
+        f"You are {agent.name} ({agent.persona_text}). Continue the conversation from your "
+        "own priorities and respond to what others have said. "
         'Return one JSON object with exactly two fields: {"message": "your short contribution", "analysis_request": null}. '
-        "For a computation, replace analysis_request=null with the requested analysis object. "
+        "Free discussion is a complete contribution. Request one computation only when it "
+        "directly advances the current question and the same result is not already available. "
+        "For a computation, replace analysis_request=null with one requested analysis object. "
+        'For example: {"message":"Compare internet access by region",'
+        '"analysis_request":{"operation":"grouped_comparison","group_by":"Region_Type",'
+        '"y_column":"Internet_Access_pct","aggregation":"mean"}}. '
+        'Put operation inside analysis_request as a field; do not nest fields under an operation-name key. '
         "Use null for ordinary discussion, deferred ideas, or acknowledgement of existing results. "
-        "Keep your message within 25 words, reflecting your personality. With an analysis request, "
-        "the backend replaces your message with computed facts; do not anticipate results. "
+        "Respond to, challenge, or develop a previous participant's point when relevant. "
+        "Keep your message within 25 words and make your persona's priorities recognizable. "
+        "The message is the contribution shown in the conversation. If requesting an analysis, "
+        "use it to explain the question, motivation, concern, or decision it informs. "
+        "Do not state a numeric result of the requested analysis before it runs. "
         "Do not compute or invent results. Return JSON only without markdown fences, preserving the requested operation, columns, "
         "grouping, aggregation, and filters even if unsupported; never substitute another analysis. "
         "Omit unused fields. Supported operations and fields:\n"
@@ -352,11 +333,10 @@ def build_analysis_request_prompt(agent: Agent, state: State) -> str:
         "For numeric quartiles use grouping=quartiles; otherwise grouping=categories.\n"
         "- table: columns, limit (1-30).\n"
         "- summary: columns, aggregation.\n"
+        "- dataset_overview: optional columns for row count, types and missing values.\n"
         "Aggregations: mean, median, min, max, sum, count, std. "
         'Optional filters: {"column": value} for equality or {"column": {"operator": "gte", "value": 79}} '
         "for comparisons (eq, gt, gte, lt, lte). "
-        'Up to three correlations, grouped comparisons, or summaries may use {"analyses": [spec, ...]}. '
-        "Put filters inside each spec, never outside the analyses list. "
         "Discuss identical completed results without requesting them again; set redisplay=true only "
         "when explicitly showing that result again.\n"
         "Available dataset columns: " + json.dumps(state.dataset_columns) +

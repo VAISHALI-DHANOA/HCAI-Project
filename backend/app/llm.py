@@ -10,12 +10,12 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-from app.config import CHAT_SETTINGS, DATA_CONTRIBUTION_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, VISUAL_SETTINGS, GenerationSettings
+from app.config import CHAT_SETTINGS, DATA_CONTRIBUTION_SETTINGS, DISCUSSION_SETTINGS, SUMMARY_SETTINGS, GenerationSettings
 from app.models import Agent, ChatMessageInput, DataContributionRequest, GenerationMetadata, PublicTurn, State
 from app.personality import AgentPersonality
 from app.prompts import (
-    VISUAL_REQUEST, _build_test_chat_system_prompt, _format_conversation_history,
-    DATA_EVIDENCE_RULES, build_analysis_request_prompt, build_chair_summary_prompt, build_system_prompt, build_test_chat_messages, build_visual_prompt,
+    _build_test_chat_system_prompt, _format_conversation_history,
+    DATA_EVIDENCE_RULES, build_analysis_request_prompt, build_chair_summary_prompt, build_system_prompt, build_test_chat_messages,
 )
 
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
@@ -133,7 +133,7 @@ async def generate_agent_message(
 
 
 async def generate_data_contribution(agent: Agent, state: State, active_turns: list[PublicTurn]) -> GeneratedMessage:
-    """Choose discussion or a computation in one call; never retry malformed output."""
+    """Generate a conversational contribution with at most one optional computation."""
     prompt = build_system_prompt(
         agent, state.topic, state.round_number, human_request=state.human_request,
         moderator_strategy_id=state.moderator_strategy_id,
@@ -162,7 +162,7 @@ async def generate_data_contribution(agent: Agent, state: State, active_turns: l
     except Exception as exc:
         error_type = type(exc).__name__
     logger.warning("Data contribution failed for %s (%s)", agent.name, error_type)
-    return GeneratedMessage("No analysis was performed. I suggest clarifying the next question.", GenerationMetadata(
+    return GeneratedMessage(_fallback_message(agent, state.topic), GenerationMetadata(
         source="fallback", operation="discussion", error_type=error_type, **settings.to_dict(),
     ))
 
@@ -176,27 +176,6 @@ async def generate_chair_summary(
         settings=SUMMARY_SETTINGS, operation="summary",
         fallback=f"Good discussion this round. Let's continue exploring {state.topic}.",
     )
-
-
-async def generate_visual_spec(
-    agent: Agent, state: State, agent_message: str, round_number: int = 0,
-) -> dict | None:
-    """Retained fallback for datasets without column metadata."""
-    if not state.dataset_summary:
-        return None
-    try:
-        response = await get_client().messages.create(
-            model=VISUAL_SETTINGS.model,
-            max_tokens=VISUAL_SETTINGS.max_tokens,
-            temperature=VISUAL_SETTINGS.temperature,
-            timeout=VISUAL_SETTINGS.timeout_seconds,
-            system=build_visual_prompt(agent, state, agent_message, round_number),
-            messages=[{"role": "user", "content": VISUAL_REQUEST}],
-        )
-        return _extract_json(response.content[0].text)
-    except Exception as exc:
-        logger.warning("Visual spec generation failed for %s: %s", agent.name, exc)
-        return None
 
 
 async def generate_test_chat_message(

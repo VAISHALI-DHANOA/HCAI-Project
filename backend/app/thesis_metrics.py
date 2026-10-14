@@ -9,6 +9,7 @@ from typing import Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from app.analysis import analysis_headline, analysis_report
 from app.config import THESIS_METRICS_SETTINGS
 from app.llm import get_client
 from app.models import Agent, PublicTurn, State
@@ -37,18 +38,20 @@ PERSONALITY_STABILITY_JUDGE_INSTRUCTIONS = (
     "- 0 = strongly inconsistent\n"
     "- 1 = mostly inconsistent\n"
     "- 2 = mixed, with both consistent behavior and meaningful profile tension\n"
-    "- 3 = clearly consistent with the configured profile\n"
-    "- 4 = strongly and repeatedly profile-typical\n"
+    "- 3 = very good: clearly consistent with the configured profile\n"
+    "- 4 = exceptional: unusually distinctive and repeatedly profile-typical\n"
     "\n"
     "SCORE 4 REQUIREMENTS:\n"
     "- Require multiple distinctive and repeated behavioral patterns\n"
     "- Evidence should reflect the persona or functional role plus at least two diagnostic OCEAN tendencies\n"
     "- The behavior should distinguish this profile from plausible contrasting profiles\n"
-    "- With only one short contribution, normally use at most 3\n"
+    "- Score 4 requires contributions from at least two different rounds\n"
+    "- A strong profile match normally merits 3; reserve 4 for exceptional evidence\n"
     "\n"
     "OUTPUT:\n"
     "- Return exactly one result for every supplied agent_id, in the same order\n"
-    "- Keep each reason to 12 words maximum\n"
+    "- Return agent_id, status, score, and a brief reason for each agent\n"
+    "- Keep each reason within 12 words; describe one observed behavior\n"
     "- For insufficient evidence use status=\"insufficient_evidence\" and score=null\n"
     "- Do not return unavailable or error\n"
     "- Submit results using the required record_personality_stability tool"
@@ -96,7 +99,8 @@ class PersonalityStabilityJudgeResult(BaseModel):
     agent_id: str
     status: Literal["available", "insufficient_evidence"]
     score: int | None = Field(default=None, ge=0, le=4)
-    reason: str = Field(max_length=240)
+    # Treat the word limit as guidance: verbose reasons must not invalidate scores.
+    reason: str
 
     @model_validator(mode="after")
     def score_matches_status(self):
@@ -154,14 +158,30 @@ def _profile(agent: Agent) -> dict | None:
 
 def _valid_contributions(agent_id: str, history: list[PublicTurn], round_number: int) -> list[dict]:
     return [
-        {"round_number": turn.round_number, "message": turn.message.strip()}
+        {"round_number": turn.round_number, "message": _agent_authored_message(turn)}
         for turn in history
         if turn.round_number <= round_number
         and turn.speaker_id == agent_id
         and turn.turn_type == "participant"
-        and turn.message.strip()
+        and _agent_authored_message(turn)
         and not (turn.generation and turn.generation.source == "fallback")
     ]
+
+
+def _agent_authored_message(turn: PublicTurn) -> str:
+    """Exclude deterministic backend analysis text from personality evidence."""
+    results = [item for item in [turn.analysis, *turn.additional_analyses] if item is not None]
+    if not results:
+        return turn.message.strip()
+    completed = [item for item in results if item.status == "completed"]
+    failed = [item for item in results if item.status != "completed"]
+    suffix_parts = [analysis_headline(item) for item in completed]
+    if failed:
+        suffix_parts.append(" ".join(analysis_report(item) for item in failed))
+    suffix = " ".join(suffix_parts)
+    if suffix and turn.message.endswith(" " + suffix):
+        return turn.message[:-(len(suffix) + 1)].strip()
+    return turn.message.strip()
 
 
 def _current_round_contributions(state: State) -> list[dict]:
@@ -231,13 +251,14 @@ def _payload(
     results: list[dict],
     *,
     failure: dict | None = None,
+    one_call_per_round: bool = True,
 ) -> dict:
     judge = THESIS_METRICS_SETTINGS.to_dict()
     return {
         "version": THESIS_METRICS_VERSION,
         "evaluation": {
             "judge": judge,
-            "one_call_per_round": True,
+            "one_call_per_round": one_call_per_round,
             "failure": failure,
         },
         "personality_stability": {
@@ -351,6 +372,27 @@ class JudgeOutputTruncatedError(ValueError):
     pass
 
 
+async def _judge_personality_cases(
+    cases: list[dict],
+) -> tuple[list[PersonalityStabilityJudgeResult], bool]:
+    try:
+        judged = (await _structured_judge_call(
+            instructions=PERSONALITY_STABILITY_JUDGE_INSTRUCTIONS,
+            tool_name=PERSONALITY_STABILITY_TOOL_NAME,
+            output_model=PersonalityStabilityJudgeOutput,
+            message=_judge_cases_message(cases),
+            normalize=_normalize_personality_output,
+        )).results
+        return judged, False
+    except JudgeOutputTruncatedError:
+        if len(cases) == 1:
+            raise
+        midpoint = len(cases) // 2
+        left, _ = await _judge_personality_cases(cases[:midpoint])
+        right, _ = await _judge_personality_cases(cases[midpoint:])
+        return [*left, *right], True
+
+
 def _failure_results(cases: list[dict], reason: str) -> dict[str, dict]:
     return {
         case["agent_id"]: _error_result(case["agent_id"], "error", reason)
@@ -385,24 +427,28 @@ async def evaluate_personality_stability(state: State) -> dict:
         return _payload(state, [local_results[agent.id] for agent in participants])
 
     failure = None
+    retried_in_batches = False
     try:
-        judged = (await _structured_judge_call(
-            instructions=PERSONALITY_STABILITY_JUDGE_INSTRUCTIONS,
-            tool_name=PERSONALITY_STABILITY_TOOL_NAME,
-            output_model=PersonalityStabilityJudgeOutput,
-            message=_judge_cases_message(cases),
-            normalize=_normalize_personality_output,
-        )).results
+        judged, retried_in_batches = await _judge_personality_cases(cases)
         expected_ids = {case["agent_id"] for case in cases}
         received_ids = [item.agent_id for item in judged]
         if len(received_ids) != len(set(received_ids)) or set(received_ids) != expected_ids:
             raise JudgeAgentIdError("Judge result agent IDs did not match requested participants")
-        by_id = {item.agent_id: item.model_dump() for item in judged}
+        contribution_rounds = {
+            case["agent_id"]: {entry["round_number"] for entry in case["contributions"]}
+            for case in cases
+        }
+        by_id = {}
+        for item in judged:
+            value = item.model_dump()
+            if item.score == 4 and len(contribution_rounds[item.agent_id]) < 2:
+                value["score"] = 3
+            value["reason"] = " ".join(item.reason.split())[:240]
+            by_id[item.agent_id] = value
         results = [local_results.get(agent.id) or by_id[agent.id] for agent in participants]
     except json.JSONDecodeError as exc:
         logger.warning("Personality Stability judge JSON parsing failed: %s", exc)
-        reason = "Judge output could not be parsed as JSON."
-        errors = _failure_results(cases, reason)
+        errors = _failure_results(cases, "Judge output could not be parsed as JSON.")
         failure = {"category": "json_parsing_failure", "detail": str(exc)}
         results = [local_results.get(agent.id) or errors[agent.id] for agent in participants]
     except ValidationError as exc:
@@ -413,27 +459,25 @@ async def evaluate_personality_stability(state: State) -> dict:
         results = [local_results.get(agent.id) or errors[agent.id] for agent in participants]
     except JudgeAgentIdError as exc:
         logger.warning("Personality Stability judge agent IDs invalid: %s", exc)
-        reason = "Judge returned missing, duplicate, or unexpected agent IDs."
-        errors = _failure_results(cases, reason)
+        errors = _failure_results(cases, "Judge returned missing, duplicate, or unexpected agent IDs.")
         failure = {"category": "agent_id_mismatch", "detail": str(exc)}
         results = [local_results.get(agent.id) or errors[agent.id] for agent in participants]
     except JudgeOutputTruncatedError as exc:
         logger.warning("Personality Stability judge output truncated: %s", exc)
-        reason = "Judge output exceeded its token budget."
-        errors = _failure_results(cases, reason)
+        errors = _failure_results(cases, "Judge output exceeded its token budget.")
         failure = _metric_failure("output_truncated", str(exc))
         results = [local_results.get(agent.id) or errors[agent.id] for agent in participants]
     except Exception as exc:
         error_type = type(exc).__name__
         logger.warning("Personality Stability evaluation failed (%s): %s", error_type, exc)
-        reason = f"Judge provider/runtime error ({error_type})."
-        errors = _failure_results(cases, reason)
+        errors = _failure_results(cases, f"Judge provider/runtime error ({error_type}).")
         failure = {"category": "provider_or_runtime_error", "detail": error_type}
         results = [local_results.get(agent.id) or errors[agent.id] for agent in participants]
     return _payload(
         state,
         results,
         failure=failure,
+        one_call_per_round=not retried_in_batches,
     )
 
 

@@ -207,7 +207,11 @@ def compute_analysis(request: dict, dataset_path: str | Path | None,
                               groups=groups, values=values, chart_data=chart, dataset_version=version, request=request)
     except ValidationError as exc:
         logger.warning("Invalid analysis spec: %s", exc)
-        return AnalysisResult(status="not_performed", request=request, error=f"The analysis request has invalid or missing fields. {ALTERNATIVE}")
+        details = "; ".join(
+            f"{'.'.join(map(str, issue['loc']))}: {issue['msg']}" for issue in exc.errors()[:3]
+        )
+        return AnalysisResult(status="not_performed", request=request,
+                              error=f"Invalid analysis request fields ({details}); no analysis was performed. {ALTERNATIVE}")
     except (ValueError, TypeError) as exc:
         return AnalysisResult(status="not_performed", spec=spec, request=request, error=str(exc))
     except (OSError, ImportError) as exc:
@@ -220,16 +224,17 @@ def analysis_report(result: AnalysisResult) -> str:
         return f"Analysis was not performed: {result.error}"
     spec = result.spec
     prefix = "Existing result reused. " if result.reused else ""
+    if spec.filters:
+        prefix += f"Filtered rows ({json.dumps(spec.model_dump()['filters'], sort_keys=True)}). "
     if spec.operation == "dataset_overview":
         return (f"{prefix}Dataset overview: {result.values['row_count']} rows, "
                 f"{result.values['column_count']} columns, {result.values['missing_cells']} missing cells.")
     if spec.operation == "pearson_correlation":
         coefficient = "undefined (insufficient observations or variation)" if result.pearson_r is None else f"{result.pearson_r:.6f}"
         report = f"{prefix}{spec.x_column} vs {spec.y_column}: n={result.sample_size}; Pearson r={coefficient}."
-        if not result.reused:
-            for group in result.groups:
-                r = "undefined" if group["pearson_r"] is None else f"{group['pearson_r']:.6f}"
-                report += f" {spec.group_by}={group['group']}: n={group['sample_size']}; r={r}."
+        for group in result.groups:
+            r = "undefined" if group["pearson_r"] is None else f"{group['pearson_r']:.6f}"
+            report += f" {spec.group_by}={group['group']}: n={group['sample_size']}; r={r}."
         return report
     if spec.operation == "scatter":
         return f"{prefix}{spec.x_column} vs {spec.y_column}: {len(result.chart_data['points'])} of {result.sample_size} finite pairs plotted; no correlation was calculated."
@@ -240,6 +245,63 @@ def analysis_report(result: AnalysisResult) -> str:
         return prefix + "; ".join(f"{spec.aggregation}({c})={'undefined' if v['value'] is None else format(v['value'], '.6g')} (n={v['sample_size']})"
                                   for c, v in result.values.items()) + "."
     return f"{prefix}Table of {', '.join(result.chart_data['headers'])}: showing {len(result.chart_data['rows'])} of {result.sample_size} filtered rows."
+
+
+def evidence_context(turns: Sequence[PublicTurn], limit: int = 8) -> str:
+    """Compact verified findings for both participants and the moderator."""
+    selected: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for turn in reversed(turns):
+        for result in reversed([turn.analysis, *turn.additional_analyses]):
+            if result is None or result.status != "completed" or result.spec is None:
+                continue
+            key = (result.dataset_version, result.spec.model_dump_json())
+            if key in seen:
+                continue
+            seen.add(key)
+            item = result.model_dump(exclude={"chart_data", "request", "reused"})
+            if result.spec.operation in {"table", "dataset_overview"} and result.chart_data:
+                item["shown_table"] = {
+                    "headers": result.chart_data.get("headers", []),
+                    "rows": result.chart_data.get("rows", [])[:10],
+                }
+                item["shown_table_is_limited"] = True
+            selected.append(item)
+            if len(selected) >= limit:
+                return "\n".join(json.dumps(item, default=str) for item in selected)
+    return "\n".join(json.dumps(item, default=str) for item in selected)
+
+
+def analysis_headline(result: AnalysisResult) -> str:
+    """A short, backend-derived finding with the values needed to interpret it."""
+    if result.status != "completed":
+        return analysis_report(result)
+    spec = result.spec
+    scope = (f"Within rows matching {json.dumps(spec.model_dump()['filters'], sort_keys=True)}: "
+             if spec.filters else "")
+    prefix = ("Previously calculated: " if result.reused else "") + scope
+
+    if spec.operation == "grouped_comparison":
+        groups = [group for group in result.groups if group.get("value") is not None]
+        if len(groups) >= 2:
+            low = min(groups, key=lambda group: group["value"])
+            high = max(groups, key=lambda group: group["value"])
+            if low["value"] != high["value"]:
+                return (prefix + f"{spec.aggregation}({spec.y_column or 'rows'}) by {spec.group_by or spec.x_column}: "
+                        f"{high['group']} highest at {high['value']:.6g} (n={high['sample_size']}), "
+                        f"{low['group']} lowest at {low['value']:.6g} (n={low['sample_size']}).")
+        return analysis_report(result)
+    if spec.operation == "pearson_correlation":
+        if result.pearson_r is None:
+            return (prefix + f"Pearson correlation between {spec.x_column} and {spec.y_column} "
+                    f"is undefined (n={result.sample_size}).")
+        groups = "".join(
+            f" {spec.group_by}={group['group']}: r={'undefined' if group['pearson_r'] is None else format(group['pearson_r'], '.3f')} "
+            f"(n={group['sample_size']});" for group in result.groups
+        )
+        return (prefix + f"{spec.x_column} vs {spec.y_column}: Pearson r={result.pearson_r:.3f} "
+                f"(n={result.sample_size}).{groups.rstrip(';')} Correlation does not establish causation.")
+    return analysis_report(result)
 
 
 def analysis_visual(result: AnalysisResult) -> VisualSpec | None:
@@ -260,88 +322,50 @@ def analysis_visual(result: AnalysisResult) -> VisualSpec | None:
     return VisualSpec(visual_type=visual_type, title=title, data=result.chart_data, description=description)
 
 
-def verified_message(result: AnalysisResult) -> str:
-    if result.status != "completed":
-        return analysis_report(result)
-    # Computed contributions are concise facts, not unchecked model interpretations.
-    spec = result.spec
-    prefix = "Existing result reused. " if result.reused else ""
-    if spec.operation == "dataset_overview":
-        return analysis_report(result) + " Column details are in the dashboard table."
-    if spec.operation == "pearson_correlation":
-        if result.pearson_r is None:
-            finding = "No interpretable correlation estimate is available"
-        elif result.sample_size < 3:
-            finding = "Too few observations to establish a reliable relationship"
-        else:
-            r = result.pearson_r
-            strength = "negligible" if abs(r) < .1 else "weak" if abs(r) < .3 else "moderate" if abs(r) < .7 else "strong"
-            finding = f"A {strength} {'negative' if r < 0 else 'positive'} correlation"
-        return f"{prefix}{spec.x_column} vs {spec.y_column}: {finding}. See the visualization for coefficients and sample sizes; correlation does not establish causation."
-    if spec.operation == "grouped_comparison":
-        grouping = f"quartiles of {spec.group_by or spec.x_column}" if spec.grouping == "quartiles" else spec.group_by or spec.x_column
-        return f"{prefix}Compared {spec.aggregation}({spec.y_column or 'rows'}) across {len(result.groups)} groups of {grouping}. See the chart for group values and sample sizes."
-    if spec.operation == "summary":
-        return f"{prefix}Calculated {spec.aggregation} for {', '.join(result.values)}. The values and sample sizes are in the visualization."
-    if spec.operation == "scatter":
-        return f"{prefix}Plotted {spec.x_column} against {spec.y_column}. See the chart; no correlation was calculated."
-    return f"{prefix}Prepared the requested table of {', '.join(result.chart_data['headers'])}. See the dashboard for the rows."
-
-
 def compute_requested_analyses(request: dict, dataset_path: str | Path | None,
                                history: Sequence[PublicTurn]) -> list[AnalysisResult]:
+    # Some model responses use the operation as a JSON key. Interpret that
+    # unambiguously equivalent shape without changing the requested analysis.
+    if "operation" not in request and "analyses" not in request:
+        operation_keys = [key for key in request if key in OPERATIONS]
+        if len(operation_keys) == 1 and set(request) <= {operation_keys[0], "redisplay"}:
+            operation = operation_keys[0]
+            fields = request[operation]
+            if isinstance(fields, dict):
+                fields = {"operation": operation, **fields}
+                if fields["operation"] == operation:
+                    request = {**fields, **({"redisplay": request["redisplay"]} if "redisplay" in request else {})}
+    if (request.get("operation") == "grouped_comparison"
+            and isinstance(request.get("y_column"), list)):
+        targets = request["y_column"]
+        fields = {key: value for key, value in request.items() if key not in {"y_column", "redisplay"}}
+        request = {"analyses": [{**fields, "y_column": target} for target in targets],
+                   **({"redisplay": request["redisplay"]} if "redisplay" in request else {})}
+    # Another unambiguous model shape puts shared fields alongside short specs.
+    # Keep an outer y_column as an additional requested analysis.
+    if "analyses" in request and set(request) - {"analyses", "redisplay"}:
+        shared_keys = {"operation", "x_column", "y_column", "group_by", "filters",
+                       "columns", "aggregation", "grouping", "limit"}
+        if set(request) <= shared_keys | {"analyses", "redisplay"} and isinstance(request["analyses"], list):
+            shared = {key: value for key, value in request.items() if key in shared_keys}
+            children = request["analyses"]
+            if all(isinstance(item, dict) for item in children):
+                expanded = ([shared] if shared.get("y_column") or shared.get("columns") else [])
+                expanded += [{**shared, **item} for item in children]
+                request = {"analyses": expanded,
+                           **({"redisplay": request["redisplay"]} if "redisplay" in request else {})}
     requests = request.get("analyses")
     if requests is None:
         return [compute_analysis({k: v for k, v in request.items() if k != "redisplay"}, dataset_path, history)]
     if set(request) - {"analyses", "redisplay"}:
         return [AnalysisResult(status="not_performed", request=request,
                                error="Combined requests accept only analyses and redisplay. Put filters and other analysis fields inside each spec; no analysis was performed.")]
-    if (not isinstance(requests, list) or not 1 <= len(requests) <= 3
+    if (not isinstance(requests, list) or not 1 <= len(requests) <= 5
             or any(not isinstance(item, dict) or item.get("operation") not in
                    {"pearson_correlation", "grouped_comparison", "summary"} for item in requests)):
         return [AnalysisResult(status="not_performed", request=request,
-                               error="A combined request supports up to three correlations, grouped comparisons, or summaries. No alternative was executed.")]
+                               error="A combined request supports up to five correlations, grouped comparisons, or summaries. No alternative was executed.")]
     results = []
     for item in requests:
         results.append(compute_analysis(item, dataset_path, history, results))
     return results
-
-
-def combined_analysis_visual(results: list[AnalysisResult]) -> VisualSpec | None:
-    if any(r.status == "completed" and r.spec.operation != "pearson_correlation" for r in results):
-        rows = []
-        for result in results:
-            if result.status != "completed":
-                continue
-            spec = result.spec
-            if spec.operation == "grouped_comparison":
-                rows.extend([[f"{spec.aggregation}({spec.y_column or 'rows'})", spec.group_by or spec.x_column,
-                              g["group"], g["sample_size"], "undefined" if g["value"] is None else g["value"]]
-                             for g in result.groups])
-            elif spec.operation == "summary":
-                rows.extend([[f"{spec.aggregation}({c})", "All rows", "All rows", v["sample_size"],
-                              "undefined" if v["value"] is None else v["value"]] for c, v in result.values.items()])
-            else:
-                rows.append([f"Pearson({spec.x_column}, {spec.y_column})", "All rows", "All rows",
-                             result.sample_size, "undefined" if result.pearson_r is None else result.pearson_r])
-                rows.extend([[f"Pearson({spec.x_column}, {spec.y_column})", spec.group_by, g["group"],
-                              g["sample_size"], "undefined" if g["pearson_r"] is None else g["pearson_r"]]
-                             for g in result.groups])
-        return VisualSpec(visual_type="table", title="Computed comparisons",
-                          data={"headers": ["Measure", "Grouping", "Group", "n", "Value"], "rows": rows},
-                          description="Separate backend computations; sample sizes refer to each individual group.")
-    rows = []
-    for result in results:
-        if result.status != "completed":
-            continue
-        spec = result.spec
-        rows.append([spec.x_column, spec.y_column, "All rows", result.sample_size,
-                     "undefined" if result.pearson_r is None else result.pearson_r])
-        for group in result.groups:
-            rows.append([spec.x_column, spec.y_column, f"{spec.group_by}={group['group']}",
-                         group["sample_size"], "undefined" if group["pearson_r"] is None else group["pearson_r"]])
-    if not rows:
-        return None
-    return VisualSpec(visual_type="table", title="Computed Pearson correlations",
-                      data={"headers": ["X", "Y", "Group", "n", "Pearson r"], "rows": rows},
-                      description="Separate pairwise correlations; no regression or causal analysis was performed.")

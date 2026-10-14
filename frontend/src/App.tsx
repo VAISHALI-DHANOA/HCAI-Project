@@ -1308,7 +1308,7 @@ function Playground({ catalog, initialMode, onModeChange, participant, onSetupBa
               moderatorStrategyId={state?.moderator_strategy_id}
               currentSpeakerId={analysisRound > completedRound ? currentSpeakerId : null}
               onLocate={(agentId) => { setDashboardMode(false); setAgentFocus((previous) => ({ agentId, request: (previous?.request ?? 0) + 1 })); }} />
-              {state && <div className="data-agent-speech"><DataContribution state={state} turn={currentTurn} active={analysisRound > completedRound} pastTurns={pastTurns} /></div>}
+              {state && <div className="data-agent-speech"><DataContribution state={state} turn={currentTurn} active={analysisRound > completedRound} pastTurns={pastTurns} currentRound={analysisRound} /></div>}
             </div>
             {!dashboardMode && datasetInfo && <div className="data-preview-caption">
               {fullDatasetRows.length} of {datasetInfo.shape[0]} rows{fullDatasetRows.length < datasetInfo.shape[0] ? ' - navigation within preview' : ''}

@@ -1,19 +1,10 @@
-"""Deterministic visual generation — no LLM calls.
-
-Replaces generate_table_action_and_visual, generate_dashboard_visual,
-and generate_dashboard_narrative from llm.py with pure backend computation.
-This cuts per-round API calls by ~50%, eliminating rate-limit errors.
-"""
+"""Deterministic table navigation and annotations for early data rounds."""
 
 from __future__ import annotations
 
 import hashlib
-import logging
 import re
-from collections import Counter
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Hashing & column extraction
@@ -93,7 +84,7 @@ def _pick_columns_for_agent(
     n_numeric: int = 2,
     n_categorical: int = 1,
 ) -> tuple[list[str], list[str]]:
-    """Select columns for a chart, preferring message-mentioned ones."""
+    """Select columns for table navigation, preferring message-mentioned ones."""
     cat_set, num_set = set(cat_cols), set(num_cols)
     mentioned_cat = [c for c in mentioned if c in cat_set]
     mentioned_num = [c for c in mentioned if c in num_set]
@@ -125,226 +116,6 @@ def _humanize_column(col: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Chart spec builders
-# ---------------------------------------------------------------------------
-
-ROUND_CHART_TYPES: dict[int, tuple[str, str]] = {
-    1: ("stat_card", "table"),
-    2: ("table", "stat_card"),
-    3: ("bar_chart", "line_chart"),
-    4: ("scatter", "heatmap"),
-    5: ("bar_chart", "stat_card"),
-}
-DEFAULT_CHART_TYPES = ("bar_chart", "line_chart")
-
-ROUND_AGGREGATIONS: dict[int, list[str]] = {
-    1: ["count", "mean"],
-    2: ["count", "mean"],
-    3: ["mean", "sum", "count"],
-    4: ["mean", "median"],
-    5: ["mean", "sum", "max"],
-}
-
-_ROUND_TOPICS = {
-    1: "Dataset Overview",
-    2: "Data Quality Check",
-    3: "Distribution Analysis",
-    4: "Relationship Exploration",
-    5: "Key Findings",
-}
-
-
-def _validate_chart_feasibility(
-    visual_type: str,
-    cat_cols: list[str],
-    num_cols: list[str],
-    primary: str,
-    secondary: str,
-) -> str:
-    requirements: dict[str, Any] = {
-        "bar_chart":  lambda: len(cat_cols) >= 1,
-        "line_chart": lambda: len(cat_cols) >= 1,
-        "scatter":    lambda: len(num_cols) >= 2,
-        "heatmap":    lambda: len(num_cols) >= 2,
-        "stat_card":  lambda: len(num_cols) >= 1,
-        "table":      lambda: True,
-    }
-    for candidate in [visual_type, primary, secondary, "stat_card", "table"]:
-        if requirements.get(candidate, lambda: True)():
-            return candidate
-    return "table"
-
-
-def _build_spec_for_type(
-    visual_type: str,
-    sel_cat: list[str],
-    sel_num: list[str],
-    agg: str,
-    agent_seed: str,
-    all_columns: list[str],
-    cat_cols: list[str],
-    num_cols: list[str],
-) -> dict:
-    """Build the inner 'spec' dict for compute_chart_data."""
-
-    if visual_type == "bar_chart":
-        x_col = sel_cat[0] if sel_cat else (cat_cols[0] if cat_cols else all_columns[0])
-        y_col = sel_num[0] if sel_num else ""
-        sort_dir = "desc" if _stable_hash(agent_seed + "_sort", 2) == 0 else "asc"
-        return {
-            "x_column": x_col,
-            "y_column": y_col,
-            "aggregation": agg if y_col else "count",
-            "sort": sort_dir,
-            "top_n": 10,
-        }
-
-    if visual_type == "line_chart":
-        x_col = sel_cat[0] if sel_cat else (cat_cols[0] if cat_cols else all_columns[0])
-        y_col = sel_num[0] if sel_num else ""
-        return {
-            "x_column": x_col,
-            "y_column": y_col,
-            "aggregation": agg if y_col else "count",
-            "top_n": 20,
-        }
-
-    if visual_type == "scatter":
-        x_num = sel_num[0] if sel_num else (num_cols[0] if num_cols else all_columns[0])
-        y_num = sel_num[1] if len(sel_num) >= 2 else (
-            num_cols[1] if len(num_cols) >= 2 else x_num
-        )
-        if x_num == y_num and len(num_cols) >= 2:
-            candidates = [c for c in num_cols if c != x_num]
-            if candidates:
-                y_num = candidates[_stable_hash(agent_seed + "_sc", len(candidates))]
-        return {"x_column": x_num, "y_column": y_num, "sample_n": 50}
-
-    if visual_type == "heatmap":
-        n_heat = min(5, len(num_cols))
-        offset = _stable_hash(agent_seed + "_heat", max(len(num_cols), 1))
-        seen: set[str] = set()
-        heat_cols: list[str] = []
-        for i in range(n_heat):
-            c = num_cols[(offset + i) % len(num_cols)]
-            if c not in seen:
-                heat_cols.append(c)
-                seen.add(c)
-        return {"columns": heat_cols}
-
-    if visual_type == "stat_card":
-        n_metrics = min(4, len(num_cols))
-        offset = _stable_hash(agent_seed + "_stat", max(len(num_cols), 1))
-        agg_cycle = ["mean", "median", "max", "min"]
-        metrics: list[dict[str, str]] = []
-        for i in range(n_metrics):
-            col = num_cols[(offset + i) % len(num_cols)]
-            m_agg = agg_cycle[i % len(agg_cycle)]
-            label = _humanize_column(col)
-            if len(label) > 20:
-                label = label[:17] + "..."
-            label += f" ({m_agg})"
-            metrics.append({"column": col, "aggregation": m_agg, "label": label})
-        return {"metrics": metrics}
-
-    # table (default)
-    n_show = min(6, len(all_columns))
-    offset = _stable_hash(agent_seed + "_tbl", max(len(all_columns), 1))
-    seen_t: set[str] = set()
-    show_cols: list[str] = []
-    for i in range(n_show):
-        c = all_columns[(offset + i) % len(all_columns)]
-        if c not in seen_t:
-            show_cols.append(c)
-            seen_t.add(c)
-    sort_col = sel_num[0] if sel_num else (num_cols[0] if num_cols else None)
-    return {
-        "columns": show_cols,
-        "sort_by": sort_col,
-        "sort_order": "desc",
-        "head_n": 10,
-    }
-
-
-def _generate_title(
-    visual_type: str,
-    sel_cat: list[str],
-    sel_num: list[str],
-    agg: str,
-    round_number: int,
-) -> str:
-    if visual_type in ("bar_chart", "line_chart") and sel_cat and sel_num:
-        return f"{agg.capitalize()} {_humanize_column(sel_num[0])} by {_humanize_column(sel_cat[0])}"
-    if visual_type == "scatter" and len(sel_num) >= 2:
-        return f"{_humanize_column(sel_num[0])} vs {_humanize_column(sel_num[1])}"
-    if visual_type == "heatmap":
-        return "Correlation Heatmap"
-    topic = _ROUND_TOPICS.get(round_number, "Analysis")
-    if visual_type == "stat_card":
-        return f"{topic}: Key Metrics"
-    if visual_type == "table":
-        return f"{topic}: Data Sample"
-    cols_str = ", ".join(_humanize_column(c) for c in (sel_num + sel_cat)[:2])
-    return f"Analyzing {cols_str}"
-
-
-def _generate_description(
-    visual_type: str,
-    sel_cat: list[str],
-    sel_num: list[str],
-    round_number: int,
-) -> str:
-    topic = _ROUND_TOPICS.get(round_number, "analysis").lower()
-    if visual_type == "bar_chart" and sel_cat and sel_num:
-        return f"Comparing {_humanize_column(sel_num[0])} across {_humanize_column(sel_cat[0])} categories."
-    if visual_type == "scatter" and len(sel_num) >= 2:
-        return f"Exploring the relationship between {_humanize_column(sel_num[0])} and {_humanize_column(sel_num[1])}."
-    if visual_type == "heatmap":
-        return "Correlation matrix showing relationships among numeric indicators."
-    if visual_type == "stat_card":
-        return f"Summary statistics for {topic}."
-    if visual_type == "table":
-        return f"Detailed data rows for {topic} inspection."
-    if visual_type == "line_chart" and sel_cat and sel_num:
-        return f"Trend of {_humanize_column(sel_num[0])} across {_humanize_column(sel_cat[0])}."
-    return f"Visual analysis for round {round_number}."
-
-
-def _build_visual_spec_for_round(
-    round_number: int,
-    agent_seed: str,
-    mentioned: list[str],
-    cat_cols: list[str],
-    num_cols: list[str],
-    sel_cat: list[str],
-    sel_num: list[str],
-    all_columns: list[str],
-) -> dict:
-    """Build a lightweight chart spec dict for the given round."""
-    primary, secondary = ROUND_CHART_TYPES.get(round_number, DEFAULT_CHART_TYPES)
-    use_secondary = _stable_hash(agent_seed + "_vtype", 2) == 1
-    visual_type = secondary if use_secondary else primary
-    visual_type = _validate_chart_feasibility(visual_type, cat_cols, num_cols, primary, secondary)
-
-    agg_options = ROUND_AGGREGATIONS.get(round_number, ["mean"])
-    agg = agg_options[_stable_hash(agent_seed + "_agg", len(agg_options))]
-
-    spec = _build_spec_for_type(
-        visual_type, sel_cat, sel_num, agg,
-        agent_seed, all_columns, cat_cols, num_cols,
-    )
-    title = _generate_title(visual_type, sel_cat, sel_num, agg, round_number)
-    description = _generate_description(visual_type, sel_cat, sel_num, round_number)
-
-    return {
-        "visual_type": visual_type,
-        "title": title,
-        "description": description,
-        "spec": spec,
-    }
-
-
-# ---------------------------------------------------------------------------
 # Annotation helpers
 # ---------------------------------------------------------------------------
 
@@ -372,7 +143,7 @@ def _generate_annotation_text(
 
 
 # ---------------------------------------------------------------------------
-# Public API — drop-in replacements for LLM functions
+# Public table-action API
 # ---------------------------------------------------------------------------
 
 def compute_table_action_and_visual(
@@ -383,10 +154,7 @@ def compute_table_action_and_visual(
     column_names: list[str] | None = None,
     row_count: int = 200,
 ) -> dict:
-    """Deterministic replacement for llm.generate_table_action_and_visual.
-
-    Returns dict with 'table_action' and 'visual' keys — identical shape.
-    """
+    """Return the table action used during onboarding and data quality rounds."""
     if not column_names:
         return {}
 
@@ -422,120 +190,4 @@ def compute_table_action_and_visual(
         }],
     }
 
-    # --- Visual Spec ---
-    visual = _build_visual_spec_for_round(
-        round_number, agent_seed, mentioned,
-        cat_cols, num_cols, sel_cat, sel_num, column_names,
-    )
-
-    return {"table_action": table_action, "visual": visual}
-
-
-def compute_dashboard_visual(
-    agent: Any,
-    state: Any,
-    agent_message: str,
-    round_number: int = 0,
-    column_names: list[str] | None = None,
-    dashboard_narrative: str = "",
-) -> dict | None:
-    """Deterministic replacement for llm.generate_dashboard_visual.
-
-    Returns dict with visual_type, title, description, spec — identical shape.
-    """
-    if not state.dataset_summary or not column_names:
-        return None
-
-    agent_seed = f"{agent.id}_{round_number}"
-    mentioned = _extract_mentioned_columns(agent_message, column_names)
-
-    # Also extract from narrative and human_request
-    for extra_text in [dashboard_narrative, state.human_request]:
-        if extra_text:
-            for col in _extract_mentioned_columns(extra_text, column_names):
-                if col not in mentioned:
-                    mentioned.append(col)
-
-    cat_cols, num_cols = _classify_columns(column_names, state.dataset_summary)
-    sel_cat, sel_num = _pick_columns_for_agent(mentioned, cat_cols, num_cols, agent_seed)
-
-    return _build_visual_spec_for_round(
-        round_number, agent_seed, mentioned,
-        cat_cols, num_cols, sel_cat, sel_num, column_names,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Dashboard narrative
-# ---------------------------------------------------------------------------
-
-_NARRATIVE_TEMPLATES = [
-    "How does {col1} relate to {col2} across different {cat} categories in this dataset?",
-    "What drives variation in {col1} and {col2}, and which {cat} groups stand out?",
-    "Exploring whether {col1} and {col2} reveal meaningful patterns when segmented by {cat}.",
-    "Which {cat} segments show the strongest interplay between {col1} and {col2}?",
-    "Investigating the connection between {col1} and {col2} to identify actionable {cat}-level insights.",
-]
-
-_HUMAN_NARRATIVE_TEMPLATES = [
-    "Addressing the question: {request} — examining {col1} and {col2} across {cat} groups.",
-    "Responding to '{request}' by analyzing how {col1} and {col2} vary by {cat}.",
-    "Investigating '{request}' through the lens of {col1}, {col2}, and {cat} segmentation.",
-]
-
-
-def compute_dashboard_narrative(
-    chair: Any,
-    state: Any,
-    all_turns: list,
-) -> str:
-    """Deterministic replacement for llm.generate_dashboard_narrative.
-
-    Returns a 1-sentence narrative string — identical usage.
-    """
-    if not state.dataset_columns:
-        return f"Exploring key patterns and relationships in the {state.topic} dataset."
-
-    all_messages = " ".join(
-        t.message for t in all_turns if hasattr(t, "message")
-    )
-    mentioned = _extract_mentioned_columns(all_messages, state.dataset_columns)
-
-    if state.human_request:
-        for col in _extract_mentioned_columns(state.human_request, state.dataset_columns):
-            if col not in mentioned:
-                mentioned.append(col)
-
-    cat_cols, num_cols = _classify_columns(state.dataset_columns, state.dataset_summary)
-
-    col_counts = Counter(mentioned)
-    top_mentioned = [col for col, _ in col_counts.most_common()]
-    top_num = [c for c in top_mentioned if c in set(num_cols)][:2]
-    top_cat = [c for c in top_mentioned if c in set(cat_cols)][:1]
-
-    seed = f"{chair.id}_narrative_{state.round_number}"
-    if len(top_num) < 2 and num_cols:
-        offset = _stable_hash(seed + "_num", len(num_cols))
-        for i in range(2 - len(top_num)):
-            candidate = num_cols[(offset + i) % len(num_cols)]
-            if candidate not in set(top_num):
-                top_num.append(candidate)
-    if not top_cat and cat_cols:
-        offset = _stable_hash(seed + "_cat", len(cat_cols))
-        top_cat = [cat_cols[offset % len(cat_cols)]]
-
-    col1 = _humanize_column(top_num[0]) if top_num else "key indicators"
-    col2 = _humanize_column(top_num[1]) if len(top_num) >= 2 else "overall patterns"
-    cat = _humanize_column(top_cat[0]) if top_cat else "segment"
-
-    if state.human_request:
-        short_request = state.human_request
-        if len(short_request) > 60:
-            short_request = short_request[:57] + "..."
-        templates = _HUMAN_NARRATIVE_TEMPLATES
-        idx = _stable_hash(seed + "_tmpl", len(templates))
-        return templates[idx].format(request=short_request, col1=col1, col2=col2, cat=cat)
-
-    templates = _NARRATIVE_TEMPLATES
-    idx = _stable_hash(seed + "_tmpl", len(templates))
-    return templates[idx].format(col1=col1, col2=col2, cat=cat)
+    return {"table_action": table_action}

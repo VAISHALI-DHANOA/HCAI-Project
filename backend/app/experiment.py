@@ -11,7 +11,7 @@ from app.thesis_metrics import THESIS_METRICS_VERSION
 from app.models import State
 from app.moderator import get_moderator_strategy
 
-EXPORT_SCHEMA_VERSION = "experiment-export-v3"
+EXPORT_SCHEMA_VERSION = "experiment-export-v4"
 
 
 @lru_cache(maxsize=1)
