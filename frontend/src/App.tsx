@@ -1,22 +1,58 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { addAgentsWithMBTI, downloadLogs, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setTopic, testChat, uploadDataset } from "./api";
+import { Fragment, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { addAgents, downloadLogs, endSession, getModeratorStrategies, getPersonalityCatalog, getSessionId, getState, intervene, loadDemo, loadExample, reset, runRounds, setAdminKey, setContributionDisplayTime, setModeratorStrategy, setTopic, syncAgents, uploadDataset } from "./api";
 import { createWsClient } from "./ws";
+import { acceptsSnapshot, pendingHumanTurns, rosterAdditions, sameRoster } from "./session";
 import type { ConnectionStatus } from "./ws";
-import type { Agent, AppPhase, CellAnnotation, CellHighlight, ChatMessage, DashboardVisual, DatasetInfo, DraftAgent, Metrics, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
+import type { Agent, AppPhase, CellAnnotation, CellHighlight, DashboardVisual, DraftAgent, EndSummary, ModeratorStrategy, OceanLevel, OceanTraits, PersonalityCatalog, PublicTurn, State, WsEvent, WsRoundEvent } from "./types";
 import { VisualCard } from "./components/VisualCard";
-import { DataPreviewTable } from "./components/DataPreviewTable";
 import { ArenaTable } from "./components/ArenaTable";
 import { DashboardCanvas } from "./components/DashboardCanvas";
-import { MBTI_DIMENSIONS, MBTI_QUESTIONS, scoreQuestionnaire, enrichPersonaWithMBTI } from "./mbti";
+import { DataContribution } from "./components/DataContribution";
+import { DataAgentStrip, type AgentFocus } from "./components/DataAgentStrip";
+import { createPersonalityFromPreset as clonePreset } from "./personality";
+import { PlaybackController } from "./playback";
 import { useTTS, agentVoiceParams } from "./hooks/useTTS";
 import "./styles.css";
+import "./styles/Setup.css";
+import "./components/MissionBriefing.css";
+import "./components/AgentCreation.css";
+import { AgentCard } from "./components/AgentCard";
+import { EntryScreen } from "./components/EntryScreen";
+import { ModeSelection } from "./components/ModeSelection";
+import { ArrowIcon, SetupHeader, SetupProgress } from "./components/SetupChrome";
+import { ParticipantWaiting } from "./components/ParticipantWaiting";
+import { ModeratorSelection } from "./components/ModeratorSelection";
+import { Brand } from "./components/Brand";
+import { useSessionGate } from "./hooks/useSessionGate";
+import { getModeratorAvatar } from "./moderatorAvatars";
+import { TestChatModal } from "./components/TestChatModal";
+import { downloadAgentRoster, MAX_AGENTS, parseAgentRoster } from "./agentRoster";
+import { metricsForEnd, metricsForRound } from "./metrics";
+import { MetricsPanel } from "./components/MetricsPanel";
+
+const MIN_USER_AGENTS = 4;
+
+const OCEAN_LEVELS = [
+  { label: "Low", value: "low" },
+  { label: "Medium", value: "medium" },
+  { label: "High", value: "high" },
+] as const;
+
+function oceanLevel(value: OceanLevel): (typeof OCEAN_LEVELS)[number]["label"] {
+  return OCEAN_LEVELS.find((level) => level.value === value)?.label ?? "Medium";
+}
+
+function oceanLevelPosition(value: OceanLevel): number {
+  return OCEAN_LEVELS.findIndex((level) => level.value === value) + 1;
+}
 
 const AGENT_COLORS = [
   "#38bdf8", "#a78bfa", "#fb923c", "#4ade80", "#f87171",
   "#fbbf24", "#22d3ee", "#e879f9", "#34d399", "#f472b6",
 ];
 
-function agentAvatarUrl(agent: Agent): string {
+function agentAvatarUrl(agent: Agent, moderatorStrategyId?: string): string {
+  if (agent.role === "mediator") return getModeratorAvatar(moderatorStrategyId);
   return `https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`;
 }
 
@@ -25,188 +61,315 @@ function agentColor(agent: Agent): string {
   return AGENT_COLORS[seed % AGENT_COLORS.length];
 }
 
-function metricValue(value: number): string {
-  return value.toFixed(3);
+function authoritativeRoundCount(state: State | null): number {
+  return state?.rounds?.length ?? state?.round_number ?? 0;
+}
+
+function draftFromAgent(agent: Agent): DraftAgent {
+  if (!agent.personality) throw new Error(`Missing personality configuration for ${agent.name}`);
+  return {
+    id: agent.id,
+    name: agent.name,
+    persona_text: agent.persona_text,
+    personality: agent.personality,
+  };
 }
 
 export default function App() {
+  const session = useSessionGate();
+  const [catalog, setCatalog] = useState<PersonalityCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setCatalogError("");
+    getPersonalityCatalog()
+      .then((data) => { if (active) setCatalog(data); })
+      .catch((error: unknown) => {
+        if (active) setCatalogError(error instanceof Error ? error.message : "Could not load personalities");
+      });
+    return () => { active = false; };
+  }, [attempt]);
+
+  if (session.gate === "entry") return <EntryScreen onCreate={session.create} onJoin={session.join} busy={session.busy} error={session.error} />;
+  if (session.gate === "waiting") return <ParticipantWaiting error={session.error} onBack={session.back} />;
+  if (session.gate === "mode") return <ModeSelection initialMode={session.mode} sessionCode={getSessionId()} onBack={session.back} onSelect={session.select} busy={session.busy} error={session.error} />;
+  if (!catalog) return (
+    <div className="app-shell">
+      <p role={catalogError ? "alert" : "status"}>{catalogError || "Loading personality settings…"}</p>
+      {catalogError && <button onClick={() => setAttempt((value) => value + 1)}>Retry</button>}
+    </div>
+  );
+  return <Playground catalog={catalog} initialMode={session.mode} onModeChange={session.setMode} participant={session.participant} onSetupBack={session.participant ? session.back : session.backToMode} onReturnToEntry={session.back} />;
+}
+
+function ConversationLog({ state, liveTurns, liveRound, agentMap, visibleVisualIds, completedRound }: {
+  state: State | null; liveTurns: PublicTurn[]; liveRound: number; agentMap: Map<string, Agent>;
+  visibleVisualIds?: Set<string>;
+  completedRound?: number;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const roundNumbers = (state?.rounds ?? []).flatMap((round) => round.turns.map(() => round.round_number));
+  const showLive = !(state?.rounds ?? []).some((round) => round.round_number === liveRound);
+  const history = state?.public_history ?? [];
+  const liveHumans = showLive ? liveTurns.filter((turn) => turn.speaker_id === "human") : [];
+  let pendingHuman = liveHumans.length - 1;
+  const inLiveHistory = new Set<number>();
+  for (let index = history.length - 1; index >= 0 && pendingHuman >= 0; index--) {
+    if (history[index].speaker_id === "human" && history[index].message === liveHumans[pendingHuman].message) {
+      inLiveHistory.add(index);
+      pendingHuman--;
+    }
+  }
+  let contribution = 0;
+  const entries = history.filter((_, index) => !inLiveHistory.has(index)).map((turn) => ({
+    turn, round: turn.speaker_id === "human" ? undefined : roundNumbers[contribution++], live: false,
+  }));
+  if (showLive) {
+    entries.push(...liveTurns.map((turn) => ({ turn, round: turn.speaker_id === "human" ? undefined : liveRound, live: true })));
+  }
+  useEffect(() => {
+    if (followLatest.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [entries.length]);
+  let previousRound: number | undefined;
+  return (
+    <div className="section-block section-block--log">
+      <h2 className="section-title">Conversation Log <span className="section-title__count">{entries.length}</span></h2>
+      <div className="chat-log" ref={scrollRef} onScroll={(event) => {
+        const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
+        followLatest.current = scrollHeight - scrollTop - clientHeight < 48;
+      }}>
+        {!entries.length && <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>}
+        {entries.map(({ turn, round, live }, index) => {
+          const showRound = round !== undefined && round !== previousRound;
+          const roundStatus = completedRound === undefined ? (live ? "In progress" : "")
+            : round !== undefined && round <= completedRound ? "Completed"
+            : round === liveRound ? "In progress" : "Awaiting playback";
+          if (round !== undefined) previousRound = round;
+          const isHuman = turn.speaker_id === "human";
+          const agent = agentMap.get(turn.speaker_id);
+          const name = isHuman ? "You" : (agent?.name ?? turn.speaker_id);
+          const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
+          return (
+            <Fragment key={index}>
+              {showRound && <div className="chat-log__round-divider">
+                <span className="chat-log__round-divider-line" />
+                <span className="chat-log__round-divider-text">Round {round}{roundStatus && ` - ${roundStatus}`}</span>
+                <span className="chat-log__round-divider-line" />
+              </div>}
+              <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
+                {isHuman ? <span className="chat-log__human-avatar">You</span> :
+                  <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent, state?.moderator_strategy_id) : ""} alt="" width={32} height={32} />}
+                <div className="chat-log__body">
+                  <span className="chat-log__name">{name}</span>
+                  <p className="chat-log__message">{turn.message}</p>
+                </div>
+              </div>
+              {turn.visual && (!visibleVisualIds || visibleVisualIds.has(`${round}-${turn.speaker_id}`)) && <VisualCard visual={turn.visual} agentColor={color} agentName={name} />}
+            </Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Playground({ catalog, initialMode, onModeChange, participant, onSetupBack, onReturnToEntry }: { catalog: PersonalityCatalog; initialMode: "debate" | "data"; onModeChange: (mode: "debate" | "data") => void; participant: boolean; onSetupBack: () => void; onReturnToEntry: () => void }) {
+  const isDataMode = initialMode === "data";
+  const OCEAN_TRAITS = catalog.traits;
+  const PERSONALITY_PRESETS = catalog.presets;
+  const createPersonalityFromPreset = (
+    id: string,
+    overrides: Parameters<typeof clonePreset>[2] = {},
+  ) => clonePreset(catalog, id, overrides);
+  const createMediumPersonality = () => createPersonalityFromPreset(catalog.default_preset_id, {
+    ocean: Object.fromEntries(OCEAN_TRAITS.map(({ key }) => [key, "medium"])) as unknown as OceanTraits,
+  });
   const [state, setStateValue] = useState<State | null>(null);
   const [topicInput, setTopicInput] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [personaInput, setPersonaInput] = useState("");
-  const [energyInput, setEnergyInput] = useState(0.6);
-  const [feed, setFeed] = useState<WsRoundEvent[]>([]);
   const [connection, setConnection] = useState<ConnectionStatus>("connecting");
   const [error, setError] = useState<string>("");
   const [running, setRunning] = useState(false);
   const [autoRun, setAutoRun] = useState(false);
-  const [intervalMs, setIntervalMs] = useState(1800);
+  const [displaySeconds, setDisplaySeconds] = useState(12);
   const [activeTurnIdx, setActiveTurnIdx] = useState<number>(-1);
   const [showReactions, setShowReactions] = useState(false);
   const [liveTurns, setLiveTurns] = useState<PublicTurn[]>([]);
+  const [liveRound, setLiveRound] = useState(0);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [appPhase, setAppPhase] = useState<AppPhase>("setup");
+  const [setupStep, setSetupStep] = useState<"team" | "moderator">("team");
   const [draftAgents, setDraftAgents] = useState<DraftAgent[]>([]);
+  const draftBaseRef = useRef<State | null>(null);
   const [testChatAgent, setTestChatAgent] = useState<DraftAgent | null>(null);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [mbtiMode, setMbtiMode] = useState<"pick" | "quiz">("pick");
-  const [mbtiPicks, setMbtiPicks] = useState<string[]>(["E", "S", "T", "J"]);
-  const [quizAnswers, setQuizAnswers] = useState<(number | null)[]>(Array(8).fill(null));
-  const [inputMode, setInputMode] = useState<"topic" | "dataset">("topic");
-  const [datasetInfo, setDatasetInfo] = useState<DatasetInfo | null>(null);
+  const [personalityConfig, setPersonalityConfig] = useState(createMediumPersonality);
+  const datasetInfo = state?.dataset_preview ?? null;
   const [uploading, setUploading] = useState(false);
-  const [sidePanelView, setSidePanelView] = useState<"controls" | "dashboard">("controls");
+  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
+  const [chairSettingsOpen, setChairSettingsOpen] = useState(false);
+  const [moderatorStrategies, setModeratorStrategies] = useState<ModeratorStrategy[]>([]);
+  const [chairSaving, setChairSaving] = useState(false);
+  const [launching, setLaunching] = useState(false);
+  const [topicSaving, setTopicSaving] = useState(false);
+  const topicSaveRef = useRef<Promise<boolean> | null>(null);
+  const launchPendingRef = useRef(false);
+  const rosterFileRef = useRef<HTMLInputElement>(null);
+  const [sidePanelView, setSidePanelView] = useState<"controls" | "log">("controls");
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [interveneInput, setInterveneInput] = useState("");
   const [intervening, setIntervening] = useState(false);
+  const [endConfirmationOpen, setEndConfirmationOpen] = useState(false);
+  const [confirmingEnd, setConfirmingEnd] = useState(false);
+  const [endSummary, setEndSummary] = useState<EndSummary | null>(null);
+  const arenaStartedAtRef = useRef<number | null>(null);
   const [accumulatedHighlights, setAccumulatedHighlights] = useState<CellHighlight[]>([]);
   const [accumulatedAnnotations, setAccumulatedAnnotations] = useState<CellAnnotation[]>([]);
   const [agentTablePositions, setAgentTablePositions] = useState<Map<string, { agentId: string; row: number; column: string }>>(new Map());
-  const [fullDatasetRows, setFullDatasetRows] = useState<Record<string, any>[]>([]);
+  const fullDatasetRows = datasetInfo?.sample_rows ?? [];
+  const previewColumns = useMemo(() => datasetInfo?.columns.map((column) => column.name) ?? [], [datasetInfo]);
   const [dashboardMode, setDashboardMode] = useState(false);
-  const [dashboardTransitioning, setDashboardTransitioning] = useState(false);
+  const [agentFocus, setAgentFocus] = useState<AgentFocus | null>(null);
+  const visibleAgentPositions = useMemo(() => new Map([...agentTablePositions].filter(([, pos]) => Number.isInteger(pos.row) && pos.row >= 0 && pos.row < fullDatasetRows.length && previewColumns.includes(pos.column))), [agentTablePositions, fullDatasetRows.length, previewColumns]);
   const [dashboardVisuals, setDashboardVisuals] = useState<DashboardVisual[]>([]);
+  const [completedRound, setCompletedRound] = useState(0);
+  const [revealedContribution, setRevealedContribution] = useState<{ round: number; index: number } | null>(null);
+  const playbackRoundRef = useRef(0);
   const { speak, stop: stopTTS } = useTTS();
+
+  useEffect(() => {
+    if (!voiceEnabled) stopTTS();
+  }, [voiceEnabled, stopTTS]);
 
   const [isAdmin] = useState<boolean>(() => {
     const params = new URLSearchParams(window.location.search);
-    const key = params.get("adminKey") ?? params.get("admin");
-    if (key) { setAdminKey(key); return true; }
-    return false;
+    const key = participant ? null : params.get("adminKey") ?? params.get("admin");
+    setAdminKey(key);
+    return Boolean(key);
   });
 
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<any>(null);
-
-  const chatLogRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const appPhaseRef = useRef(appPhase);
   appPhaseRef.current = appPhase;
-  const dashboardModeRef = useRef(false);
-  dashboardModeRef.current = dashboardMode;
+  const stateRef = useRef<State | null>(state);
+  stateRef.current = state;
+  const playbackSettings = useRef({ displaySeconds, voiceEnabled });
+  playbackSettings.current = { displaySeconds, voiceEnabled };
+  const playbackHandlers = useRef({ snapshot: applyStateSnapshot, show: showContribution });
+  playbackHandlers.current = { snapshot: applyStateSnapshot, show: showContribution };
+  const playbackRef = useRef<PlaybackController | null>(null);
+  if (!playbackRef.current) playbackRef.current = new PlaybackController({
+    duration: () => playbackSettings.current.displaySeconds,
+    speak: (turn) => {
+      const speaker = stateRef.current?.agents.find((agent) => agent.id === turn.speaker_id);
+      return playbackSettings.current.voiceEnabled && speaker
+        ? speak(turn.message, agentVoiceParams(speaker)) : Promise.resolve();
+    },
+    stopAudio: stopTTS,
+    requestRound: async (signal) => (await runRounds(1, signal)).state,
+    snapshot: (snapshot) => playbackHandlers.current.snapshot(snapshot),
+    contribution: (turn, round, index) => playbackHandlers.current.show(turn, round, index),
+    completed: (round) => {
+      setCompletedRound(round.round_number);
+      setLiveTurns((prev) => pendingHumanTurns(prev, stateRef.current?.human_request ?? ""));
+      setActiveTurnIdx(round.turns.length - 1);
+      setShowReactions(true);
+    },
+    busy: setRunning,
+    autoChanged: setAutoRun,
+    error: setError,
+  });
+  const playback = playbackRef.current;
 
-  // Turn queue: incoming turns are queued and revealed one at a time
-  // with 20s display + 3s gap between each message.
-  const turnQueueRef = useRef<{ turn: PublicTurn; roundNumber: number }[]>([]);
-  const pendingRoundRef = useRef<WsRoundEvent | null>(null);
-  const displayTimerRef = useRef<number | null>(null);
+  function showContribution(next: PublicTurn, turnRoundNum: number, index: number) {
+    setShowReactions(false);
+    setLiveRound(turnRoundNum);
+    setRevealedContribution({ round: turnRoundNum, index });
+    if (stateRef.current?.dataset_preview && turnRoundNum >= 3 && playbackRoundRef.current < 3) setDashboardMode(true);
+    playbackRoundRef.current = turnRoundNum;
+    setLiveTurns((prev) => [...prev, next]);
+    // Determine if this turn belongs to a dashboard round (3+)
+    const isDashboardRound = turnRoundNum >= 3;
 
-  const processQueue = useCallback(() => {
-    if (displayTimerRef.current !== null) return; // timer already active
-
-    const queued = turnQueueRef.current.shift();
-    if (queued) {
-      const next = queued.turn;
-      const turnRoundNum = queued.roundNumber;
-      setShowReactions(false);
-      setLiveTurns((prev) => [...prev, next]);
-
-      // Determine if this turn belongs to a dashboard round (3+)
-      const isDashboardRound = turnRoundNum >= 3;
-
-      // Accumulate table actions from this turn (only in table mode, rounds 1-2)
-      if (next.table_action && !isDashboardRound) {
-        const ta = next.table_action;
-        if (ta.navigate_to) {
-          setAgentTablePositions((prev) => {
-            const updated = new Map(prev);
-            updated.set(next.speaker_id, {
-              agentId: next.speaker_id,
-              row: ta.navigate_to.row,
-              column: ta.navigate_to.column,
-            });
-            return updated;
+    // Accumulate table actions from this turn (only in table mode, rounds 1-2)
+    if (next.table_action && !isDashboardRound) {
+      const ta = next.table_action;
+      if (ta.navigate_to) {
+        setAgentTablePositions((prev) => {
+          const updated = new Map(prev);
+          updated.set(next.speaker_id, {
+            agentId: next.speaker_id,
+            row: ta.navigate_to.row,
+            column: ta.navigate_to.column,
           });
-        }
-        if (ta.highlights?.length) {
-          setAccumulatedHighlights((prev) => [...prev, ...ta.highlights]);
-        }
-        if (ta.annotations?.length) {
-          setAccumulatedAnnotations((prev) => [...prev, ...ta.annotations]);
-        }
+          return updated;
+        });
       }
-
-      // Accumulate dashboard visuals for rounds 3+
-      if (isDashboardRound && next.visual && next.speaker_id !== "human") {
-        // Ensure dashboard mode is active when we start receiving round 3+ turns
-        if (!dashboardModeRef.current) {
-          setDashboardTransitioning(false);
-          setDashboardMode(true);
-        }
-        const speakerId = next.speaker_id;
-        // Skip mediator/chair agents — they don't get dashboard cards
-        const speakerAgent = pendingRoundRef.current?.state_snapshot?.agents?.find(
-          (a: Agent) => a.id === speakerId
-        );
-        if (speakerAgent?.role !== "mediator") {
-          setDashboardVisuals((prev) => {
-            // Look up agent info from the state snapshot in the pending round
-            const agents = pendingRoundRef.current?.state_snapshot?.agents ?? [];
-            const agent = agents.find((a: Agent) => a.id === speakerId);
-            const color = agent ? agentColor(agent) : "#38bdf8";
-            const dv: DashboardVisual = {
-              id: `${turnRoundNum}-${speakerId}`,
-              roundNumber: turnRoundNum,
-              speakerId,
-              agentName: agent?.name ?? "Unknown",
-              agentColor: color,
-              visual: next.visual!,
-              message: next.message,
-            };
-            const filtered = prev.filter((v) => v.id !== dv.id);
-            return [...filtered, dv];
-          });
-        }
+      if (ta.highlights?.length) {
+        setAccumulatedHighlights((prev) => [...prev, ...ta.highlights]);
       }
-
-      displayTimerRef.current = window.setTimeout(() => {
-        displayTimerRef.current = null;
-        processQueue();
-      }, 12000); // 15s display + 3s gap
-    } else if (pendingRoundRef.current) {
-      // All turns displayed — finalize round after 15s for last turn
-      const ev = pendingRoundRef.current;
-      displayTimerRef.current = window.setTimeout(() => {
-        displayTimerRef.current = null;
-        pendingRoundRef.current = null;
-        // Preserve human intervention turns across round boundaries
-        setLiveTurns((prev) => prev.filter((t) => t.speaker_id === "human"));
-        setActiveTurnIdx(ev.round_result.turns.length - 1);
-        setShowReactions(true);
-        setFeed((prev) => [...prev, ev]);
-        setStateValue(ev.state_snapshot);
-
-        // Trigger dashboard transition after round 2 completes
-        if (ev.round_result.round_number === 2 && !dashboardModeRef.current) {
-          setDashboardTransitioning(true);
-          setTimeout(() => {
-            setDashboardTransitioning(false);
-            setDashboardMode(true);
-          }, 2000);
-        }
-      }, 12000); // 15s display for last turn
+      if (ta.annotations?.length) {
+        setAccumulatedAnnotations((prev) => [...prev, ...ta.annotations]);
+      }
     }
-  }, []);
 
-  function clearTurnQueue() {
-    turnQueueRef.current = [];
-    pendingRoundRef.current = null;
-    if (displayTimerRef.current !== null) {
-      clearTimeout(displayTimerRef.current);
-      displayTimerRef.current = null;
+    // Reveal visuals only when their contribution is displayed.
+    if (next.visual && next.speaker_id !== "human") {
+      const speakerId = next.speaker_id;
+      // Skip mediator/chair agents — they don't get dashboard cards
+      const speakerAgent = stateRef.current?.agents?.find(
+        (a: Agent) => a.id === speakerId
+      );
+      if (speakerAgent?.role !== "mediator") {
+        setDashboardVisuals((prev) => {
+          // Look up agent info from the state snapshot in the pending round
+          const agents = stateRef.current?.agents ?? [];
+          const agent = agents.find((a: Agent) => a.id === speakerId);
+          const color = agent ? agentColor(agent) : "#38bdf8";
+          const dv: DashboardVisual = {
+            id: `${turnRoundNum}-${speakerId}`,
+            roundNumber: turnRoundNum,
+            speakerId,
+            agentName: agent?.name ?? "Unknown",
+            agentColor: color,
+            visual: next.visual!,
+            message: next.message,
+          };
+          const filtered = prev.filter((v) => v.id !== dv.id);
+          return [...filtered, dv];
+        });
+      }
     }
   }
 
-  const metrics: Metrics | null = useMemo(() => {
-    const roundMetric = feed[feed.length - 1]?.metrics;
-    if (roundMetric) return roundMetric;
-    const snapshot = state?.world_state?.metrics;
-    if (snapshot && typeof snapshot === "object") return snapshot as Metrics;
-    return null;
-  }, [feed, state]);
+  function clearTurnQueue() {
+    playback.cancel();
+    setLiveTurns([]);
+    setActiveTurnIdx(-1);
+    setShowReactions(false);
+    setRevealedContribution(null);
+  }
+
+  useEffect(() => {
+    if (appPhase !== "arena") clearTurnQueue();
+    else playback.resume();
+  }, [appPhase]);
+
+  const roundHistory: WsRoundEvent[] = useMemo(() => {
+    if (!state) return [];
+    return (state.rounds ?? []).map((round) => ({
+      type: "round",
+      round_result: round,
+      state_snapshot: state,
+    }));
+  }, [state]);
+
+  const activeModeratorName = moderatorStrategies.find(
+    (strategy) => strategy.id === (state?.moderator_strategy_id ?? "consensus"),
+  )?.name ?? "Moderator";
 
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
@@ -214,9 +377,54 @@ export default function App() {
     return map;
   }, [state]);
 
+  const displayMetrics = useMemo(() => {
+    const completedRounds = (state?.rounds ?? [])
+      .filter((round) => round.round_number <= completedRound);
+    const completed = completedRounds[completedRounds.length - 1];
+    return metricsForRound(completed, state?.agents ?? []);
+  }, [state?.rounds, state?.agents, completedRound]);
+
+  const endMetrics = useMemo(() => metricsForEnd(
+    (state?.rounds ?? []).filter((round) => round.round_number <= completedRound),
+    state?.agents ?? [],
+  ), [state?.rounds, state?.agents, completedRound]);
+
+  const storedDashboardVisuals = useMemo<DashboardVisual[]>(() => {
+    return roundHistory.flatMap((roundEvent) =>
+      roundEvent.round_result.turns
+        .filter((_, index) => roundEvent.round_result.round_number <= completedRound || (
+          roundEvent.round_result.round_number === revealedContribution?.round && index <= revealedContribution.index
+        ))
+        .filter((turn) => turn.visual && turn.speaker_id !== "human")
+        .map((turn) => {
+          const agent = agentMap.get(turn.speaker_id);
+          return {
+            id: `${roundEvent.round_result.round_number}-${turn.speaker_id}`,
+            roundNumber: roundEvent.round_result.round_number,
+            speakerId: turn.speaker_id,
+            agentName: agent?.name ?? "Unknown",
+            agentColor: agent ? agentColor(agent) : "#38bdf8",
+            visual: turn.visual!,
+            message: turn.message,
+          };
+        }),
+    );
+  }, [agentMap, roundHistory, completedRound, revealedContribution]);
+
+  const visibleDashboardVisuals = useMemo(() => {
+    const storedIds = new Set(storedDashboardVisuals.map((visual) => visual.id));
+    return [
+      ...storedDashboardVisuals,
+      ...dashboardVisuals.filter((visual) => !storedIds.has(visual.id)),
+    ];
+  }, [dashboardVisuals, storedDashboardVisuals]);
+
+  const visibleVisualIds = useMemo(() => new Set(visibleDashboardVisuals.map((visual) => visual.id)), [visibleDashboardVisuals]);
+  const analysisRound = revealedContribution?.round ?? completedRound;
+
   const latestRound = useMemo(() => {
-    return feed.length > 0 ? feed[feed.length - 1] : null;
-  }, [feed]);
+    return roundHistory.find((round) => round.round_result.round_number === completedRound) ?? null;
+  }, [roundHistory, completedRound]);
 
   const latestTurns = useMemo(() => {
     return latestRound?.round_result.turns ?? [];
@@ -272,39 +480,20 @@ export default function App() {
   // Initial state load + WebSocket
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const demoName = params.get("demo");
+    const demoName = participant ? null : params.get("demo");
 
     if (demoName) {
       // Auto-load example dataset + agents from ?demo= param
       loadExample(demoName)
         .then((result) => {
-          setStateValue(result.state);
+          if (!applyStateSnapshot(result.state)) return;
           setTopicInput(result.state.topic);
-          if (result.parsed) {
-            setDatasetInfo(result.parsed);
-            setFullDatasetRows(result.parsed.sample_rows);
-          }
-          setFeed([]);
           setActiveTurnIdx(-1);
           setShowReactions(false);
           setLiveTurns([]);
           clearTurnQueue();
-          setSidePanelView("dashboard");
-          // Admin stays in setup so they can add/modify agents; non-admin goes to arena
-          const adminKey = params.get("adminKey") ?? params.get("admin");
-          if (adminKey) {
-            // Populate draft roster from demo agents so admin can review/add more
-            const userAgents = (result.state.agents ?? []).filter((a: Agent) => a.role !== "mediator");
-            setDraftAgents(userAgents.map((a: Agent) => ({
-              name: a.name,
-              persona_text: a.persona_text,
-              energy: a.energy,
-              mbti_type: a.mbti_type ?? "ENTJ",
-            })));
-            setInputMode("dataset");
-          } else {
-            setAppPhase("arena");
-          }
+          setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+          draftBaseRef.current = result.state;
         })
         .catch((e: unknown) => {
           setError(e instanceof Error ? e.message : `Failed to load example: ${demoName}`);
@@ -312,36 +501,55 @@ export default function App() {
     } else {
       getState()
         .then((data) => {
-          setStateValue(data);
+          if (!applyStateSnapshot(data)) return;
           setTopicInput(data.topic);
+          if (isAdmin) {
+            setDraftAgents(data.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+            draftBaseRef.current = data;
+          }
         })
         .catch((e: unknown) => {
           setError(e instanceof Error ? e.message : "Failed to load state");
         });
     }
 
+    getModeratorStrategies()
+      .then((data) => setModeratorStrategies(data.strategies))
+      .catch(() => setModeratorStrategies([]));
+
     const close = createWsClient(
       (event: WsEvent) => {
+        if (event.type === "lobby") {
+          if (participant && event.mode) onModeChange(event.mode);
+          return;
+        }
         if (event.type === "state") {
-          setStateValue(event.state_snapshot);
+          applyStateSnapshot(event.state_snapshot, event.reset_playback);
+          return;
+        }
+        if (event.type === "session_ended") {
+          showEndOverview(event.summary);
+          return;
+        }
+        if (event.type === "playback_settings") {
+          setDisplaySeconds(event.display_seconds);
           return;
         }
         if (event.type === "turn") {
+          if (stateRef.current?.run_id !== event.run_id) return;
           // Human interventions are shown locally on submit — skip WebSocket echo
           if (event.turn.speaker_id === "human") return;
           // Auto-transition students to arena when debate starts
-          if (!isAdmin && appPhaseRef.current === "setup") {
+          if (participant && appPhaseRef.current === "setup") {
             setAppPhase("arena");
+            playback.resume();
           }
-          // Queue turn for timed reveal (20s display + 3s gap)
-          setShowReactions(false);
-          turnQueueRef.current.push({ turn: event.turn, roundNumber: event.round_number });
-          processQueue();
+          if (appPhaseRef.current === "arena" || participant) {
+            playback.turn(event.run_id, event.round_number, event.contribution_index ?? -1, event.turn);
+          }
           return;
         }
-        // event.type === "round" — save for finalization after queue drains
-        pendingRoundRef.current = event;
-        processQueue();
+        applyStateSnapshot(event.state_snapshot);
       },
       (status) => setConnection(status)
     );
@@ -352,44 +560,6 @@ export default function App() {
     };
   }, []);
 
-  // Auto-run timer
-  useEffect(() => {
-    if (!autoRun) return;
-    const timer = window.setInterval(async () => {
-      if (running) return;
-      try {
-        setRunning(true);
-        await runRounds(1);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Auto-run failed");
-      } finally {
-        setRunning(false);
-      }
-    }, Math.max(200, intervalMs));
-
-    return () => window.clearInterval(timer);
-  }, [autoRun, intervalMs, running]);
-
-  // Speak current turn aloud when voice is enabled
-  useEffect(() => {
-    if (!voiceEnabled || !currentTurn) {
-      stopTTS();
-      return;
-    }
-    const speaker = agentMap.get(currentTurn.speaker_id);
-    if (!speaker) return;
-    speak(currentTurn.message, agentVoiceParams(speaker));
-  }, [voiceEnabled, currentTurn, agentMap, speak, stopTTS]);
-
-  // Auto-advance: after the round finishes (summary shown), start the next round
-  useEffect(() => {
-    if (!showReactions || running) return;
-    const timer = setTimeout(() => {
-      onRun(1);
-    }, 15000);
-    return () => clearTimeout(timer);
-  }, [showReactions, running]);
-
   // Auto-scroll center stage history to bottom so recent turns are visible
   useEffect(() => {
     if (historyRef.current) {
@@ -397,81 +567,146 @@ export default function App() {
     }
   }, [liveTurns.length, activeTurnIdx]);
 
-  // Auto-scroll chat log when feed updates
-  useEffect(() => {
-    if (sidebarCollapsed && chatLogRef.current) {
-      chatLogRef.current.scrollTo({ top: chatLogRef.current.scrollHeight, behavior: "smooth" });
+  const userAgents = (state?.agents ?? []).filter(a => a.role === "user");
+  const completedRoundCount = authoritativeRoundCount(state);
+  const setupLocked = running || completedRoundCount > 0;
+  const canContinueToModerator = Boolean(
+    (topicInput.trim() || datasetInfo) && draftAgents.length >= MIN_USER_AGENTS,
+  );
+
+  function applyStateSnapshot(snapshot: State, resetPlayback = false): boolean {
+    const previous = stateRef.current;
+    if (!acceptsSnapshot(previous, snapshot)) return false;
+    const newRun = previous !== null && previous.run_id !== snapshot.run_id;
+    if (draftBaseRef.current && sameRoster(draftBaseRef.current, snapshot)) {
+      draftBaseRef.current = snapshot;
+    } else if (isAdmin && draftBaseRef.current) {
+      const additions = rosterAdditions(draftBaseRef.current, snapshot);
+      if (additions) {
+        setDraftAgents((drafts) => [...drafts, ...additions.map(draftFromAgent)]);
+        draftBaseRef.current = snapshot;
+      }
     }
-  }, [feed, sidebarCollapsed]);
-
-  // Auto-switch side panel to dashboard when dataset is present
-  useEffect(() => {
-    if (state?.dataset_summary) {
-      setSidePanelView("dashboard");
+    if (newRun || resetPlayback) {
+      clearTurnQueue();
+      if (resetPlayback) setError("The round was interrupted. Playback has stopped; you can retry the round.");
+      setDashboardVisuals([]);
     }
-  }, [state?.dataset_summary]);
+    if (newRun) {
+      setAutoRun(false);
+      setAppPhase("setup");
+      setSetupStep("team");
+      setTopicInput(snapshot.topic);
+      setDashboardMode(false);
+      setSidePanelView("controls");
+      if (!sameRoster(previous!, snapshot)) {
+        setDraftAgents(snapshot.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+        draftBaseRef.current = snapshot;
+        setEditingDraftIndex(null);
+      }
+    }
+    stateRef.current = snapshot;
+    setStateValue(snapshot);
+    const baseline = previous === null || newRun || resetPlayback;
+    if (baseline) {
+      const savedRound = snapshot.rounds?.[snapshot.rounds.length - 1];
+      const round = savedRound?.round_number ?? snapshot.round_number;
+      setCompletedRound(round);
+      setLiveRound(round);
+      setAgentFocus(null);
+      playbackRoundRef.current = round;
+      setDashboardMode(Boolean(snapshot.dataset_preview && round >= 3));
+      setDashboardVisuals([]);
+      setActiveTurnIdx(savedRound ? savedRound.turns.length - 1 : -1);
+      const actions = snapshot.public_history.flatMap((turn) => turn.table_action ? [{ turn, action: turn.table_action }] : []);
+      setAccumulatedHighlights(actions.flatMap(({ action }) => action.highlights));
+      setAccumulatedAnnotations(actions.flatMap(({ action }) => action.annotations));
+      setAgentTablePositions(new Map(actions.map(({ turn, action }) => [turn.speaker_id, { agentId: turn.speaker_id, ...action.navigate_to }])));
+      if (previous === null && savedRound) setAppPhase("arena");
+    }
+    playback.sync(snapshot, baseline);
+    return true;
+  }
 
-  const hasAgents = (state?.agents ?? []).filter(a => a.role === "user").length > 0;
+  function updatePersonalityPreset(presetId: string) {
+    setPersonalityConfig(createPersonalityFromPreset(presetId));
+  }
 
-  const currentMbtiType = useMemo(() => {
-    if (mbtiMode === "pick") return mbtiPicks.join("");
-    const allAnswered = quizAnswers.every((a) => a !== null);
-    if (!allAnswered) return "";
-    return scoreQuestionnaire(quizAnswers as number[]);
-  }, [mbtiMode, mbtiPicks, quizAnswers]);
+  function updateOceanTrait(trait: keyof typeof personalityConfig.ocean, value: OceanLevel) {
+    setPersonalityConfig((prev) => ({
+      ...prev,
+      ocean: { ...prev.ocean, [trait]: value },
+    }));
+  }
 
-  const chatLogEndRef = useRef<HTMLDivElement>(null);
+  function changeOceanLevel(trait: keyof typeof personalityConfig.ocean, direction: -1 | 1) {
+    const current = oceanLevelPosition(personalityConfig.ocean[trait]);
+    const next = Math.min(3, Math.max(1, current + direction));
+    updateOceanTrait(trait, OCEAN_LEVELS[next - 1].value);
+  }
 
-  // Scroll test chat to bottom when messages change
-  useEffect(() => {
-    chatLogEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages]);
+  function updateCustomInstructions(value: string) {
+    setPersonalityConfig((prev) => ({ ...prev, custom_instructions: value }));
+  }
 
-  async function onTopicSubmit(event: FormEvent) {
-    event.preventDefault();
+  function updateFunctionalRole(value: string) {
+    setPersonalityConfig((prev) => ({ ...prev, role_goal: value }));
+  }
+
+  function clearFunctionalRole() {
+    setPersonalityConfig((prev) => ({ ...prev, role_goal: "" }));
+  }
+
+  function resetPersonalityDefaults() {
+    setPersonalityConfig((prev) => ({
+      ...prev,
+      ocean: Object.fromEntries(OCEAN_TRAITS.map(({ key }) => [key, "medium"])) as unknown as OceanTraits,
+    }));
+  }
+
+  async function onChairStrategyChange(strategyId: string) {
     setError("");
+    setChairSaving(true);
     try {
-      const result = await setTopic(topicInput.trim());
-      setStateValue(result.state);
-      setFeed([]);
+      const result = await setModeratorStrategy(strategyId);
+      applyStateSnapshot(result.state);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to set topic");
+      setError(e instanceof Error ? e.message : "Failed to update Chair strategy");
+    } finally {
+      setChairSaving(false);
     }
   }
 
   function onAddDraftAgent(event: FormEvent) {
     event.preventDefault();
-    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
-    setDraftAgents((prev) => [
-      ...prev,
-      {
-        name: nameInput.trim(),
-        persona_text: personaInput.trim(),
-        energy: energyInput,
-        mbti_type: currentMbtiType,
-      },
-    ]);
+    if (!nameInput.trim() || !personaInput.trim()) return;
+    if (!draftBaseRef.current) draftBaseRef.current = stateRef.current;
+    const draft: DraftAgent = {
+      id: editingDraftIndex === null ? undefined : draftAgents[editingDraftIndex]?.id,
+      name: nameInput.trim(),
+      persona_text: personaInput.trim(),
+      personality: personalityConfig,
+    };
+    setDraftAgents((prev) => {
+      if (editingDraftIndex === null) return [...prev, draft];
+      return prev.map((agent, idx) => idx === editingDraftIndex ? draft : agent);
+    });
     setNameInput("");
     setPersonaInput("");
-    setEnergyInput(0.6);
-    setMbtiPicks(["E", "S", "T", "J"]);
-    setQuizAnswers(Array(8).fill(null));
-    setMbtiMode("pick");
+    setPersonalityConfig(createMediumPersonality());
+    setEditingDraftIndex(null);
   }
 
   async function onSubmitAgent(event: FormEvent) {
     event.preventDefault();
-    if (!nameInput.trim() || !personaInput.trim() || !currentMbtiType) return;
+    if (!nameInput.trim() || !personaInput.trim()) return;
     setError("");
     try {
-      const enriched = enrichPersonaWithMBTI(personaInput.trim(), currentMbtiType);
-      await addAgentsWithMBTI([{ name: nameInput.trim(), persona_text: enriched, energy: energyInput, mbti_type: currentMbtiType }]);
+      const result = await addAgents([{ name: nameInput.trim(), persona_text: personaInput.trim(), personality: personalityConfig }]);
+      applyStateSnapshot(result.state);
       setNameInput("");
       setPersonaInput("");
-      setEnergyInput(0.6);
-      setMbtiPicks(["E", "S", "T", "J"]);
-      setQuizAnswers(Array(8).fill(null));
-      setMbtiMode("pick");
+      setPersonalityConfig(createMediumPersonality());
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to submit agent");
     }
@@ -479,149 +714,192 @@ export default function App() {
 
   function removeDraftAgent(idx: number) {
     setDraftAgents((prev) => prev.filter((_, i) => i !== idx));
+    if (editingDraftIndex === idx) {
+      setEditingDraftIndex(null);
+      setNameInput("");
+      setPersonaInput("");
+      setPersonalityConfig(createMediumPersonality());
+    } else if (editingDraftIndex !== null && editingDraftIndex > idx) {
+      setEditingDraftIndex(editingDraftIndex - 1);
+    }
+  }
+
+  function editDraftAgent(idx: number) {
+    const agent = draftAgents[idx];
+    if (!agent) return;
+    setEditingDraftIndex(idx);
+    setNameInput(agent.name);
+    setPersonaInput(agent.persona_text);
+    setPersonalityConfig(agent.personality);
   }
 
   function openTestChat(agent: DraftAgent) {
     setTestChatAgent(agent);
-    setChatMessages([]);
-    setChatInput("");
-  }
-
-  function closeTestChat() {
-    stopListening();
-    stopTTS();
-    setTestChatAgent(null);
-    setChatMessages([]);
-    setChatInput("");
-  }
-
-  const sendTestMessage = useCallback(async (overrideMessage?: string) => {
-    const msg = overrideMessage ?? chatInput;
-    if (!testChatAgent || !msg.trim() || chatLoading) return;
-    const userMsg = msg.trim();
-    setChatInput("");
-    setChatMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    setChatLoading(true);
-    try {
-      const enrichedPersona = enrichPersonaWithMBTI(testChatAgent.persona_text, testChatAgent.mbti_type);
-      const result = await testChat(
-        testChatAgent.name,
-        enrichedPersona,
-        testChatAgent.mbti_type,
-        chatMessages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.content })),
-        userMsg
-      );
-      setChatMessages((prev) => [...prev, { role: "agent", content: result.reply }]);
-      // Speak the agent's reply aloud when input was via voice
-      if (overrideMessage) {
-        const agentSeed = testChatAgent.name.split("").reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
-        speak(result.reply, { voiceIndex: agentSeed });
-      }
-    } catch (e: unknown) {
-      setChatMessages((prev) => [
-        ...prev,
-        { role: "agent", content: "(Error: could not reach agent)" },
-      ]);
-    } finally {
-      setChatLoading(false);
-    }
-  }, [testChatAgent, chatInput, chatLoading, chatMessages, speak]);
-
-  const sendTestMessageRef = useRef(sendTestMessage);
-  sendTestMessageRef.current = sendTestMessage;
-
-  function startListening() {
-    const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognitionAPI || chatLoading) return;
-    const recognition = new SpeechRecognitionAPI();
-    recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.onresult = (event: any) => {
-      const transcript: string = event.results[0][0].transcript;
-      sendTestMessageRef.current(transcript);
-    };
-    recognition.onend = () => setListening(false);
-    recognition.onerror = () => setListening(false);
-    recognitionRef.current = recognition;
-    setListening(true);
-    recognition.start();
-  }
-
-  function stopListening() {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-    }
-    setListening(false);
   }
 
   async function launchArena() {
-    const hasBackendAgents = (state?.agents ?? []).filter(a => a.role !== "mediator").length > 0;
-    if ((!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && !hasBackendAgents)) return;
+    if (launchPendingRef.current || (!topicInput.trim() && !datasetInfo) || !stateRef.current) return;
     setError("");
+    launchPendingRef.current = true;
+    setLaunching(true);
     try {
-      // In dataset mode the topic was already set by the upload endpoint
-      if (!datasetInfo) {
-        await setTopic(topicInput.trim());
+      const expected = draftBaseRef.current ?? stateRef.current;
+      if (expected.run_id !== stateRef.current.run_id || expected.revision !== stateRef.current.revision) {
+        throw new Error("The roster changed in another request. Reload the page before saving.");
       }
-      // Only add agents that aren't already loaded on the backend (e.g. from ?demo=)
-      const existingNames = new Set((state?.agents ?? []).map(a => a.name));
-      const newDrafts = draftAgents.filter(a => !existingNames.has(a.name));
-      if (newDrafts.length > 0) {
-        const enrichedAgents = newDrafts.map((a) => ({
-          ...a,
-          persona_text: enrichPersonaWithMBTI(a.persona_text, a.mbti_type),
-        }));
-        const result = await addAgentsWithMBTI(enrichedAgents);
-        setStateValue(result.state);
-      }
-      setFeed([]);
-      if (datasetInfo) setSidePanelView("dashboard");
+      const drafts = draftAgents;
+      const result = await syncAgents(drafts, expected);
+      if (!applyStateSnapshot(result.state)) return;
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      draftBaseRef.current = result.state;
+      arenaStartedAtRef.current = Date.now();
       setAppPhase("arena");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to launch arena");
+    } finally {
+      launchPendingRef.current = false;
+      setLaunching(false);
     }
   }
 
-  async function onRun(rounds: number) {
+  async function persistTopic(topic: string): Promise<boolean> {
+    if (!topic || stateRef.current?.topic === topic) return true;
+    if (topicSaveRef.current) {
+      await topicSaveRef.current;
+      return persistTopic(topic);
+    }
+    setTopicSaving(true);
+    const request = setTopic(topic).then(({ state: nextState }) => {
+      if (!applyStateSnapshot(nextState)) return false;
+      draftBaseRef.current = nextState;
+      return true;
+    });
+    topicSaveRef.current = request;
+    try {
+      return await request;
+    } finally {
+      if (topicSaveRef.current === request) topicSaveRef.current = null;
+      setTopicSaving(false);
+    }
+  }
+
+  async function onTopicBlur() {
     setError("");
     try {
-      setRunning(true);
-      await runRounds(rounds);
+      await persistTopic(topicInput.trim());
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Run failed");
-    } finally {
-      setRunning(false);
+      setError(e instanceof Error ? e.message : "Failed to update discussion topic");
     }
+  }
+
+  async function continueToModerator() {
+    if (!canContinueToModerator) return;
+    setError("");
+    try {
+      if (!datasetInfo && !await persistTopic(topicInput.trim())) return;
+      setSetupStep("moderator");
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to update discussion topic");
+    }
+  }
+
+  async function onImportAgents(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError("");
+    try {
+      const imported = parseAgentRoster(await file.text(), catalog);
+      if (draftAgents.length + imported.length > MAX_AGENTS) {
+        throw new Error(`Importing these agents would exceed the limit of ${MAX_AGENTS}.`);
+      }
+      setDraftAgents((current) => [...current, ...imported]);
+      draftBaseRef.current = stateRef.current;
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to import agents");
+    }
+  }
+
+  function onRun(rounds: number) {
+    setError("");
+    playback.run(rounds);
+  }
+
+  function onDisplaySecondsChange(value: number) {
+    if (!Number.isFinite(value)) return;
+    const seconds = Math.min(300, Math.max(1, Math.round(value)));
+    setDisplaySeconds(seconds);
+    void setContributionDisplayTime(seconds).catch((e: unknown) => {
+      setError(e instanceof Error ? e.message : "Could not update display time");
+    });
   }
 
   async function onReset() {
+    clearTurnQueue();
     setError("");
     try {
       const result = await reset(topicInput.trim() || undefined);
-      setStateValue(result.state);
-      setFeed([]);
+      if (!applyStateSnapshot(result.state)) return;
       setAutoRun(false);
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
       setAppPhase("setup");
-      setDraftAgents([]);
-      setDatasetInfo(null);
-      setFullDatasetRows([]);
+      setSetupStep("team");
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      setEditingDraftIndex(null);
+      draftBaseRef.current = result.state;
       setAccumulatedHighlights([]);
       setAccumulatedAnnotations([]);
       setAgentTablePositions(new Map());
       setDashboardMode(false);
-      setDashboardTransitioning(false);
       setDashboardVisuals([]);
-      setInputMode("topic");
       setSidePanelView("controls");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Reset failed");
     }
+  }
+
+  function showEndOverview(summary: EndSummary) {
+    const startedAt = arenaStartedAtRef.current ?? Date.now();
+    clearTurnQueue();
+    playback.auto(false);
+    stopTTS();
+    setVoiceEnabled(false);
+    setEndConfirmationOpen(false);
+    setConfirmingEnd(false);
+    setAppPhase("arena");
+    setEndSummary(summary);
+  }
+
+  async function onConfirmEnd() {
+    if (running || confirmingEnd) return;
+    const startedAt = arenaStartedAtRef.current ?? Date.now();
+    setConfirmingEnd(true);
+    setError("");
+    try {
+      const result = await endSession((Date.now() - startedAt) / 1000);
+      showEndOverview(result.summary);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not end the session");
+      setConfirmingEnd(false);
+    }
+  }
+
+  function onEndReturnToEntry() {
+    clearTurnQueue();
+    setEndSummary(null);
+    onReturnToEntry();
+  }
+
+  function formatDuration(totalSeconds: number): string {
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return hours > 0
+      ? `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`
+      : `${minutes}m ${String(seconds).padStart(2, "0")}s`;
   }
 
   async function onIntervene(event: FormEvent) {
@@ -631,9 +909,10 @@ export default function App() {
     setError("");
     try {
       setIntervening(true);
-      await intervene(msg);
+      const result = await intervene(msg);
+      if (!applyStateSnapshot(result.state)) return;
       // Show immediately in center stage and logs (don't wait for WebSocket)
-      const turn: PublicTurn = { speaker_id: "human", message: msg };
+      const turn = result.state.public_history[result.state.public_history.length - 1];
       setLiveTurns((prev) => [...prev, turn]);
       setInterveneInput("");
     } catch (e: unknown) {
@@ -646,38 +925,44 @@ export default function App() {
   async function onLoadDemo() {
     setError("");
     try {
+      if (topicSaveRef.current) await topicSaveRef.current;
       const result = await loadDemo();
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
-      setFeed([]);
+      setDraftAgents(result.added.map((agent) => {
+        const { id, ...draft } = draftFromAgent(agent);
+        return draft;
+      }));
+      draftBaseRef.current = result.state;
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
-      setDatasetInfo(null);
-      setAppPhase("arena");
+      setAccumulatedHighlights([]);
+      setAccumulatedAnnotations([]);
+      setAgentTablePositions(new Map());
+      setDashboardMode(false);
+      setDashboardVisuals([]);
+      setSidePanelView("controls");
+      setAppPhase("setup");
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to load demo");
+      setError(e instanceof Error ? e.message : "Failed to load debate preset");
     }
   }
 
   async function onLoadDataDemo() {
     setError("");
     try {
-      const result = await loadExample("ExampleDataset1");
-      setStateValue(result.state);
+      const result = await loadExample("ExampleDataset2");
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
-      setFeed([]);
       setActiveTurnIdx(-1);
       setShowReactions(false);
       setLiveTurns([]);
       clearTurnQueue();
-      if (result.parsed) {
-        setDatasetInfo(result.parsed);
-        setFullDatasetRows(result.parsed.sample_rows);
-      }
-      setSidePanelView("dashboard");
-      setAppPhase("arena");
+      setDraftAgents(result.state.agents.filter((agent) => agent.role === "user").map(draftFromAgent));
+      draftBaseRef.current = result.state;
+      setEditingDraftIndex(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to load data demo");
     }
@@ -690,11 +975,8 @@ export default function App() {
     setUploading(true);
     try {
       const result = await uploadDataset(file);
-      setStateValue(result.state);
+      if (!applyStateSnapshot(result.state)) return;
       setTopicInput(result.state.topic);
-      setDatasetInfo(result.parsed);
-      setFullDatasetRows(result.parsed.sample_rows);
-      setFeed([]);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to upload dataset");
     } finally {
@@ -702,11 +984,87 @@ export default function App() {
     }
   }
 
+  const missionActions = isAdmin ? <div className="setup-toolbar" aria-label="Setup actions">
+    <button className="btn-demo" onClick={isDataMode ? onLoadDataDemo : onLoadDemo}>{isDataMode ? "Load Data Analysis Demo" : "Load Debate Preset"}</button>
+    <button className="launch-button" onClick={continueToModerator} disabled={!canContinueToModerator}>{topicSaving ? "Saving Topic..." : "Continue to Moderator"}</button>
+  </div> : null;
+  const participantBriefingValue = state?.topic
+    ? isDataMode ? state.topic.replace(/^Analyze the uploaded dataset:\s*/i, "") : state.topic
+    : "";
+
+  const missionBriefing = <section className="mission-briefing section-block setup-pixel-panel">
+    <div className="mission-briefing__copy">
+      <span className="mode-label">{isDataMode ? "Data Analysis Mode" : "Debate Mode"}</span>
+      <h2 className="section-title">Mission Briefing</h2>
+    </div>
+    {isAdmin && <div className="mission-briefing__control">
+      {!isDataMode ? <div className="stacked-form">
+        <label className="form-label" htmlFor="discussion-topic">Discussion Topic</label>
+        <div className="mission-briefing__input-row">
+          <textarea id="discussion-topic" value={topicInput} onChange={(e) => setTopicInput(e.target.value)} onBlur={() => void onTopicBlur()} rows={2} placeholder="What should the agents debate about?" />
+          {missionActions}
+        </div>
+      </div> : <div className="stacked-form">
+        <label className="form-label" htmlFor="dataset-upload">Dataset Upload / Selection</label>
+        <div className="mission-briefing__input-row">
+          <input id="dataset-upload" type="file" accept=".csv,.xlsx,.xls" onChange={onDatasetUpload} disabled={uploading} />
+          {missionActions}
+        </div>
+        {uploading && <p className="upload-status">Uploading and parsing...</p>}
+        {datasetInfo && <div className="dataset-preview">
+          <p className="dataset-preview__summary">{datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns</p>
+          <div className="dataset-columns" tabIndex={0} role="region" aria-label="Dataset columns">{datasetInfo.columns.map((col, i) => <span key={i} className="arena-node__quirk">{col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}</span>)}</div>
+        </div>}
+      </div>}
+    </div>}
+    {participant && participantBriefingValue && <div className="mission-briefing__participant-value">
+      <span>{isDataMode ? "Dataset" : "Discussion Topic"}</span>
+      <p className="mission-briefing__topic">{participantBriefingValue}</p>
+    </div>}
+  </section>;
+
+  const interventionForm = (
+    <form className="intervention-bar" onSubmit={onIntervene}>
+      <input
+        className="intervention-bar__input"
+        value={interveneInput}
+        onChange={(e) => setInterveneInput(e.target.value)}
+        placeholder="Type a message to intervene in the discussion..."
+        disabled={intervening}
+        maxLength={500}
+      />
+      <button
+        className="intervention-bar__send"
+        type="submit"
+        disabled={intervening || !interveneInput.trim()}
+      >
+        Send
+      </button>
+    </form>
+  );
+
   return (
-    <div className="app-shell">
+    <div className={`app-shell app-shell--${initialMode}`}>
       {/* ---- HUD HEADER ---- */}
+      {appPhase === "setup" ? (
+        <SetupHeader onBack={setupStep === "moderator" ? () => setSetupStep("team") : onSetupBack} busy={setupStep === "team" && setupLocked} sessionCode={isAdmin ? getSessionId() : undefined} backAccessory={setupStep === "team" ? missionBriefing : undefined}>
+          {participant && (
+            <div className="setup-header-round" aria-label={`Round ${completedRoundCount}`}>
+              <span>ROUND</span><strong>{completedRoundCount}</strong>
+            </div>
+          )}
+          <div className={`status ${connection}`}>
+            <span className="status__dot" />
+            {connection === "connected" ? "ONLINE" : "OFFLINE"}
+          </div>
+        </SetupHeader>
+      ) : (
       <header className="topbar">
-        <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
+        <div className="topbar__identity">
+          <button type="button" className="topbar__back" disabled={setupLocked} onClick={() => { setSetupStep("moderator"); setAppPhase("setup"); }} title={setupLocked ? "Setup is locked after the first round starts" : "Back to moderator selection"}><ArrowIcon direction="left" /> BACK</button>
+          <Brand className="topbar__brand" />
+          <h1 className="topbar__title" title={state?.topic ?? "The Arena"}>{state?.topic || "The Arena"}</h1>
+        </div>
         <div className="topbar__right">
           {appPhase === "arena" && (
             <button
@@ -719,7 +1077,7 @@ export default function App() {
           )}
           <div className="round-counter">
             <span className="round-counter__label">Round</span>
-            <span className="round-counter__value">{state?.round_number ?? 0}</span>
+            <span className="round-counter__value">{completedRoundCount}</span>
           </div>
           <div className={`status ${connection}`}>
             <span className="status__dot" />
@@ -727,6 +1085,7 @@ export default function App() {
           </div>
         </div>
       </header>
+      )}
 
       {error && <div className="error-banner">{error}</div>}
 
@@ -734,250 +1093,188 @@ export default function App() {
           SETUP PHASE
           ================================================================ */}
       {appPhase === "setup" ? (
-        <main className="setup-phase">
-          {/* ---- LEFT COLUMN: Topic + Agent Creator ---- */}
+        <main className="setup-screen">
+          {setupStep === "moderator" && isAdmin ? (
+            <ModeratorSelection
+              strategies={moderatorStrategies}
+              selectedId={state?.moderator_strategy_id ?? "consensus"}
+              saving={chairSaving}
+              launching={launching}
+              onSelect={onChairStrategyChange}
+              onBack={() => setSetupStep("team")}
+              onEnter={launchArena}
+            />
+          ) : <>
+          <div className="setup-phase">
+          {/* ---- LEFT COLUMN: Agent Creator ---- */}
           <section className="setup-left">
-            {/* Topic or Dataset (admin only) */}
-            {isAdmin && (
-              <div className="section-block">
-                <h2 className="section-title">Mission Briefing</h2>
-                <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
-                  <button type="button" className={`mbti-tab${inputMode === "topic" ? " mbti-tab--active" : ""}`}
-                    onClick={() => setInputMode("topic")}>
-                    Text Topic
-                  </button>
-                  <button type="button" className={`mbti-tab${inputMode === "dataset" ? " mbti-tab--active" : ""}`}
-                    onClick={() => setInputMode("dataset")}>
-                    Upload Dataset
-                  </button>
-                </div>
-
-                {inputMode === "topic" ? (
-                  <form onSubmit={onTopicSubmit} className="stacked-form">
-                    <label className="form-label">Discussion Topic</label>
-                    <textarea
-                      value={topicInput}
-                      onChange={(e) => setTopicInput(e.target.value)}
-                      rows={2}
-                      placeholder="What should the agents debate about?"
-                    />
-                    <button type="submit">Set Topic</button>
-                  </form>
-                ) : (
-                  <div className="stacked-form">
-                    <label className="form-label">CSV or Excel File</label>
-                    <input type="file" accept=".csv,.xlsx,.xls" onChange={onDatasetUpload} disabled={uploading} />
-                    {uploading && <p style={{ color: "#94a3b8", fontSize: "0.82rem" }}>Uploading and parsing...</p>}
-                    {datasetInfo && (
-                      <div className="dataset-preview">
-                        <p style={{ color: "#4ade80", fontSize: "0.82rem", margin: "4px 0" }}>
-                          {datasetInfo.filename} &mdash; {datasetInfo.shape[0]} rows x {datasetInfo.shape[1]} columns
-                        </p>
-                        <div className="dataset-columns">
-                          {datasetInfo.columns.map((col, i) => (
-                            <span key={i} className="arena-node__quirk">
-                              {col.name} [{col.dtype}]{col.null_count > 0 ? ` (${col.null_count} nulls)` : ""}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-            {/* Show current topic for students */}
-            {!isAdmin && state?.topic && (
-              <div className="section-block">
-                <h2 className="section-title">Discussion Topic</h2>
-                <p style={{ color: "#94a3b8", margin: "0.5rem 0" }}>{state.topic}</p>
-              </div>
-            )}
 
             {/* Agent Creator */}
-            <div className="section-block">
-              <h2 className="section-title">Create Agent</h2>
+            <div className="section-block agent-creation setup-pixel-panel">
+              <div className="settings-header">
+                <h2 className="section-title">{editingDraftIndex === null ? "Add / Edit Agents" : "Edit Agent"}</h2>
+              </div>
               <form onSubmit={isAdmin ? onAddDraftAgent : onSubmitAgent} className="stacked-form">
-                <label className="form-label">Agent Name</label>
-                <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
+                <fieldset className="agent-creation__group">
+                <legend>Identity</legend>
+                <label className="form-label" htmlFor="agent-name">Agent Name</label>
+                <input id="agent-name" value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="Name your agent..." />
 
-                <label className="form-label">Persona (1-2 lines)</label>
-                <textarea value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their personality and perspective..." />
+                <label className="form-label" htmlFor="agent-persona">
+                  Persona (1-2 lines)
+                  <small className="form-label__hint"><em>Describe the agent's background, expertise, perspective, and relevant priorities.</em></small>
+                </label>
+                <textarea id="agent-persona" value={personaInput} onChange={(e) => setPersonaInput(e.target.value)} rows={2} placeholder="Describe their background, expertise, and perspective..." />
+                </fieldset>
 
-                <label className="form-label">Energy: {energyInput.toFixed(2)}</label>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.01}
-                  value={energyInput}
-                  onChange={(e) => setEnergyInput(Number(e.target.value))}
-                />
+                <fieldset className="agent-creation__group">
+                <legend>Agent setup</legend>
+                <label className="form-label" htmlFor="agent-personality">Agent Preset</label>
+                <select id="agent-personality" value={personalityConfig.preset_id} onChange={(e) => updatePersonalityPreset(e.target.value)}>
+                  {PERSONALITY_PRESETS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>{preset.name}</option>
+                  ))}
+                </select>
 
-                {/* MBTI Mode Tabs */}
-                <label className="form-label">Personality Type (MBTI)</label>
-                <div className="mbti-tabs">
-                  <button type="button" className={`mbti-tab${mbtiMode === "pick" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("pick")}>
-                    Pick MBTI
-                  </button>
-                  <button type="button" className={`mbti-tab${mbtiMode === "quiz" ? " mbti-tab--active" : ""}`} onClick={() => setMbtiMode("quiz")}>
-                    Questionnaire
-                  </button>
+                <div className="functional-role-field">
+                  <label className="form-label" htmlFor="agent-role-goal">
+                    Functional Role <span>(optional)</span>
+                    <small className="form-label__hint">Defines the agent's responsibility and contribution.</small>
+                  </label>
+                  <textarea
+                    id="agent-role-goal"
+                    value={personalityConfig.role_goal}
+                    onChange={(event) => updateFunctionalRole(event.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Enter a concise responsibility or contribution goal..."
+                  />
+                  {personalityConfig.role_goal && (
+                    <button type="button" className="functional-role__remove" onClick={clearFunctionalRole}>Remove</button>
+                  )}
                 </div>
 
-                {mbtiMode === "pick" ? (
-                  <div className="mbti-picker">
-                    {MBTI_DIMENSIONS.map((dim, di) => (
-                      <div className="mbti-dimension" key={di}>
-                        <span className="mbti-dimension__label">{dim.label}</span>
-                        <div className="mbti-toggle-pair">
-                          {dim.options.map((opt, oi) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              className={`mbti-toggle__option${mbtiPicks[di] === opt ? " mbti-toggle__option--active" : ""}`}
-                              onClick={() => setMbtiPicks((prev) => { const next = [...prev]; next[di] = opt; return next; })}
-                              title={dim.descriptions[oi]}
-                            >
-                              {dim.fullLabels[oi]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mbti-questionnaire">
-                    {MBTI_QUESTIONS.map((q, qi) => (
-                      <div className="mbti-question" key={qi}>
-                        <p className="mbti-question__text">{q.question}</p>
-                        <div className="mbti-question__choices">
-                          <button
-                            type="button"
-                            className={`mbti-choice${quizAnswers[qi] === 0 ? " mbti-choice--selected" : ""}`}
-                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 0; return next; })}
-                          >
-                            {q.choiceA}
-                          </button>
-                          <button
-                            type="button"
-                            className={`mbti-choice${quizAnswers[qi] === 1 ? " mbti-choice--selected" : ""}`}
-                            onClick={() => setQuizAnswers((prev) => { const next = [...prev]; next[qi] = 1; return next; })}
-                          >
-                            {q.choiceB}
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                </fieldset>
 
-                {currentMbtiType && <div className="mbti-badge">{currentMbtiType}</div>}
+                <fieldset className="agent-creation__group">
+                <legend>Personality</legend>
+                  <div className="ocean-panel" role="group" aria-labelledby="ocean-heading">
+                    <div className="agent-creation__ocean-heading">
+                      <h3 id="ocean-heading">OCEAN traits</h3>
+                      <span>Trait level</span>
+                    </div>
+                    {OCEAN_TRAITS.map((trait) => {
+                      const position = oceanLevelPosition(personalityConfig.ocean[trait.key]);
+                      const level = oceanLevel(personalityConfig.ocean[trait.key]);
+                      return <div className={`ocean-trait trait--${trait.key}`} key={trait.key}>
+                        <span className="ocean-trait__label"><strong>{trait.label.charAt(0)}</strong>{trait.label.slice(1)}</span>
+                        <div className="ocean-level-stepper" role="group" aria-label={`${trait.label}: ${level}`}>
+                          <button type="button" onClick={() => changeOceanLevel(trait.key, -1)} disabled={position === 1} aria-label={`Decrease ${trait.label}`}>−</button>
+                          <span className="ocean-level-pips" aria-hidden="true">
+                            {[1, 2, 3].map((pip) => <i key={pip} className={pip <= position ? "is-filled" : ""} />)}
+                          </span>
+                          <button type="button" onClick={() => changeOceanLevel(trait.key, 1)} disabled={position === 3} aria-label={`Increase ${trait.label}`}>+</button>
+                        </div>
+                        <span className="ocean-level-name" aria-live="polite">{level}</span>
+                      </div>
+                    })}
+                    <button type="button" className="agent-creation__reset" onClick={resetPersonalityDefaults}>↻ Reset Traits</button>
+                  </div>
 
-                <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim() || !currentMbtiType}>
-                  {isAdmin ? "Add to Roster" : "Submit Agent"}
+                </fieldset>
+
+                <fieldset className="agent-creation__group">
+                <legend>Additional details</legend>
+                <label className="form-label" htmlFor="agent-instructions">Additional Instructions (optional)</label>
+                <textarea
+                  id="agent-instructions"
+                  value={personalityConfig.custom_instructions}
+                  onChange={(e) => updateCustomInstructions(e.target.value)}
+                  rows={2}
+                  placeholder="Add behavior notes for this agent..."
+                />
+                </fieldset>
+
+                <button type="submit" className="btn-primary" disabled={!nameInput.trim() || !personaInput.trim()}>
+                  {isAdmin ? (editingDraftIndex === null ? "Add to Roster" : "Save Agent") : "Submit Agent"}
                 </button>
+                {isAdmin && editingDraftIndex !== null && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingDraftIndex(null);
+                      setNameInput("");
+                      setPersonaInput("");
+                      setPersonalityConfig(createMediumPersonality());
+                    }}
+                  >
+                    Cancel Edit
+                  </button>
+                )}
               </form>
             </div>
           </section>
 
           {/* ---- RIGHT COLUMN: Roster ---- */}
           <section className="setup-right">
-            {isAdmin ? (
+            {!participant ? (
               /* Admin: draft roster (local agents before launch) */
-              <div className="section-block">
-                <h2 className="section-title">
-                  Agent Roster
-                  <span className="section-title__count">{draftAgents.length}</span>
-                </h2>
+              <div className="section-block agent-roster setup-pixel-panel">
+                <div className="agent-roster__header">
+                  <h2 className="section-title">
+                    Agent Roster
+                    <span className="section-title__count">{draftAgents.length} / {MIN_USER_AGENTS} minimum</span>
+                  </h2>
+                  <div className="agent-roster__actions">
+                    <input ref={rosterFileRef} type="file" accept="application/json,.json" onChange={onImportAgents} hidden />
+                    <button type="button" onClick={() => rosterFileRef.current?.click()}>Import</button>
+                    <button type="button" onClick={() => downloadAgentRoster(draftAgents)} disabled={!draftAgents.length}>Export</button>
+                  </div>
+                </div>
 
                 {draftAgents.length === 0 ? (
                   <div className="roster-empty">No agents yet. Create one to get started.</div>
                 ) : (
                   <div className="draft-roster">
                     {draftAgents.map((agent, idx) => (
-                      <div className="draft-agent-card" key={idx}>
-                        <img
-                          className="draft-agent-card__avatar"
-                          src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(agent.name)}`}
-                          alt={agent.name}
-                          width={48}
-                          height={48}
-                        />
-                        <div className="draft-agent-card__info">
-                          <div className="draft-agent-card__header">
-                            <span className="draft-agent-card__name">{agent.name}</span>
-                            <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>
-                          </div>
-                          <p className="draft-agent-card__persona">{agent.persona_text}</p>
-                          <div className="draft-agent-card__energy-bar">
-                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
-                          </div>
-                        </div>
-                        <div className="draft-agent-card__actions">
+                      <AgentCard key={idx} agent={agent} catalog={catalog}>
+                          <button className="btn-test" onClick={() => editDraftAgent(idx)}>Edit</button>
                           <button className="btn-test" onClick={() => openTestChat(agent)}>Test</button>
-                          <button className="btn-remove" onClick={() => removeDraftAgent(idx)}>X</button>
-                        </div>
-                      </div>
+                          <button className="btn-remove" aria-label={`Remove ${agent.name}`} onClick={() => removeDraftAgent(idx)}>Remove</button>
+                        </AgentCard>
                     ))}
                   </div>
                 )}
               </div>
             ) : (
               /* Student: show agents already on the server */
-              <div className="section-block">
+              <div className="section-block agent-roster setup-pixel-panel">
                 <h2 className="section-title">
                   Agents in Arena
-                  <span className="section-title__count">{(state?.agents ?? []).filter(a => a.role === "user").length}</span>
+                  <span className="section-title__count">{userAgents.length}</span>
                 </h2>
 
-                {(state?.agents ?? []).filter(a => a.role === "user").length === 0 ? (
+                {userAgents.length === 0 ? (
                   <div className="roster-empty">No agents submitted yet. Add yours!</div>
                 ) : (
                   <div className="draft-roster">
-                    {(state?.agents ?? []).filter(a => a.role === "user").map((agent) => (
-                      <div className="draft-agent-card" key={agent.id}>
-                        <img
-                          className="draft-agent-card__avatar"
-                          src={agentAvatarUrl(agent)}
-                          alt={agent.name}
-                          width={48}
-                          height={48}
-                        />
-                        <div className="draft-agent-card__info">
-                          <div className="draft-agent-card__header">
-                            <span className="draft-agent-card__name">{agent.name}</span>
-                            {agent.mbti_type && <span className="mbti-badge mbti-badge--small">{agent.mbti_type}</span>}
-                          </div>
-                          <div className="draft-agent-card__energy-bar">
-                            <div className="draft-agent-card__energy-fill" style={{ width: `${agent.energy * 100}%` }} />
-                          </div>
-                        </div>
-                      </div>
+                    {userAgents.map((agent) => (
+                      <AgentCard key={agent.id} agent={agent} catalog={catalog}>
+                          <button className="btn-test" onClick={() => openTestChat(draftFromAgent(agent))}>Test</button>
+                        </AgentCard>
                     ))}
                   </div>
                 )}
-                <p style={{ color: "#64748b", fontSize: "0.85rem", marginTop: "1rem", textAlign: "center" }}>
+                <p style={{ color: "#b8a9c6", fontSize: "0.85rem", marginTop: "1rem", textAlign: "center" }}>
                   Waiting for the debate to begin...
                 </p>
               </div>
             )}
 
-            {/* Action Buttons (admin only) */}
-            {isAdmin && (
-            <div className="setup-actions">
-              <button className="btn-demo" onClick={onLoadDemo}>Load Debate Demo</button>
-              <button className="btn-demo" onClick={onLoadDataDemo}>Load Data Analysis Demo</button>
-              <button
-                className="launch-button"
-                onClick={launchArena}
-                disabled={(!topicInput.trim() && !datasetInfo) || (draftAgents.length === 0 && (state?.agents ?? []).filter(a => a.role !== "mediator").length === 0)}
-              >
-                Launch into Arena
-              </button>
-            </div>
-            )}
           </section>
+          </div>
+          <SetupProgress activeStep={1} />
+          </>}
         </main>
       ) : (
         /* ================================================================
@@ -985,76 +1282,69 @@ export default function App() {
            ================================================================ */
         <main className="arena-layout">
           {/* ---- ARENA VIEWPORT ---- */}
-          <section className={`arena-viewport${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
-            {/* Dashboard transition overlay */}
-            {dashboardTransitioning && (
-              <div className="dashboard-transition-overlay">
-                <div className="dashboard-transition-overlay__spinner" />
-                <p className="dashboard-transition-overlay__text">Building dashboard...</p>
+          <section className={`arena-viewport${isDataMode ? " arena-viewport--data" : ""}${dashboardMode ? " arena-viewport--dashboard" : datasetInfo && fullDatasetRows.length > 0 ? " arena-viewport--table" : ""}`}>
+            {isDataMode && <div className="data-view-toolbar">
+              <div className="arena-view-switch">
+              <button
+                type="button"
+                className={`control-tab${!dashboardMode ? " control-tab--active" : ""}`}
+                onClick={() => setDashboardMode(false)}
+              >
+                Dataset
+              </button>
+              <button
+                type="button"
+                className={`control-tab${dashboardMode ? " control-tab--active" : ""}`}
+                onClick={() => setDashboardMode(true)}
+              >
+                Dashboard
+              </button>
               </div>
-            )}
-
+              {(state?.round_number ?? 0) <= completedRound && !!state?.world_state?.dashboard_narrative && <p className="data-analysis-focus">{String(state.world_state.dashboard_narrative)}</p>}
+              <span className="data-round-status">{analysisRound ? 'Round ' + analysisRound + (analysisRound > completedRound ? ' - In progress' : ' - Completed') : 'Ready'}</span>
+            </div>}
+            {isDataMode && <>
+            <div className="data-discussion-header"><DataAgentStrip agents={state?.agents ?? []} positions={visibleAgentPositions}
+              moderatorStrategyId={state?.moderator_strategy_id}
+              currentSpeakerId={analysisRound > completedRound ? currentSpeakerId : null}
+              onLocate={(agentId) => { setDashboardMode(false); setAgentFocus((previous) => ({ agentId, request: (previous?.request ?? 0) + 1 })); }} />
+              {state && <div className="data-agent-speech"><DataContribution state={state} turn={currentTurn} active={analysisRound > completedRound} pastTurns={pastTurns} currentRound={analysisRound} /></div>}
+            </div>
+            {!dashboardMode && datasetInfo && <div className="data-preview-caption">
+              {fullDatasetRows.length} of {datasetInfo.shape[0]} rows{fullDatasetRows.length < datasetInfo.shape[0] ? ' - navigation within preview' : ''}
+              {analysisRound >= 3 && <span>Earlier exploration (rounds 1-2)</span>}
+            </div>}
+            </>}
             {dashboardMode ? (
               /* ---- DASHBOARD CANVAS ---- */
               <>
                 <DashboardCanvas
-                  visuals={dashboardVisuals}
+                  visuals={visibleDashboardVisuals}
                   agents={state?.agents ?? []}
                   agentMap={agentMap}
                   currentTurn={currentTurn}
-                  dashboardNarrative={(state?.world_state?.dashboard_narrative as string) ?? ""}
+                  currentRound={analysisRound}
+                  completedRound={completedRound}
                 />
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
-            ) : datasetInfo && fullDatasetRows.length > 0 ? (
+            ) : datasetInfo ? (
               /* ---- DATA TABLE ARENA ---- */
               <>
                 <ArenaTable
                   rows={fullDatasetRows}
-                  columns={datasetInfo.columns.map(c => c.name)}
+                  columns={previewColumns}
                   agents={state?.agents ?? []}
-                  currentTurn={currentTurn}
-                  pastTurns={pastTurns}
+                  currentTurn={analysisRound >= 3 ? null : currentTurn}
                   accumulatedHighlights={accumulatedHighlights}
                   accumulatedAnnotations={accumulatedAnnotations}
-                  agentPositions={agentTablePositions}
+                  focus={agentFocus}
+                  agentPositions={visibleAgentPositions}
                   agentMap={agentMap}
                 />
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
             ) : (
               /* ---- CIRCULAR ARENA (fallback for non-dataset mode) ---- */
@@ -1064,6 +1354,9 @@ export default function App() {
                     const isSpeaking = currentSpeakerId === agent.id;
                     const hasSomeoneActive = currentSpeakerId !== null;
                     const color = agentColor(agent);
+                    const presetName = agent.personality
+                      ? PERSONALITY_PRESETS.find((preset) => preset.id === agent.personality?.preset_id)?.name
+                      : undefined;
                     const isHovered = hoveredAgentId === agent.id;
                     const visibleTurns = liveTurns.length > 0 ? liveTurns : latestTurns;
                     const lastMsg = visibleTurns.slice().reverse().find(t => t.speaker_id === agent.id)?.message ?? null;
@@ -1085,28 +1378,16 @@ export default function App() {
                         onMouseLeave={() => setHoveredAgentId(null)}
                       >
                         <div className="arena-node__avatar-wrap">
-                          <img className="arena-node__avatar" src={agentAvatarUrl(agent)} alt={agent.name} width={64} height={64} />
-                          {agent.role === "mediator" && <span className="arena-node__role-badge">MOD</span>}
-                          {agent.mbti_type && <span className="arena-node__mbti-badge">{agent.mbti_type}</span>}
+                          <img className="arena-node__avatar" src={agentAvatarUrl(agent, state?.moderator_strategy_id)} alt={agent.name} width={64} height={64} />
+                          {agent.role === "mediator"
+                            ? <span className="arena-node__personality-badge">{activeModeratorName}</span>
+                            : presetName && <span className="arena-node__personality-badge">{presetName}</span>}
                         </div>
                         <div className="arena-node__name">{agent.name}</div>
-                        <div className="arena-node__energy-bar">
-                          <div
-                            className={`arena-node__energy-fill${agent.energy < 0.3 ? " arena-node__energy-fill--low" : ""}`}
-                            style={{ width: `${agent.energy * 100}%` }}
-                          />
-                        </div>
-                        <div className="arena-node__quirks">
-                          {agent.quirks.map((q, i) => (
-                            <span className="arena-node__quirk" key={i}>{q}</span>
-                          ))}
-                        </div>
-
                         {showReactions && latestRound?.round_result.reactions
                           .filter(r => r.agent_id === agent.id)
                           .map((reaction, ri) => (
                             <div className="arena-reaction-bubble" key={ri}>
-                              <span className="arena-reaction-bubble__emoji">{reaction.emoji}</span>
                               <span className="arena-reaction-bubble__text">{reaction.micro_comment}</span>
                             </div>
                           ))
@@ -1142,7 +1423,7 @@ export default function App() {
                         ) : agentMap.get(currentTurn.speaker_id) ? (
                           <img
                             className="center-stage__speaker-avatar"
-                            src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!)}
+                            src={agentAvatarUrl(agentMap.get(currentTurn.speaker_id)!, state?.moderator_strategy_id)}
                             alt=""
                             width={40}
                             height={40}
@@ -1177,358 +1458,120 @@ export default function App() {
                     </div>
                   )}
                 </div>
-
                 {/* Intervention Input Bar */}
-                <form className="intervention-bar" onSubmit={onIntervene}>
-                  <input
-                    className="intervention-bar__input"
-                    value={interveneInput}
-                    onChange={(e) => setInterveneInput(e.target.value)}
-                    placeholder="Type a message to intervene in the discussion..."
-                    disabled={intervening}
-                    maxLength={500}
-                  />
-                  <button
-                    className="intervention-bar__send"
-                    type="submit"
-                    disabled={intervening || !interveneInput.trim()}
-                  >
-                    Send
-                  </button>
-                </form>
+                {interventionForm}
               </>
             )}
           </section>
 
-          {/* ---- RIGHT COLUMN: Chat Log or Side Panel ---- */}
-          {hasAgents && sidebarCollapsed ? (
-            <aside className="chat-log-panel">
-              <div className="chat-log-panel__header">
-                <h2 className="section-title">Conversation Log</h2>
-                <button className="sidebar-toggle" onClick={() => setSidebarCollapsed(false)} title="Show controls">{"\u2630"}</button>
-              </div>
-              <div className="chat-log" ref={chatLogRef}>
-                {feed.length === 0 && liveTurns.length === 0 && (
-                  <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
-                )}
-                {feed.map((roundEvent) => (
-                  <div key={roundEvent.round_result.round_number}>
-                    <div className="chat-log__round-divider">
-                      <span className="chat-log__round-divider-line" />
-                      <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
-                      <span className="chat-log__round-divider-line" />
-                    </div>
-                    {roundEvent.round_result.turns.map((turn, ti) => {
-                      const isHuman = turn.speaker_id === "human";
-                      const agent = agentMap.get(turn.speaker_id);
-                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                      return (
-                        <div key={ti}>
-                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                            {isHuman ? (
-                              <span className="chat-log__human-avatar">You</span>
-                            ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                            )}
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                          {turn.visual && (
-                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                ))}
-                {liveTurns.length > 0 && (
-                  <div>
-                    <div className="chat-log__round-divider">
-                      <span className="chat-log__round-divider-line" />
-                      <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
-                      <span className="chat-log__round-divider-line" />
-                    </div>
-                    {liveTurns.map((turn, ti) => {
-                      const isHuman = turn.speaker_id === "human";
-                      const agent = agentMap.get(turn.speaker_id);
-                      const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                      return (
-                        <div key={`live-${ti}`}>
-                          <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                            {isHuman ? (
-                              <span className="chat-log__human-avatar">You</span>
-                            ) : (
-                              <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                            )}
-                            <div className="chat-log__body">
-                              <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                              <p className="chat-log__message">{turn.message}</p>
-                            </div>
-                          </div>
-                          {turn.visual && (
-                            <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-              {isAdmin && (
-                <div className="chat-log-panel__controls">
-                  <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                  <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                  <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
-                  <button className="btn-danger" onClick={onReset}>Reset</button>
-                </div>
-              )}
-            </aside>
-          ) : (
-            <aside className="side-panel">
-              {/* Tab selector */}
-              <div className="mbti-tabs" style={{ marginBottom: "8px" }}>
-                <button type="button" className={`mbti-tab${sidePanelView === "controls" ? " mbti-tab--active" : ""}`}
-                  onClick={() => setSidePanelView("controls")}>
-                  Controls
-                </button>
-                <button type="button" className={`mbti-tab${sidePanelView === "dashboard" ? " mbti-tab--active" : ""}`}
-                  onClick={() => setSidePanelView("dashboard")}>
-                  Dashboard
-                </button>
-              </div>
+          {/* ---- RIGHT COLUMN: Controls and conversation log ---- */}
+          <aside className={`side-panel${mobilePanelOpen ? " mobile-panel-open" : ""}`}>
+            <button type="button" className="arena-mobile-panel-toggle" aria-expanded={mobilePanelOpen} onClick={() => setMobilePanelOpen((open) => !open)}>{mobilePanelOpen ? "Close controls" : "Open controls"}</button>
+            {/* Tab selector */}
+            <div className="control-tabs" style={{ marginBottom: "8px" }}>
+              <button type="button" className={`control-tab${sidePanelView === "controls" ? " control-tab--active" : ""}`}
+                onClick={() => setSidePanelView("controls")}>
+                Controls
+              </button>
+              <button type="button" className={`control-tab${sidePanelView === "log" ? " control-tab--active" : ""}`}
+                onClick={() => setSidePanelView("log")}>
+                Conversation Log
+              </button>
+            </div>
 
-              {sidePanelView === "controls" ? (
-                <>
-                  {/* Command Center (admin only) */}
-                  {isAdmin && (
-                    <div className="section-block">
-                      <h2 className="section-title">Command Center</h2>
-                      <div className="button-row">
-                        <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
-                        <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
-                        <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
-                        <button className="btn-danger" onClick={onReset}>Reset</button>
-                      </div>
-                      <div className="control-row">
-                        <label className="toggle-row">
-                          <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} className="toggle-input" />
-                          <span className="toggle-switch" />
-                          <span className="toggle-label">Auto-Run</span>
-                        </label>
-                      </div>
-                      <div className="control-row">
-                        <label className="form-label">Interval (ms)</label>
-                        <input type="number" min={200} step={100} value={intervalMs} onChange={(e) => setIntervalMs(Number(e.target.value) || 1000)} />
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Battle Metrics */}
+            {sidePanelView === "controls" ? (
+              <>
+                {/* Command Center (admin only) */}
+                {isAdmin && (
                   <div className="section-block">
-                    <h2 className="section-title">Battle Metrics</h2>
-                    {metrics ? (
-                      <div className="metrics">
-                        <div className="metric-row">
-                          <span className="metric-label">Consensus</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--consensus" style={{ width: `${metrics.consensus_score * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.consensus_score)}</span>
-                        </div>
-                        <div className="metric-row">
-                          <span className="metric-label">Polarization</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--polarization" style={{ width: `${metrics.polarization_score * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.polarization_score)}</span>
-                        </div>
-                        <div className="metric-row">
-                          <span className="metric-label">Civility</span>
-                          <div className="metric-bar-track">
-                            <div className="metric-bar-fill metric-bar-fill--civility" style={{ width: `${metrics.civility_score * 100}%` }} />
-                          </div>
-                          <span className="metric-value">{metricValue(metrics.civility_score)}</span>
-                        </div>
-                        <div className="coalitions-row">
-                          <span className="metric-label">Coalitions</span>
-                          <div className="coalitions-list">
-                            {metrics.detected_coalitions.length
-                              ? metrics.detected_coalitions.map((c, i) => <span className="coalition-chip" key={i}>{c}</span>)
-                              : <span className="metric-value">None detected</span>
-                            }
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="metrics-empty">No metrics yet</div>
-                    )}
-                  </div>
-
-                  {/* Simulation Info */}
-                  <div className="section-block">
-                    <h2 className="section-title">Simulation Info</h2>
-                    <div className="info-grid">
-                      <div className="info-item">
-                        <span className="info-label">Round</span>
-                        <span className="info-value">{state?.round_number ?? 0}</span>
-                      </div>
-                      <div className="info-item">
-                        <span className="info-label">Agents</span>
-                        <span className="info-value">{state?.agents.length ?? 0}</span>
-                      </div>
-                      <div className="info-item info-item--full">
-                        <span className="info-label">Topic</span>
-                        <span className="info-value">{state?.topic ?? "-"}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Conversation Log */}
-                  <div className="section-block section-block--log">
-                    <h2 className="section-title">
-                      Conversation Log
-                      <span className="section-title__count">{feed.length}</span>
-                    </h2>
-                    <div className="chat-log" ref={chatLogRef}>
-                      {feed.length === 0 && liveTurns.length === 0 && (
-                        <div className="chat-log__empty">No conversations yet. Run a round to begin.</div>
-                      )}
-                      {feed.map((roundEvent) => (
-                        <div key={roundEvent.round_result.round_number}>
-                          <div className="chat-log__round-divider">
-                            <span className="chat-log__round-divider-line" />
-                            <span className="chat-log__round-divider-text">Round {roundEvent.round_result.round_number}</span>
-                            <span className="chat-log__round-divider-line" />
-                          </div>
-                          {roundEvent.round_result.turns.map((turn, ti) => {
-                            const isHuman = turn.speaker_id === "human";
-                            const agent = agentMap.get(turn.speaker_id);
-                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                            return (
-                              <div key={ti}>
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                                {turn.visual && (
-                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                      {liveTurns.length > 0 && (
-                        <div>
-                          <div className="chat-log__round-divider">
-                            <span className="chat-log__round-divider-line" />
-                            <span className="chat-log__round-divider-text">Round {(state?.round_number ?? feed.length) || feed.length + 1}</span>
-                            <span className="chat-log__round-divider-line" />
-                          </div>
-                          {liveTurns.map((turn, ti) => {
-                            const isHuman = turn.speaker_id === "human";
-                            const agent = agentMap.get(turn.speaker_id);
-                            const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                            return (
-                              <div key={`live-${ti}`}>
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={32} height={32} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                                {turn.visual && (
-                                  <VisualCard visual={turn.visual} agentColor={color} agentName={agent?.name ?? "Unknown"} />
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* ---- Dashboard Tab: Visual Contributions ---- */
-                <div className="section-block section-block--log">
-                  <h2 className="section-title">Analysis Dashboard</h2>
-                  {/* Admin controls row within dashboard */}
-                  {isAdmin && (
-                    <div className="button-row" style={{ marginBottom: "8px" }}>
+                    <h2 className="section-title">Command Center</h2>
+                    <div className="button-row">
                       <button className="btn-primary" disabled={running} onClick={() => onRun(1)}>Run 1</button>
                       <button disabled={running} onClick={() => onRun(5)}>Run 5</button>
+                      <button onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                      <button className="btn-end" disabled={running} onClick={() => setEndConfirmationOpen(true)}>End</button>
                       <button className="btn-danger" onClick={onReset}>Reset</button>
                     </div>
-                  )}
-                  {/* Data Preview Table */}
-                  {datasetInfo && (
-                    <DataPreviewTable
-                      datasetInfo={datasetInfo}
-                      highlightedColumns={highlightedColumns}
-                    />
-                  )}
-                  <div className="dashboard-section">
-                    {feed.length === 0 ? (
-                      <div className="chat-log__empty">No analysis yet. Run a round to begin.</div>
-                    ) : (
-                      feed.map((roundEvent) => {
-                        const visuals = roundEvent.round_result.turns.filter(t => t.visual);
-                        return (
-                          <div className="dashboard-round-group" key={roundEvent.round_result.round_number}>
-                            <div className="dashboard-round-label">Round {roundEvent.round_result.round_number}</div>
-                            {/* Text summary for this round */}
-                            {roundEvent.round_result.turns.map((turn, ti) => {
-                              const isHuman = turn.speaker_id === "human";
-                              const agent = agentMap.get(turn.speaker_id);
-                              const color = isHuman ? "#10b981" : (agent ? agentColor(agent) : "#38bdf8");
-                              return (
-                                <div className={`chat-log__entry${isHuman ? " chat-log__entry--human" : ""}`} key={`text-${ti}`} style={{ "--agent-color": color } as React.CSSProperties}>
-                                  {isHuman ? (
-                                    <span className="chat-log__human-avatar">You</span>
-                                  ) : (
-                                    <img className="chat-log__avatar" src={agent ? agentAvatarUrl(agent) : ""} alt="" width={28} height={28} />
-                                  )}
-                                  <div className="chat-log__body">
-                                    <span className="chat-log__name">{isHuman ? "You" : (agent?.name ?? "?")}</span>
-                                    <p className="chat-log__message">{turn.message}</p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {/* Visual contributions */}
-                            {visuals.map((turn, ti) => {
-                              const agent = agentMap.get(turn.speaker_id);
-                              return (
-                                <VisualCard
-                                  key={`vis-${ti}`}
-                                  visual={turn.visual!}
-                                  agentColor={agent ? agentColor(agent) : "#38bdf8"}
-                                  agentName={agent?.name ?? "Unknown"}
-                                />
-                              );
-                            })}
-                          </div>
-                        );
-                      })
-                    )}
+                    <div className="control-row">
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={autoRun} onChange={(e) => playback.auto(e.target.checked)} className="toggle-input" />
+                        <span className="toggle-switch" />
+                        <span className="toggle-label">Auto-Run</span>
+                      </label>
+                    </div>
+                    <div className="control-row">
+                      <label className="form-label" htmlFor="contribution-display-time">Display time per contribution (s)</label>
+                      <input id="contribution-display-time" type="number" min={1} max={300} step={1} value={displaySeconds} onChange={(e) => onDisplaySecondsChange(Number(e.target.value))} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Simulation Info */}
+                <div className="section-block">
+                  <h2 className="section-title">Simulation Info</h2>
+                  <div className="info-grid">
+                    <div className="info-item">
+                      <span className="info-label">Round</span>
+                      <span className="info-value">{completedRoundCount}</span>
+                    </div>
+                    <div className="info-item">
+                      <span className="info-label">Agents</span>
+                      <span className="info-value">{state?.agents.length ?? 0}</span>
+                    </div>
+                    <div className="info-item info-item--full">
+                      <span className="info-label">Topic</span>
+                      <span className="info-value">{state?.topic ?? "-"}</span>
+                    </div>
                   </div>
                 </div>
-              )}
-            </aside>
+
+                <div className="section-block">
+                  <h2 className="section-title" id="controls-metrics-title">Metrics</h2>
+                  <MetricsPanel metrics={displayMetrics} labelledBy="controls-metrics-title" />
+                </div>
+
+              </>
+            ) : (
+              <ConversationLog state={state} liveTurns={liveTurns} liveRound={liveRound} agentMap={agentMap} visibleVisualIds={isDataMode ? visibleVisualIds : undefined} completedRound={isDataMode ? completedRound : undefined} />
+            )}
+          </aside>
+
+          {endConfirmationOpen && !endSummary && (
+            <div className="arena-end-layer" role="presentation">
+              <section className="arena-end-dialog arena-end-dialog--confirm" role="alertdialog" aria-modal="true" aria-labelledby="end-confirm-title" aria-describedby="end-confirm-description">
+                <span className="arena-end-dialog__eyebrow">End session</span>
+                <h2 id="end-confirm-title">End this {isDataMode ? "analysis" : "debate"}?</h2>
+                <p id="end-confirm-description">No further rounds can be started after you continue. The session log will remain available in the overview.</p>
+                <div className="arena-end-dialog__actions">
+                  <button type="button" disabled={confirmingEnd} onClick={() => setEndConfirmationOpen(false)}>Cancel</button>
+                  <button type="button" className="btn-end" disabled={confirmingEnd} onClick={() => void onConfirmEnd()}>{confirmingEnd ? "Ending..." : "End session"}</button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {endSummary && (
+            <div className="arena-end-layer arena-end-layer--overview">
+              <section className="arena-end-dialog arena-end-overview" role="dialog" aria-modal="true" aria-labelledby="end-overview-title">
+                <span className="arena-end-dialog__eyebrow">Session complete</span>
+                <h2 id="end-overview-title">{endSummary.topic}</h2>
+                <p className="arena-end-overview__intro">{isDataMode ? "Data analysis" : "Debate"} overview</p>
+                <div className="arena-end-metrics" aria-label="Session metrics">
+                  <div className="arena-end-metric"><span>Rounds</span><strong>{endSummary.rounds}</strong></div>
+                  <div className="arena-end-metric"><span>Duration</span><strong>{formatDuration(endSummary.duration_seconds)}</strong></div>
+                  <div className="arena-end-metric"><span>Contributions</span><strong>{endSummary.contributions}</strong></div>
+                  <div className="arena-end-metric"><span>Agents</span><strong>{endSummary.agents}</strong></div>
+                </div>
+                <section className="arena-end-evaluation" aria-labelledby="end-metrics-title">
+                  <h3 className="section-title" id="end-metrics-title">Final discussion state</h3>
+                  <MetricsPanel metrics={endMetrics} layout="grid" labelledBy="end-metrics-title" />
+                </section>
+                 <div className="arena-end-dialog__actions arena-end-overview__actions">
+                  <button type="button" onClick={() => downloadLogs().catch(() => setError("Download failed"))}>Download Log</button>
+                  <button type="button" className="btn-primary" onClick={onEndReturnToEntry}>Back to Entry</button>
+                </div>
+              </section>
+            </div>
           )}
         </main>
       )}
@@ -1536,67 +1579,13 @@ export default function App() {
       {/* ================================================================
          TEST CHAT MODAL
          ================================================================ */}
-      {testChatAgent && (
-        <div className="test-chat-overlay" onClick={closeTestChat}>
-          <div className="test-chat-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="test-chat-modal__header">
-              <div className="test-chat-modal__agent-info">
-                <img
-                  className="test-chat-modal__avatar"
-                  src={`https://api.dicebear.com/9.x/pixel-art/svg?seed=${encodeURIComponent(testChatAgent.name)}`}
-                  alt={testChatAgent.name}
-                  width={40}
-                  height={40}
-                />
-                <div>
-                  <div className="test-chat-modal__name">{testChatAgent.name}</div>
-                  <span className="mbti-badge mbti-badge--small">{testChatAgent.mbti_type}</span>
-                </div>
-              </div>
-              <button className="test-chat-modal__close" onClick={closeTestChat}>X</button>
-            </div>
-
-            <div className="test-chat-modal__messages">
-              {chatMessages.length === 0 && (
-                <div className="test-chat-modal__empty">
-                  Say hello to {testChatAgent.name} to test their personality.
-                </div>
-              )}
-              {chatMessages.map((msg, i) => (
-                <div key={i} className={`test-chat__bubble test-chat__bubble--${msg.role}`}>
-                  {msg.content}
-                </div>
-              ))}
-              {chatLoading && (
-                <div className="test-chat__bubble test-chat__bubble--agent test-chat__bubble--loading">
-                  Thinking...
-                </div>
-              )}
-              <div ref={chatLogEndRef} />
-            </div>
-
-            <div className="test-chat-modal__input-bar">
-              <input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendTestMessage(); } }}
-                placeholder={listening ? "Listening..." : "Type or speak a message..."}
-                disabled={chatLoading || listening}
-              />
-              <button
-                className={`btn-mic${listening ? " btn-mic--active" : ""}`}
-                onClick={listening ? stopListening : startListening}
-                disabled={chatLoading}
-                type="button"
-                title={listening ? "Stop listening" : "Speak"}
-              >
-                {listening ? "\u23F9" : "\uD83C\uDFA4"}
-              </button>
-              <button onClick={() => sendTestMessage()} disabled={chatLoading || !chatInput.trim()}>Send</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {testChatAgent && <TestChatModal
+        agent={testChatAgent}
+        onClose={() => setTestChatAgent(null)}
+        onError={setError}
+        speak={speak}
+        stopAudio={stopTTS}
+      />}
     </div>
   );
 }

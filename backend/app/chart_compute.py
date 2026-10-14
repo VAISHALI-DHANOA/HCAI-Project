@@ -33,13 +33,17 @@ def load_dataframe(csv_path: str | Path | None = None) -> pd.DataFrame:
         csv_path = _active_csv or _DEFAULT_CSV
     key = str(csv_path)
     if key not in _df_cache:
-        _df_cache[key] = pd.read_csv(csv_path)
+        reader = pd.read_excel if Path(csv_path).suffix.lower() in (".xlsx", ".xls") else pd.read_csv
+        _df_cache[key] = reader(csv_path)
     return _df_cache[key].copy()
 
 
-def clear_cache() -> None:
-    """Clear the cached DataFrames (useful after uploading a new dataset)."""
-    _df_cache.clear()
+def clear_cache(csv_path: str | Path | None = None) -> None:
+    """Invalidate an overwritten upload without evicting other sessions."""
+    if csv_path is None:
+        _df_cache.clear()
+    else:
+        _df_cache.pop(str(csv_path), None)
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +245,8 @@ def _compute_table(spec: dict, df: pd.DataFrame) -> dict | None:
                 formatted_row.append("N/A")
             elif isinstance(v, float):
                 formatted_row.append(round(v, 2))
+            elif isinstance(v, pd.Timestamp):
+                formatted_row.append(v.isoformat())
             else:
                 formatted_row.append(v)
         rows.append(formatted_row)

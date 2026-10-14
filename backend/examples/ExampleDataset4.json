@@ -136,32 +136,97 @@
     {
       "name": "Harper Nguyen",
       "persona_text": "Workforce analytics lead focused on whether training cushions automation impacts and improves retention.",
-      "energy": 0.66,
-      "mbti_type": "ENFJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Ibrahim Khan",
       "persona_text": "Data QA engineer who checks metric definitions and hunts inconsistent ranges across companies.",
-      "energy": 0.74,
-      "mbti_type": "ISTJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "medium",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Selin Y\u0131lmaz",
       "persona_text": "Quant researcher who tests moderation effects (training vs layoffs) and avoids causal overreach.",
-      "energy": 0.58,
-      "mbti_type": "INTP"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Ethan Brooks",
       "persona_text": "Visualization specialist who builds dashboards for execs: tiers, risk flags, and driver charts.",
-      "energy": 0.82,
-      "mbti_type": "ENFP"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Dr. Keiko Tanaka",
       "persona_text": "Innovation strategist who balances productivity gains with human outcomes like satisfaction.",
-      "energy": 0.6,
-      "mbti_type": "INTJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     }
   ]
 }

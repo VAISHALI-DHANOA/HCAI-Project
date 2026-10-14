@@ -136,32 +136,97 @@
     {
       "name": "Dr. Maya Chen",
       "persona_text": "Public health analyst who focuses on prevention and outcomes, separating signal from noise.",
-      "energy": 0.62,
-      "mbti_type": "INFJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "high",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Jonas Eklund",
       "persona_text": "Operations analyst who examines response times and staffing constraints across regions.",
-      "energy": 0.68,
-      "mbti_type": "ISTJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "medium",
+          "conscientiousness": "high",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Priyanka Desai",
       "persona_text": "Quant methodologist who tests relationships and warns about confounders.",
-      "energy": 0.57,
-      "mbti_type": "INTP"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "low",
+          "agreeableness": "medium",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Aminah Diallo",
       "persona_text": "Equity advocate who looks for who benefits most when access improves.",
-      "energy": 0.7,
-      "mbti_type": "ENFJ"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "high",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     },
     {
       "name": "Oliver Grant",
       "persona_text": "Visualization specialist who designs drill-down dashboards and KPI tiles for health performance.",
-      "energy": 0.8,
-      "mbti_type": "ENFP"
+      "personality": {
+        "preset_id": "custom",
+        "role_goal": "",
+        "ocean": {
+          "openness": "high",
+          "conscientiousness": "medium",
+          "extraversion": "high",
+          "agreeableness": "high",
+          "neuroticism": "medium"
+        },
+        "custom_instructions": "",
+        "scale_version": "ocean-low-medium-high-v1",
+        "preset_version": "research-presets-v2",
+        "prompt_mapping_version": "ocean-prompt-map-v3"
+      }
     }
   ]
 }

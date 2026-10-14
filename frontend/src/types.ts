@@ -4,18 +4,51 @@ export interface Agent {
   id: string;
   name: string;
   persona_text: string;
-  quirks: string[];
-  stance: string;
-  energy: number;
   role: Role;
-  mbti_type?: string;
+  personality?: AgentPersonality | null;
 }
 
 export interface DraftAgent {
+  id?: string;
   name: string;
   persona_text: string;
-  energy: number;
-  mbti_type: string;
+  personality: AgentPersonality;
+}
+
+export type OceanLevel = "low" | "medium" | "high";
+
+export interface OceanTraits {
+  openness: OceanLevel;
+  conscientiousness: OceanLevel;
+  extraversion: OceanLevel;
+  agreeableness: OceanLevel;
+  neuroticism: OceanLevel;
+}
+
+export interface AgentPersonality {
+  preset_id: string;
+  role_goal: string;
+  ocean: OceanTraits;
+  custom_instructions: string;
+  scale_version: string;
+  preset_version: string;
+  prompt_mapping_version: string;
+}
+
+export interface PersonalityPreset {
+  id: string;
+  name: string;
+  role_goal: string;
+  ocean: OceanTraits;
+  personality: AgentPersonality;
+}
+
+export interface PersonalityCatalog {
+  presets: PersonalityPreset[];
+  default_preset_id: string;
+  traits: Array<{ key: keyof OceanTraits; label: string }>;
+  levels: OceanLevel[];
+  level_version: string;
 }
 
 export interface ChatMessage {
@@ -56,8 +89,22 @@ export interface TableAction {
 export interface PublicTurn {
   speaker_id: string;
   message: string;
+  turn_type: "moderator_opening" | "participant" | "moderator_summary" | "human";
+  round_number: number;
+  moderator_strategy_id: string | null;
   visual?: VisualSpec | null;
   table_action?: TableAction | null;
+  generation?: GenerationMetadata | null;
+}
+
+export interface GenerationMetadata {
+  source: "llm" | "fallback";
+  operation: "discussion" | "summary" | "chat";
+  model: string;
+  max_tokens: number;
+  temperature: number;
+  timeout_seconds: number;
+  error_type: string | null;
 }
 
 export interface DatasetInfo {
@@ -69,7 +116,6 @@ export interface DatasetInfo {
 
 export interface Reaction {
   agent_id: string;
-  emoji: string;
   micro_comment: string;
 }
 
@@ -79,46 +125,130 @@ export interface RoundResult {
   turns: PublicTurn[];
   reactions: Reaction[];
   emergent_pattern: string;
-  metrics: Metrics;
+  thesis_metrics?: Partial<ThesisMetrics>;
 }
 
-export interface Metrics {
-  consensus_score: number;
-  polarization_score: number;
-  civility_score: number;
-  detected_coalitions: string[];
+export type PersonalityStabilityStatus = "available" | "insufficient_evidence" | "unavailable" | "error";
+export type ThesisMetricStatus = PersonalityStabilityStatus;
+
+export interface PersonalityStabilityAgentResult {
+  agent_id: string;
+  status: PersonalityStabilityStatus;
+  score: number | null;
+  reason: string;
+}
+
+export interface ConsensusRoundResult {
+  round_number: number;
+  status: ThesisMetricStatus;
+  score: number | null;
+  shared_conclusion: string | null;
+  unresolved_disagreement: string | null;
+  reason: string;
+  included_agent_ids: string[];
+  included_participant_count: number;
+}
+
+export interface ThesisMetrics {
+  version: "thesis-metrics-v1";
+  personality_stability: {
+    round: {
+      per_agent: PersonalityStabilityAgentResult[];
+      mean_score: number | null;
+      evaluated_agent_count: number;
+      insufficient_evidence_agent_count: number;
+    };
+    run: {
+      per_agent_mean: Record<string, number | null>;
+      overall_mean: number | null;
+      available_score_count: number;
+    };
+  };
+  conversation_convergence?: {
+    definition_version: "jaccard-lexical-overlap-v1";
+    method: "mean_pairwise_jaccard_token_set_similarity";
+    round: {
+      round_number: number;
+      status: ThesisMetricStatus;
+      round_score: number | null;
+      pair_count: number;
+      included_agent_ids: string[];
+      reason: string;
+    };
+    run: {
+      observations: Array<{ round_number: number; round_score: number }>;
+      first_round_score: number | null;
+      latest_score: number | null;
+      latest_round_number: number | null;
+      delta_from_first_round: number | null;
+      slope: number | null;
+    };
+  };
+  consensus?: {
+    round: ConsensusRoundResult;
+    run: {
+      latest_evaluable_round_number: number | null;
+      latest_evaluable_result: ConsensusRoundResult | null;
+    };
+  };
 }
 
 export interface State {
+  human_request: string;
+  run_id: string;
+  revision: number;
   topic: string;
   round_number: number;
   agents: Agent[];
   public_history: PublicTurn[];
   reactions: Reaction[];
+  rounds?: RoundResult[];
   world_state: Record<string, unknown>;
   dataset_summary?: string;
   dataset_columns?: string[];
+  dataset_preview?: DatasetInfo | null;
+  moderator_strategy_id?: string;
 }
 
 export interface WsRoundEvent {
   type: "round";
   round_result: RoundResult;
-  metrics: Metrics;
   state_snapshot: State;
 }
 
 export interface WsTurnEvent {
+  contribution_index?: number; // Human interventions are outside round.turns.
   type: "turn";
   turn: PublicTurn;
   round_number: number;
+  run_id: string;
 }
 
 export interface WsStateEvent {
   type: "state";
   state_snapshot: State;
+  reset_playback?: boolean;
 }
 
-export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent;
+export interface EndSummary {
+  topic: string;
+  rounds: number;
+  duration_seconds: number;
+  contributions: number;
+  agents: number;
+}
+
+export interface WsSessionEndedEvent {
+  type: "session_ended";
+  summary: EndSummary;
+}
+
+export interface WsPlaybackSettingsEvent {
+  type: "playback_settings";
+  display_seconds: number;
+}
+
+export type WsEvent = WsRoundEvent | WsTurnEvent | WsStateEvent | WsSessionEndedEvent | WsPlaybackSettingsEvent | { type: "lobby"; code: string; mode: "debate" | "data" | null };
 
 export interface DashboardVisual {
   id: string;
@@ -128,4 +258,14 @@ export interface DashboardVisual {
   agentColor: string;
   visual: VisualSpec;
   message: string;
+}
+
+export interface ModeratorStrategy {
+  id: string;
+  name: string;
+  description: string;
+  opening_rules: string[];
+  summary_rules: string[];
+  summary_request: string;
+  version: string;
 }

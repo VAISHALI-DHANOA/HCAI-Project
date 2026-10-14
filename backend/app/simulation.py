@@ -4,34 +4,42 @@ from pathlib import Path
 from typing import Awaitable, Callable
 
 from app.auto_visual import (
-    compute_dashboard_narrative,
-    compute_dashboard_visual,
     compute_table_action_and_visual,
 )
-from app.chart_compute import compute_chart_data
+from app.analysis import (
+    analysis_headline, analysis_report, analysis_visual,
+    compute_requested_analyses,
+)
 from app.llm import (
     generate_agent_message,
+    generate_data_contribution,
     generate_chair_summary,
-    generate_visual_spec,
-    AGENT_COLORS,
 )
-from app.metrics import compute_emergent_metrics
+from app.thesis_metrics import evaluate_thesis_metrics, personality_stability_error_payload
 from app.models import (
-    Agent, CellAnnotation, CellHighlight, PublicTurn, Reaction,
-    RoundResult, State, TableAction, VisualSpec,
+    Agent, AnalysisResult, CellAnnotation, CellHighlight, PublicTurn, Reaction,
+    RoundResult, State, TableAction,
 )
 from app.safety import enforce_civility, truncate_to_words
 from app.selection import select_speakers
 
-EMOJIS = ["🙂", "🤔", "⚡", "📚", "🧩", "🌱", "🌀", "🛠️", "✨", "🧠"]
-
+# Agent-specific highlight colors (with alpha for overlay)
+AGENT_COLORS = [
+    "#38bdf888",  # sky blue
+    "#f9731688",  # orange
+    "#a855f788",  # purple
+    "#22c55e88",  # green
+    "#ef444488",  # red
+    "#eab30888",  # yellow
+    "#ec489988",  # pink
+    "#06b6d488",  # cyan
+]
 
 def _stable_index(value: str, mod: int) -> int:
     return sum(ord(c) for c in value) % mod
 
 
 def _reaction_for(agent: Agent, round_number: int) -> Reaction:
-    emoji = EMOJIS[_stable_index(agent.id + str(round_number), len(EMOJIS))]
     micro_templates = [
         "Noted, testing this next.",
         "Interesting tension, stay curious.",
@@ -41,7 +49,7 @@ def _reaction_for(agent: Agent, round_number: int) -> Reaction:
     ]
     micro = micro_templates[_stable_index(agent.name + str(round_number), len(micro_templates))]
     micro = " ".join(micro.split()[:6])
-    return Reaction(agent_id=agent.id, emoji=emoji, micro_comment=micro)
+    return Reaction(agent_id=agent.id, micro_comment=micro)
 
 
 def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> str:
@@ -52,12 +60,16 @@ def _extract_emergent_pattern(turns: list[PublicTurn], agents: list[Agent]) -> s
     return "The group explored diverse angles while maintaining constructive energy."
 
 
-def _drift_stance(agent: Agent, topic: str, round_number: int) -> None:
-    anchor = agent.quirks[round_number % 3]
-    tone = "collaborative trials" if agent.energy >= 0.5 else "careful checks"
-    agent.stance = (
-        f"{agent.name} now frames {topic} through {anchor}, favoring {tone} with civil debate."
-    )
+def _compose_analysis_message(message: str, analyses: list) -> str:
+    """Keep the agent's contribution and append only backend-derived evidence."""
+    completed = [item for item in analyses if item.status == "completed"]
+    failed = [item for item in analyses if item.status != "completed"]
+    parts = [message.strip()]
+    if completed:
+        parts.extend(analysis_headline(item) for item in completed)
+    if failed:
+        parts.append(" ".join(analysis_report(item) for item in failed))
+    return " ".join(part for part in parts if part)
 
 
 async def run_round(
@@ -65,63 +77,44 @@ async def run_round(
     on_turn: Callable[[PublicTurn, int], Awaitable[None]] | None = None,
     csv_path: str | Path | None = None,
 ) -> RoundResult:
-    speakers = select_speakers(state.agents)
     state.round_number += 1
-
-    # Re-generate the dashboard narrative if the human request changed since
-    # it was last produced.  This ensures dashboard visuals align with what
-    # the human actually asked for, even when the intervention happens after
-    # round 2 (when the narrative is normally created).
-    if (
-        state.round_number >= 3
-        and state.dataset_summary
-        and state.human_request
-        and state.human_request != state.world_state.get("narrative_human_request", "")
-    ):
-        chair = next((a for a in state.agents if a.role == "mediator"), None)
-        if chair:
-            narrative = compute_dashboard_narrative(
-                chair, state, state.public_history,
-            )
-            state.world_state["dashboard_narrative"] = narrative
-            state.world_state["narrative_human_request"] = state.human_request
+    speakers = select_speakers(state.agents, state.run_id, state.round_number)
 
     turns: list[PublicTurn] = []
+    verified_path = bool(state.dataset_summary)
     for speaker in speakers:
-        raw_message = await generate_agent_message(
-            agent=speaker,
-            state=state,
-            active_turns=turns,
+        analysis = None
+        analyses = []
+        request = None
+        generated = await (
+            generate_data_contribution(speaker, state, turns)
+            if verified_path and speaker.role == "user"
+            else generate_agent_message(speaker, state, turns)
         )
-        message = enforce_civility(raw_message)
-        message = truncate_to_words(message, 40)
-
+        if verified_path and speaker.role == "user":
+            request = generated.analysis_request
+            if request is not None:
+                if "analyses" in request or isinstance(request.get("y_column"), list):
+                    analyses = [AnalysisResult(status="not_performed", request=request,
+                                               error="Request one analysis per contribution; no analysis was performed.")]
+                else:
+                    analyses = compute_requested_analyses(request, csv_path, state.public_history + turns)
+                analysis = analyses[0]
+        message = enforce_civility(generated.text)
+        # Data prompts already request short sentences; avoid cutting them mid-sentence.
+        if not verified_path:
+            message = truncate_to_words(message, 40)
         visual = None
         table_action = None
-        if state.dataset_summary and speaker.role == "user":
-            if state.dataset_columns and state.round_number >= 3:
-                # Dashboard mode: LLM returns lightweight spec, backend computes real data
-                narrative = state.world_state.get("dashboard_narrative", "")
-                spec_data = compute_dashboard_visual(
-                    speaker, state, message,
-                    round_number=state.round_number,
-                    column_names=state.dataset_columns,
-                    dashboard_narrative=narrative,
-                )
-                if spec_data and isinstance(spec_data, dict) and spec_data.get("visual_type"):
-                    computed = compute_chart_data(spec_data, csv_path=csv_path)
-                    if computed:
-                        try:
-                            visual = VisualSpec(
-                                visual_type=spec_data["visual_type"],
-                                title=spec_data.get("title", ""),
-                                data=computed,
-                                description=spec_data.get("description", ""),
-                            )
-                        except Exception:
-                            pass
-            elif state.dataset_columns:
-                # Rounds 1-2: table action + lightweight visual spec
+        if analysis is not None:
+            # Numeric facts always come from computation, never from the model.
+            if analysis.status == "completed" and (not analysis.reused or request.get("redisplay") is True):
+                visual = analysis_visual(analysis)
+            message = _compose_analysis_message(message, analyses)
+        if (state.dataset_summary and state.round_number <= 2 and speaker.role == "user"
+                and (state.dataset_preview is None or state.dataset_preview["sample_rows"])):
+            if state.dataset_columns:
+                # Preserve table navigation/annotations during onboarding and data quality.
                 speaker_idx = next(
                     (i for i, a in enumerate(state.agents) if a.id == speaker.id), 0
                 )
@@ -130,7 +123,8 @@ async def run_round(
                     speaker, state, message,
                     round_number=state.round_number,
                     column_names=state.dataset_columns,
-                    row_count=state.world_state.get("dataset_row_count", 200),
+                    row_count=(len(state.dataset_preview["sample_rows"]) if state.dataset_preview is not None
+                               else min(state.world_state.get("dataset_row_count", 200), 500)),
                 )
                 try:
                     ta_raw = action_data.get("table_action")
@@ -157,29 +151,17 @@ async def run_round(
                             highlights=highlights,
                             annotations=annotations,
                         )
-                    # Compute real chart data from the lightweight spec
-                    vis_raw = action_data.get("visual")
-                    if vis_raw and isinstance(vis_raw, dict) and vis_raw.get("visual_type"):
-                        computed = compute_chart_data(vis_raw, csv_path=csv_path)
-                        if computed:
-                            visual = VisualSpec(
-                                visual_type=vis_raw["visual_type"],
-                                title=vis_raw.get("title", ""),
-                                data=computed,
-                                description=vis_raw.get("description", ""),
-                            )
                 except Exception:
                     pass
-            else:
-                # Fallback: no dataset columns, use original visual generation
-                visual_data = await generate_visual_spec(speaker, state, message, round_number=state.round_number)
-                if visual_data:
-                    try:
-                        visual = VisualSpec(**visual_data)
-                    except Exception:
-                        visual = None
 
-        turn = PublicTurn(speaker_id=speaker.id, message=message, visual=visual, table_action=table_action)
+        turn = PublicTurn(
+            speaker_id=speaker.id, message=message, visual=visual,
+            turn_type="moderator_opening" if speaker.role == "mediator" else "participant",
+            round_number=state.round_number,
+            moderator_strategy_id=state.moderator_strategy_id if speaker.role == "mediator" else None,
+            table_action=table_action, generation=generated.generation, analysis=analysis,
+            additional_analyses=analyses[1:],
+        )
         turns.append(turn)
         if on_turn:
             await on_turn(turn, state.round_number)
@@ -188,24 +170,17 @@ async def run_round(
     non_speaking_users = [a for a in state.agents if a.role == "user" and a.id not in speaker_ids]
     reactions = [_reaction_for(agent, state.round_number) for agent in non_speaking_users]
 
-    for agent in state.agents:
-        if agent.role == "user":
-            _drift_stance(agent, state.topic, state.round_number)
-
     chair = next((a for a in state.agents if a.role == "mediator"), None)
     if chair:
-        summary_text = await generate_chair_summary(chair, state, turns)
-        summary_turn = PublicTurn(speaker_id=chair.id, message=summary_text)
+        summary = await generate_chair_summary(chair, state, turns)
+        summary_turn = PublicTurn(
+            speaker_id=chair.id, message=summary.text, generation=summary.generation,
+            turn_type="moderator_summary", round_number=state.round_number,
+            moderator_strategy_id=state.moderator_strategy_id,
+        )
         turns.append(summary_turn)
         if on_turn:
             await on_turn(summary_turn, state.round_number)
-
-        # At end of round 2, generate the dashboard narrative
-        if state.round_number == 2 and state.dataset_summary:
-            all_history = state.public_history + turns
-            narrative = compute_dashboard_narrative(chair, state, all_history)
-            state.world_state["dashboard_narrative"] = narrative
-            state.world_state["narrative_human_request"] = state.human_request
 
     state.public_history.extend(turns)
     state.reactions.extend(reactions)
@@ -214,13 +189,17 @@ async def run_round(
     state.world_state["last_speaker_ids"] = [speaker.id for speaker in speakers]
     state.world_state["round"] = state.round_number
 
-    metrics = compute_emergent_metrics(state)
-    state.world_state["metrics"] = metrics
+    # Thesis metric failures are data, never round failures.
+    try:
+        thesis_metrics = await evaluate_thesis_metrics(state)
+    except Exception:
+        thesis_metrics = personality_stability_error_payload(state)
+    state.world_state["thesis_metrics"] = thesis_metrics
     return RoundResult(
         round_number=state.round_number,
         speaker_ids=[speaker.id for speaker in speakers],
         turns=turns,
         reactions=reactions,
         emergent_pattern=emergent_pattern,
-        metrics=metrics,
+        thesis_metrics=thesis_metrics,
     )

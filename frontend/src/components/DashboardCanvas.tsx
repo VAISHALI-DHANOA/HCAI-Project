@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { Agent, DashboardVisual, PublicTurn } from "../types";
 import { VisualCard } from "./VisualCard";
 
@@ -11,7 +11,8 @@ interface DashboardCanvasProps {
   agents: Agent[];
   agentMap: Map<string, Agent>;
   currentTurn: PublicTurn | null;
-  dashboardNarrative: string;
+  currentRound: number;
+  completedRound: number;
 }
 
 export function DashboardCanvas({
@@ -19,52 +20,57 @@ export function DashboardCanvas({
   agents,
   agentMap,
   currentTurn,
-  dashboardNarrative,
+  currentRound,
+  completedRound,
 }: DashboardCanvasProps) {
   const currentSpeakerId = currentTurn?.speaker_id ?? null;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeCardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const container = containerRef.current;
+    const card = activeCardRef.current;
+    if (container && card) container.scrollTo({ top: container.scrollTop + card.getBoundingClientRect().top - container.getBoundingClientRect().top - 12, behavior: "smooth" });
+  }, [currentTurn, currentRound]);
 
   const mediatorIds = useMemo(() => {
     return new Set(agents.filter(a => a.role === "mediator").map(a => a.id));
   }, [agents]);
 
   const filteredVisuals = useMemo(() => {
-    return visuals.filter(v => !mediatorIds.has(v.speakerId));
+    return visuals.filter(v => !mediatorIds.has(v.speakerId)).sort((a, b) => b.roundNumber - a.roundNumber);
   }, [visuals, mediatorIds]);
 
   const latestVisualPerAgent = useMemo(() => {
     const map = new Map<string, string>();
     for (const v of filteredVisuals) {
-      map.set(v.speakerId, v.id);
+      if (!map.has(v.speakerId)) map.set(v.speakerId, v.id);
     }
     return map;
   }, [filteredVisuals]);
 
-  if (filteredVisuals.length === 0 && !dashboardNarrative) {
+  if (filteredVisuals.length === 0) {
     return (
       <div className="dashboard-canvas">
         <div className="dashboard-canvas__empty">
-          <p>Dashboard is ready. Visuals will appear as agents create them.</p>
+          <p>No visual contributions have been generated for this discussion.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="dashboard-canvas">
-      {dashboardNarrative && (
-        <div className="dashboard-canvas__narrative">
-          <h2 className="dashboard-canvas__narrative-title">{dashboardNarrative}</h2>
-        </div>
-      )}
+    <div className="dashboard-canvas" ref={containerRef}>
       <div className="dashboard-canvas__grid">
-        {filteredVisuals.map((vis) => {
+        {filteredVisuals.map((vis, index) => {
           const isLatestForAgent = latestVisualPerAgent.get(vis.speakerId) === vis.id;
-          const isSpeaking = currentSpeakerId === vis.speakerId;
+          const isSpeaking = currentSpeakerId === vis.speakerId && vis.roundNumber === currentRound && currentRound > completedRound;
           const agent = agentMap.get(vis.speakerId);
 
           return (
+            <Fragment key={vis.id}>
+            {(index === 0 || filteredVisuals[index - 1].roundNumber !== vis.roundNumber) && <h3 className="dashboard-round-heading">Round {vis.roundNumber} - {vis.roundNumber <= completedRound ? "Completed results" : "Current contributions"}</h3>}
             <div
-              key={vis.id}
+              ref={isSpeaking ? activeCardRef : undefined}
               className={`dashboard-card${isSpeaking && isLatestForAgent ? " dashboard-card--active" : ""}`}
               style={{ "--agent-color": vis.agentColor } as React.CSSProperties}
             >
@@ -94,8 +100,9 @@ export function DashboardCanvas({
                 </div>
               )}
 
-              <span className="dashboard-card__round-badge">R{vis.roundNumber}</span>
+              <span className="dashboard-card__round-badge">R{vis.roundNumber} - {vis.roundNumber <= completedRound ? "Completed" : isSpeaking ? "Current contribution" : "In progress"}</span>
             </div>
+            </Fragment>
           );
         })}
       </div>

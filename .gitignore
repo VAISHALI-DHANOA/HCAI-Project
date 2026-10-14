@@ -40,3 +40,10 @@ backend/logs/
 # Per-session uploaded datasets
 backend/uploads/
 
+
+# Local Tests
+/frontend/tests/
+/backend/tests/
+**/*.test.*
+**/*.spec.*
+/frontend/src/test-setup.ts

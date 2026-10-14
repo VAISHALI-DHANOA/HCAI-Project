@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from typing import Any
 
 import pandas as pd
@@ -28,7 +29,8 @@ def parse_dataset(file_bytes: bytes, filename: str) -> dict[str, Any]:
             "null_pct": round(null_count / len(df) * 100, 1) if len(df) > 0 else 0.0,
         })
 
-    sample_rows = df.head(500).fillna("NULL").to_dict(orient="records")
+    # Excel dates and pandas scalar types must also survive WebSocket JSON.
+    sample_rows = json.loads(df.head(500).fillna("NULL").to_json(orient="records", date_format="iso", double_precision=15))
 
     numeric_stats: dict[str, Any] = {}
     numeric_df = df.select_dtypes(include="number")
@@ -42,6 +44,11 @@ def parse_dataset(file_bytes: bytes, filename: str) -> dict[str, Any]:
         "sample_rows": sample_rows,
         "numeric_stats": numeric_stats,
     }
+
+
+def dataset_preview(parsed: dict[str, Any]) -> dict[str, Any]:
+    """The bounded preview shared by every participant in session snapshots."""
+    return {key: parsed[key] for key in ("filename", "shape", "columns", "sample_rows")}
 
 
 def build_dataset_summary_text(parsed: dict[str, Any]) -> str:

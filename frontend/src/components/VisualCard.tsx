@@ -3,7 +3,7 @@ import type { VisualSpec } from "../types";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   LineChart, Line,
-  ScatterChart, Scatter,
+  ScatterChart, Scatter, ResponsiveContainer,
 } from "recharts";
 
 interface VisualCardProps {
@@ -25,9 +25,7 @@ class VisualErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
 }
 
-const CHART_W = 280;
 const CHART_H = 150;
-const CHART_W_LARGE = 480;
 const CHART_H_LARGE = 260;
 
 export function VisualCard({ visual, agentColor, agentName, size = "default" }: VisualCardProps) {
@@ -56,16 +54,15 @@ export function VisualCard({ visual, agentColor, agentName, size = "default" }: 
 }
 
 function renderVisual(spec: VisualSpec, color: string, large: boolean = false) {
-  const w = large ? CHART_W_LARGE : CHART_W;
   const h = large ? CHART_H_LARGE : CHART_H;
   try {
     switch (spec.visual_type) {
       case "bar_chart":
-        return renderBarChart(spec.data, color, w, h);
+        return renderBarChart(spec.data, color, h);
       case "line_chart":
-        return renderLineChart(spec.data, color, w, h);
+        return renderLineChart(spec.data, color, h);
       case "scatter":
-        return renderScatterChart(spec.data, color, w, h);
+        return renderScatterChart(spec.data, color, h);
       case "table":
       case "heatmap":
         return renderTable(spec.data);
@@ -79,7 +76,7 @@ function renderVisual(spec: VisualSpec, color: string, large: boolean = false) {
   }
 }
 
-function renderBarChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
+function renderBarChart(data: any, color: string, h: number = CHART_H) {
   const labels = Array.isArray(data.labels) ? data.labels : [];
   const values = Array.isArray(data.values) ? data.values : [];
   if (labels.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
@@ -89,17 +86,17 @@ function renderBarChart(data: any, color: string, w: number = CHART_W, h: number
     value: Number(values[i]) || 0,
   }));
   return (
-    <BarChart width={w} height={h} data={chartData}>
+    <ResponsiveContainer width="100%" height={h}><BarChart data={chartData}>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid rgba(56,189,248,0.3)", fontSize: 11, color: "#e2e8f0" }} />
       <Bar dataKey="value" fill={color} radius={[4, 4, 0, 0]} />
-    </BarChart>
+    </BarChart></ResponsiveContainer>
   );
 }
 
-function renderLineChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
+function renderLineChart(data: any, color: string, h: number = CHART_H) {
   const labels = Array.isArray(data.labels) ? data.labels : [];
   const values = Array.isArray(data.values) ? data.values : [];
   if (labels.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
@@ -109,29 +106,29 @@ function renderLineChart(data: any, color: string, w: number = CHART_W, h: numbe
     value: Number(values[i]) || 0,
   }));
   return (
-    <LineChart width={w} height={h} data={chartData}>
+    <ResponsiveContainer width="100%" height={h}><LineChart data={chartData}>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="name" tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid rgba(56,189,248,0.3)", fontSize: 11, color: "#e2e8f0" }} />
       <Line type="monotone" dataKey="value" stroke={color} strokeWidth={2} dot={{ r: 3, fill: color }} />
-    </LineChart>
+    </LineChart></ResponsiveContainer>
   );
 }
 
-function renderScatterChart(data: any, color: string, w: number = CHART_W, h: number = CHART_H) {
+function renderScatterChart(data: any, color: string, h: number = CHART_H) {
   const points = Array.isArray(data.points) ? data.points : [];
   if (points.length === 0) return <p style={{ color: "#94a3b8", fontSize: "0.78rem" }}>No chart data</p>;
 
   const chartData = points.map((pt: any) => ({ x: Number(pt.x) || 0, y: Number(pt.y) || 0 }));
   return (
-    <ScatterChart width={w} height={h}>
+    <ResponsiveContainer width="100%" height={h}><ScatterChart>
       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
       <XAxis dataKey="x" name={data.x_label || "X"} tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <YAxis dataKey="y" name={data.y_label || "Y"} tick={{ fontSize: 9, fill: "#94a3b8" }} />
       <Tooltip contentStyle={{ background: "#1e293b", border: "1px solid rgba(56,189,248,0.3)", fontSize: 11, color: "#e2e8f0" }} />
       <Scatter data={chartData} fill={color} />
-    </ScatterChart>
+    </ScatterChart></ResponsiveContainer>
   );
 }
 
